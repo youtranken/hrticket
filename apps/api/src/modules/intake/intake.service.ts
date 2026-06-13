@@ -3,7 +3,9 @@ import { asc, eq } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
 import { inboxMessages } from '../../infra/db/schema';
 import { parseMail } from '../email-engine/parser';
+import { findThread } from '../email-engine/threading';
 import { createTicketFromMail } from './create-ticket.usecase';
+import { appendMessageToTicket } from './append-message.usecase';
 
 /**
  * Intake orchestrator: consume received inbound mail and turn it into tickets.
@@ -54,14 +56,29 @@ export class IntakeService {
       // dedupe: already enforced by the (message_id, mailbox) unique at poll time.
       // blocklist / mail-bomb / junk: pass-through.
 
-      // create-or-append → create branch (append lands in 2.3).
-      const res = await createTicketFromMail(tx, {
-        projectId: row.projectId,
-        mailbox: row.mailbox,
-        inboxMessageId: row.id,
-        parsed,
-      });
-      this.logger.log(`mail ${row.id} → ticket ${res.ticketCode}`);
+      // create-or-append: thread match (header → subject-code+anti-spoof) decides.
+      const match = await findThread(tx, parsed, row.projectId);
+      if (match) {
+        const res = await appendMessageToTicket(tx, {
+          ticketId: match.ticketId,
+          ticketStatus: match.status,
+          projectId: row.projectId,
+          inboxMessageId: row.id,
+          parsed,
+        });
+        this.logger.log(
+          `mail ${row.id} → append ticket ${match.ticketId}` +
+            (res.strangers.length ? ` (stranger: ${res.strangers.join(',')})` : ''),
+        );
+      } else {
+        const res = await createTicketFromMail(tx, {
+          projectId: row.projectId,
+          mailbox: row.mailbox,
+          inboxMessageId: row.id,
+          parsed,
+        });
+        this.logger.log(`mail ${row.id} → ticket ${res.ticketCode}`);
+      }
       return true;
     });
   }
