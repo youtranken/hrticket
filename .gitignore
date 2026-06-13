@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# Attachments storage (filesystem — never commit user files)
+attachments/
+storage/
+
+# Logs
+*.log
+logs/
+
+# Test / coverage
+coverage/
+.vitest/
+test-results/
+playwright-report/
+.playwright/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Docker volumes (local)
+pgdata/
