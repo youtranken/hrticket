@@ -42,7 +42,7 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 
 ## Test (story đóng khi test XANH)
 - **BE:** integration `*.it-spec.ts` (Testcontainers Postgres 18.4 + GreenMail cho mail), đặt tên `IT-<DOMAIN>-NNN` (vd `IT-MAIL-001`). 4 vùng test KỸ: outbox, state machine, atomic assign/claim, idempotency mail.
-- **FE:** kịch bản `[FE-DT]` chạy bằng **Playwright** (đã cài) — thao tác thật trên browser, assert + screenshot, **Console 0 error**. Mail xem ở **Mailpit UI** (`:8025`), KHÔNG dùng MailHog.
+- **FE:** kịch bản `[FE-DT]` = **Playwright** (`apps/web/e2e/*.e2e.ts`, config riêng) chạy thật trên browser với stack compose live (`:8080`), assert + screenshot, **Console 0 error**. Lệnh: bật `docker compose up -d --build` → `SEED_DEV_USERS=true pnpm --filter @hris/api db:seed` (tạo 4 user vai trò `@dev.local`) → `pnpm --filter @hris/web e2e`. Browser cài 1 lần: `pnpm --filter @hris/web exec playwright install chromium`. Mail xem ở **Mailpit UI** (`:8025`), KHÔNG MailHog.
 - Đừng TDD full; code + test cùng story.
 
 ## Cạm bẫy đã biết

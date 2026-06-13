@@ -95,6 +95,32 @@ export async function seedOnce(): Promise<void> {
         mustChangePassword: true,
       })
       .onConflictDoNothing({ target: s.users.email });
+
+    // Dev-only role fixtures for FE-DT / Playwright (the sidebar-by-role matrix).
+    // Gated so production seed never creates them. Ready-to-login (no forced change).
+    if (process.env.SEED_DEV_USERS === 'true') {
+      const devPassword = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+      const devHash = await argon2.hash(devPassword, { type: argon2.argon2id });
+      const devUsers: Array<{ email: string; name: string; role: s.Role }> = [
+        { email: 'member@dev.local', name: 'Dev Member', role: 'member' },
+        { email: 'lead@dev.local', name: 'Dev Team Lead', role: 'team_lead' },
+        { email: 'admin@dev.local', name: 'Dev Admin', role: 'admin' },
+        { email: 'ssa@dev.local', name: 'Dev SSA', role: 'ssa' },
+      ];
+      for (const u of devUsers) {
+        await tx
+          .insert(s.users)
+          .values({
+            projectId: byKey.get('hris')!,
+            email: u.email,
+            name: u.name,
+            passwordHash: devHash,
+            role: u.role,
+            mustChangePassword: false,
+          })
+          .onConflictDoNothing({ target: s.users.email });
+      }
+    }
   });
 
   console.log('seed complete');
