@@ -26,7 +26,7 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 
 ## LUẬT BẤT BIẾN (LOCKED — vi phạm là sai kiến trúc)
 1. **Mọi truy cập DB qua `withActor(ctx, fn)`** (mở tx + `SET LOCAL` RLS var; từ chối nếu thiếu actor). ESLint **CẤM import `db` thô** ngoài `infra/db/with-actor.ts`. Worker = `withActor({kind:'system'})`. Repo nhận `tx`, service mở tx, 1 use-case = 1 tx.
-2. **Postgres RLS là lưới an toàn cuối** — không BYPASSRLS. Ẩn menu FE = chỉ UX, không phải hàng rào.
+2. **Postgres RLS là lưới an toàn cuối** — không BYPASSRLS. **`withActor` chạy `SET LOCAL ROLE app` mỗi tx** (role `app` non-superuser, tạo ở rls-and-extras.sql) — BẮT BUỘC, vì kết nối superuser/owner BỎ QUA RLS hoàn toàn. `tickets` có FORCE RLS. Ẩn menu FE = chỉ UX, không phải hàng rào.
 3. **Zod ở `packages/shared` là nguồn type DUY NHẤT** (derive từ Drizzle qua drizzle-zod). **CẤM class-validator.** `.parse()` tại ranh giới controller.
 4. **Email:** inbound **effectively-once** (`inbox_messages` UNIQUE `(message_id, mailbox)` — composite, KHÔNG global; commit IMAP cursor SAU persist). outbound **at-least-once** qua **outbox** (`pending→processing→done→failed`; đóng tx TRƯỚC khi gọi SMTP; re-claim theo `locked_at`). Outbox enqueue ở `infra/queue/`.
    Ngoại lệ: **OTP / reset / test-send / cảnh báo worker = SMTP trực tiếp** qua `infra/mail` (KHÔNG qua outbox).
@@ -55,6 +55,10 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 - `unaccent()` là STABLE → KHÔNG dùng trong generated column; bọc `f_unaccent()` IMMUTABLE (form 2 tham số) cho FTS tsvector.
 - Seed idempotent cần **conflict target THẬT** (vd unique `(project_id,name_en)`); `onConflictDoNothing()` trống chỉ bắt PK → re-seed nhân đôi data.
 - `test:it` đặt `maxWorkers:1` — mỗi suite tự bật 1 Postgres/GreenMail container; chạy song song đói Docker → flake (connection reset).
+- **RLS chỉ áp khi role không phải superuser/owner** — nếu test thấy member nhìn thấy mọi ticket, kiểm `SET LOCAL ROLE app` trong withActor + grants cho `app` trong rls-and-extras.sql.
+- `file-type` (npm) là ESM-only → không require được trong CJS api; dùng `email-engine/magic-bytes.ts` (sniffer tự viết cho whitelist cố định).
+- GreenMail canonicalise plus-alias (`a+b@x → a@x`) → test cross-post 2 mailbox phải dùng 2 địa chỉ KHÁC HẲN (không plus-alias).
+- Dev IMAP = container **greenmail** trong compose (worker poll `:3143`, inject `:3025`); KHÔNG trỏ worker vào mailbox production.
 
 ## Vai trò tài liệu (một sự thật, một nhà)
 - `architecture.md` = **tại sao** (quyết định + Post-Review Amendments A–E).
