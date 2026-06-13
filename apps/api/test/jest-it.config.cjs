@@ -7,6 +7,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: '.',
+  setupFiles: ['<rootDir>/it-env.cjs'],
   testRegex: '.*\\.it-spec\\.ts$',
   moduleNameMapper: {
     '^@hris/shared$': '<rootDir>/../../../packages/shared/src/index.ts',

@@ -1,13 +1,22 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerParams } from './infra/logger';
+import { CONFIG, loadConfig } from './infra/config/config.schema';
 
 /**
- * CoreModule — the shared DI core imported by BOTH the HTTP app (app.module.ts)
- * and the worker (worker.ts). Cross-cutting infra (db gateway, mailer, config,
- * logger, queue) will be registered here so main + worker share one wiring.
- * Empty for now (Story 1.1); populated in Stories 1.2/1.3.
+ * CoreModule — shared DI core imported by BOTH the HTTP app and the worker.
+ * Holds cross-cutting infra: validated config, structured logging. The DB
+ * gateway is accessed via the withActor() function (not a provider) by design.
  */
+@Global()
 @Module({
-  providers: [],
-  exports: [],
+  imports: [LoggerModule.forRoot(loggerParams)],
+  providers: [
+    {
+      provide: CONFIG,
+      useFactory: () => loadConfig(),
+    },
+  ],
+  exports: [CONFIG],
 })
 export class CoreModule {}

@@ -1,18 +1,19 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { loadConfig } from './infra/config/config.schema';
 
 /** HTTP entrypoint — listens. The worker uses a separate entry (worker.ts). */
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({
-    origin: process.env.WEB_ORIGIN?.split(',') ?? true,
-    credentials: true,
-  });
-  const port = Number(process.env.API_PORT ?? 3000);
-  await app.listen(port);
-  Logger.log(`API listening on :${port}`, 'Bootstrap');
+  // Fail-fast: invalid/missing config crashes here with a readable message.
+  const config = loadConfig();
+
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
+  app.enableCors({ origin: config.WEB_ORIGIN.split(','), credentials: true });
+  await app.listen(config.API_PORT);
+  app.get(PinoLogger).log(`API listening on :${config.API_PORT}`);
 }
 
 void bootstrap();
