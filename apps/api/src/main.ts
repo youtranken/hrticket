@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { MonitorService } from './modules/monitor/monitor.service';
 import { loadConfig } from './infra/config/config.schema';
 
 /** HTTP entrypoint — listens. The worker uses a separate entry (worker.ts). */
@@ -20,6 +21,7 @@ async function bootstrap(): Promise<void> {
   );
   app.enableCors({ origin: config.WEB_ORIGIN.split(','), credentials: true });
   await app.listen(config.API_PORT);
+  app.get(MonitorService).start(); // worker-liveness monitor (NFR18)
   app.get(PinoLogger).log(`API listening on :${config.API_PORT}`);
 }
 

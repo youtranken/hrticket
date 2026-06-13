@@ -83,6 +83,12 @@ services:
       postgres:
         condition: service_healthy
     restart: always
+    healthcheck: # stale imap_poll heartbeat → unhealthy → Docker restarts it (A.4)
+      test: ['CMD', 'node', 'dist/cli/worker-healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   web:
     build:

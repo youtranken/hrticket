@@ -136,6 +136,23 @@ describe('IT-MAIL: imap poller + dedupe', () => {
     expect(await countInbox()).toBe(1);
   });
 
+  it('IT-OPS-006: backlog after downtime — one poll catches up all 10 mails', async () => {
+    if (!ready) return;
+    for (let i = 1; i <= 10; i++) {
+      await injectMail(gm!, {
+        from: `u${i}@x.com`,
+        to: HRIS_BOX,
+        subject: `backlog ${i}`,
+        text: 'b',
+        messageId: `<backlog-${i}@x.com>`,
+      });
+    }
+    // Worker was "down" while these arrived; the first poll must fetch them all.
+    const out = await poller.pollMailbox(HRIS);
+    expect(out.inserted).toBe(10);
+    expect(await countInbox()).toBe(10);
+  });
+
   it('IT-MAIL-005: same Message-ID to both mailboxes → 2 rows (cross-post foundation)', async () => {
     if (!ready) return;
     const messageId = '<cross-post-1@x.com>';
