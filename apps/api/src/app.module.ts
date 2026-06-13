@@ -2,10 +2,11 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { CoreModule } from './core.module';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
-  imports: [CoreModule, HealthModule],
+  imports: [CoreModule, HealthModule, AuthModule],
   controllers: [AppController],
 })
 export class AppModule {}

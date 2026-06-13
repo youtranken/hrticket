@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, integer, timestamp, index } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  bigserial,
+  uuid,
+  text,
+  integer,
+  timestamp,
+  unique,
+  index,
+} from 'drizzle-orm/pg-core';
 import { users } from './core';
 
 /** Server-side sessions (Postgres store — survives restart, multi-process). */
@@ -44,3 +53,21 @@ export const idempotencyKeys = pgTable('idempotency_keys', {
   key: text('key').primaryKey(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Brute-force tracking for /login (Story 1.4). Keyed by ip OR account email
+ * (kind distinguishes). Progressive lockout via failedCount + lockedUntil.
+ */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    kind: text('kind').notNull(), // 'ip' | 'account'
+    subject: text('subject').notNull(), // ip address or email
+    failedCount: integer('failed_count').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique('uq_login_attempt').on(t.kind, t.subject)],
+);

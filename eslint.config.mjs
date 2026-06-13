@@ -10,7 +10,24 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     rules: {
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  // CommonJS Node scripts (.cjs configs, test env setup) — provide node globals.
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        process: 'readonly',
+        module: 'writable',
+        require: 'readonly',
+        __dirname: 'readonly',
+        console: 'readonly',
+      },
     },
   },
   // LOCKED invariant #1: the raw Drizzle `db` handle may only be imported by the
