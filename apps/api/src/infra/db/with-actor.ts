@@ -45,6 +45,10 @@ export async function withActor<T>(
     throw new MissingActorError();
   }
   return db.transaction(async (tx) => {
+    // Drop superuser/owner privileges for this tx so RLS actually applies. LOCAL →
+    // reverts at tx end. The `app` role (created in rls-and-extras.sql) is a plain
+    // non-superuser with table DML grants; RLS policies scope what it can see.
+    await tx.execute(raw`SET LOCAL ROLE app`);
     await tx.execute(raw`SELECT set_config('app.actor_id', ${ctx.actorId}, true)`);
     if (ctx.kind === 'user') {
       await tx.execute(raw`SELECT set_config('app.actor_role', ${ctx.role}, true)`);

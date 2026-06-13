@@ -8,6 +8,8 @@ import { ResetPage } from './features/auth/ResetPage';
 import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
+import { InboxPage } from './features/inbox/InboxPage';
+import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
 import { Placeholder, ForbiddenPage } from './components/Placeholder';
 
@@ -33,7 +35,8 @@ function ProtectedApp() {
     <AppShell>
       <Routes>
         <Route index element={<Navigate to="/inbox" replace />} />
-        <Route path="inbox" element={<Placeholder titleKey="menu.inbox" />} />
+        <Route path="inbox" element={<InboxPage />} />
+        <Route path="tickets/:id" element={<TicketDetailPage />} />
         <Route path="my-tickets" element={<Placeholder titleKey="menu.myTickets" />} />
         <Route path="pending" element={<Placeholder titleKey="menu.pending" />} />
         <Route

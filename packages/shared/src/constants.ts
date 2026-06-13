@@ -19,3 +19,28 @@ export const PDF_PREVIEW_MAX_MB = 25;
 /** The two fixed projects. */
 export const PROJECTS = ['hris', 'cnb'] as const;
 export type ProjectKey = (typeof PROJECTS)[number];
+
+/** Ticket lifecycle states (FR37). */
+export const TICKET_STATUSES = [
+  'open',
+  'assigned',
+  'in_progress',
+  'pending',
+  'resolved',
+  'closed',
+] as const;
+export type TicketStatus = (typeof TICKET_STATUSES)[number];
+
+/**
+ * Canonical status → AntD Tag colour palette (party-mode S9). Defined ONCE here;
+ * every FE story references this map rather than inventing colours. i18n label
+ * keys are `status.<value>` in the web bundle.
+ */
+export const TICKET_STATUS_COLOR: Record<TicketStatus, string> = {
+  open: 'blue',
+  assigned: 'cyan',
+  in_progress: 'gold',
+  pending: 'orange',
+  resolved: 'green',
+  closed: 'default',
+};

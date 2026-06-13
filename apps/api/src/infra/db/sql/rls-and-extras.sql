@@ -4,6 +4,17 @@
 -- ── Extensions ───────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS unaccent;
 
+-- ── App runtime role ─────────────────────────────────────────────────────────
+-- A superuser/owner connection BYPASSES RLS entirely. So the app must act as a
+-- plain, non-superuser role for the policies to bite. withActor() does
+-- `SET LOCAL ROLE app` per transaction; the privilege grants live at the end of
+-- this file (after every table — including audit_log — exists).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app') THEN
+    CREATE ROLE app NOLOGIN;
+  END IF;
+END $$;
+
 -- unaccent() ships as STABLE, so Postgres rejects it inside a GENERATED column
 -- (which requires IMMUTABLE). Wrap the 2-arg form (explicit dictionary, so the
 -- result truly can't drift) and mark the wrapper IMMUTABLE — the documented
@@ -64,6 +75,7 @@ CREATE OR REPLACE FUNCTION app_groups() RETURNS integer[] LANGUAGE sql STABLE AS
      END $$;
 
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tickets FORCE ROW LEVEL SECURITY; -- apply even to the table owner
 
 -- System actor: full scope (NOT bypassrls — explicit grant).
 DROP POLICY IF EXISTS tickets_system ON tickets;
@@ -91,3 +103,12 @@ CREATE POLICY tickets_user ON tickets
       )
     )
   );
+
+-- ── Grants for the app runtime role ──────────────────────────────────────────
+-- Everything exists by now (base tables + audit_log). The app role gets DML on
+-- all of them; RLS — not privileges — is what scopes ticket visibility.
+GRANT USAGE ON SCHEMA public TO app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO app;
