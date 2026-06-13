@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
 import { ticketMessages, participants, inboxMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
+import { ingestAttachments } from './attachments';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface AppendInput {
@@ -45,6 +46,14 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
       createdAt: parsed.date ?? new Date(),
     })
     .returning({ id: ticketMessages.id });
+
+  await ingestAttachments(tx, {
+    ticketId,
+    messageId: message!.id,
+    projectId: input.projectId,
+    when: parsed.date ?? new Date(),
+    attachments: parsed.attachments,
+  });
 
   const strangers: string[] = [];
   const addresses = new Set(

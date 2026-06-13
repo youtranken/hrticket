@@ -49,12 +49,14 @@ export const outboxStatusEnum = pgEnum('outbox_status', [
   'failed',
 ]);
 
-/** Attachment status (party-mode E3 — no `streaming`). */
+/** Attachment status (party-mode E3 — no `streaming`). `failed` = repair gave up
+ *  on a pending row whose file is missing/wrong-size (Story 2.5). */
 export const attachmentStatusEnum = pgEnum('attachment_status', [
   'pending',
   'stored',
   'blocked_unsafe',
   'expired',
+  'failed',
 ]);
 
 /** Tag kind. */

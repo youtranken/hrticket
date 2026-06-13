@@ -9,6 +9,7 @@ import {
 } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { nextTicketCode } from '../tickets/ticket-code';
+import { ingestAttachments } from './attachments';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface CreateTicketInput {
@@ -91,6 +92,14 @@ export async function createTicketFromMail(
       createdAt: parsed.date ?? createdAt,
     })
     .returning({ id: ticketMessages.id });
+
+  await ingestAttachments(tx, {
+    ticketId,
+    messageId: message!.id,
+    projectId,
+    when: createdAt,
+    attachments: parsed.attachments,
+  });
 
   // Participants: requester + CC, all active. Dedup against the unique (ticket,email).
   const people = new Set<string>(
