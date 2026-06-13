@@ -4,6 +4,8 @@
   "common.password": "Password",
   "common.login": "Sign in",
   "common.logout": "Sign out",
+  "header.project": "Project",
+  "header.projectSwitched": "Switched to {{name}}",
   "common.language": "Language",
   "common.loading": "Loading...",
   "common.save": "Save",

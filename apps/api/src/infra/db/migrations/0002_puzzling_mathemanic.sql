@@ -1,0 +1,1 @@
+ALTER TABLE "categories" ADD CONSTRAINT "uq_categories_project_name_en" UNIQUE("project_id","name_en");

@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Layout, Menu, Dropdown, Segmented, Button, Tag } from 'antd';
+import { Layout, Menu, Dropdown, Segmented, Button, Tag, Select, App as AntApp } from 'antd';
 import { useMe, logout } from '../lib/auth';
+import { setActiveProject } from '../lib/activeProject';
 import { menuForRole } from './menu';
 import { setLanguage } from '../i18n';
 import i18n from '../i18n';
@@ -14,6 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
+  const { message } = AntApp.useApp();
   const { data: me } = useMe();
   if (!me) return null;
 
@@ -23,6 +25,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     await logout();
     await qc.invalidateQueries({ queryKey: ['me'] });
     navigate('/login');
+  };
+
+  // SSA-only: switch the active project. Persist it (→ X-Project header), refetch
+  // everything for the new project, land on Inbox, and confirm with a toast
+  // (Story 1.8 AC3 / party-mode S4: don't keep a project-A route after switching).
+  const onSwitchProject = async (key: string) => {
+    const target = me.projects.find((p) => p.key === key);
+    setActiveProject(key);
+    await qc.invalidateQueries(); // all project-scoped data is now stale
+    navigate('/inbox');
+    message.success(t('header.projectSwitched', { name: target?.name ?? key }));
   };
 
   return (
@@ -39,6 +52,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Sider>
       <Layout>
         <Header style={{ background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+          {me.projects.length > 1 && (
+            <Select
+              size="small"
+              value={me.projectKey}
+              style={{ minWidth: 140 }}
+              onChange={onSwitchProject}
+              options={me.projects.map((p) => ({ label: p.name, value: p.key }))}
+              aria-label={t('header.project')}
+            />
+          )}
           <Tag color="blue">{me.role.toUpperCase()}</Tag>
           <Segmented
             size="small"

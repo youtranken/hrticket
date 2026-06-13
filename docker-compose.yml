@@ -8,7 +8,8 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PG18+ stores data in a major-version subdir; mount the parent, not /data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hris -d hris']
       interval: 5s
@@ -33,6 +34,7 @@ services:
     command: ['node', 'dist/main.js']
     env_file: .env
     environment:
+      NODE_ENV: production # win over .env (dev) — containers run prod build, no pino-pretty
       DATABASE_URL: postgres://hris:hris@postgres:5432/hris
       API_PORT: '3000'
     ports:
@@ -53,6 +55,7 @@ services:
     command: ['node', 'dist/worker.js']
     env_file: .env
     environment:
+      NODE_ENV: production # win over .env (dev) — containers run prod build, no pino-pretty
       DATABASE_URL: postgres://hris:hris@postgres:5432/hris
     depends_on:
       postgres:

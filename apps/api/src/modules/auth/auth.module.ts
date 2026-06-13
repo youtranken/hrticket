@@ -8,6 +8,7 @@ import { OtpService } from './otp.service';
 import { PasswordResetService } from './password-reset.service';
 import { RescueService } from './rescue.service';
 import { MeService } from './me.service';
+import { ProjectContextService } from './project-context.service';
 import { SessionGuard } from './session.guard';
 import { Mailer } from '../../infra/mail/mailer';
 
@@ -21,9 +22,10 @@ import { Mailer } from '../../infra/mail/mailer';
     PasswordResetService,
     RescueService,
     MeService,
+    ProjectContextService,
     SessionGuard,
     Mailer,
   ],
-  exports: [SessionService, SessionGuard, MeService, Mailer],
+  exports: [SessionService, SessionGuard, MeService, ProjectContextService, Mailer],
 })
 export class AuthModule {}

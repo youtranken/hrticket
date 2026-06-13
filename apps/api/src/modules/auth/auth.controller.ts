@@ -113,8 +113,9 @@ export class MeController {
 
   @Get('me')
   @UseGuards(SessionGuard)
-  async whoami(@CurrentUser() user: SessionUser) {
-    return this.me.build(user);
+  async whoami(@CurrentUser() user: SessionUser, @Req() req: AuthedRequest) {
+    const xProject = req.header('x-project') ?? undefined;
+    return this.me.build(user, xProject);
   }
 
   @Patch('me/otp')

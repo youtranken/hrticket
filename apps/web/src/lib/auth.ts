@@ -1,10 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from './apiClient';
+import { setActiveProject } from './activeProject';
+
+export interface ProjectRef {
+  id: number;
+  key: string;
+  name: string;
+}
 
 export interface Me {
   user: { id: string; email: string; name: string };
   role: 'ssa' | 'admin' | 'team_lead' | 'member';
   projectId: number | null;
+  projectKey: string;
+  projects: ProjectRef[];
   groups: number[];
   capabilities: string[];
   mustChangePassword: boolean;
@@ -60,4 +69,5 @@ export async function toggleOtp(enabled: boolean, password: string): Promise<voi
 
 export async function logout(): Promise<void> {
   await api('/auth/logout', { method: 'POST' });
+  setActiveProject(null); // don't leak an SSA's project choice into the next session
 }

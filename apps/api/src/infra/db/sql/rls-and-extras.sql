@@ -4,12 +4,21 @@
 -- ── Extensions ───────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS unaccent;
 
+-- unaccent() ships as STABLE, so Postgres rejects it inside a GENERATED column
+-- (which requires IMMUTABLE). Wrap the 2-arg form (explicit dictionary, so the
+-- result truly can't drift) and mark the wrapper IMMUTABLE — the documented
+-- workaround. Used by the FTS generated column below.
+CREATE OR REPLACE FUNCTION f_unaccent(text)
+  RETURNS text
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+  AS $$ SELECT public.unaccent('public.unaccent', $1) $$;
+
 -- ── Full-text search (FR81, party-mode A7): simple + unaccent over subject+body ──
 ALTER TABLE ticket_messages
   ADD COLUMN IF NOT EXISTS search_tsv tsvector
   GENERATED ALWAYS AS (
     to_tsvector('simple',
-      unaccent(coalesce(body_text, '')))
+      f_unaccent(coalesce(body_text, '')))
   ) STORED;
 CREATE INDEX IF NOT EXISTS idx_messages_search ON ticket_messages USING gin (search_tsv);
 

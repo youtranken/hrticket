@@ -4,6 +4,8 @@
   "common.password": "Mật khẩu",
   "common.login": "Đăng nhập",
   "common.logout": "Đăng xuất",
+  "header.project": "Dự án",
+  "header.projectSwitched": "Đã chuyển sang {{name}}",
   "common.language": "Ngôn ngữ",
   "common.loading": "Đang tải...",
   "common.save": "Lưu",

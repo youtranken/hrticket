@@ -5,6 +5,8 @@ import type { Me } from '../lib/auth';
 const base: Omit<Me, 'role'> = {
   user: { id: '1', email: 'a@b.c', name: 'A' },
   projectId: 1,
+  projectKey: 'hris',
+  projects: [{ id: 1, key: 'hris', name: 'HRIS' }],
   groups: [],
   capabilities: [],
   mustChangePassword: false,

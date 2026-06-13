@@ -58,7 +58,7 @@ export async function seedOnce(): Promise<void> {
             isSensitive: c.sensitive ?? false,
             isSystem: c.system ?? false,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing({ target: [s.categories.projectId, s.categories.nameEn] });
       }
       // Counters / config / settings
       await tx

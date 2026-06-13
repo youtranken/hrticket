@@ -14,6 +14,8 @@ Mailbox **DEV/TEST**: `leminh@pmh.com.vn` (hris) + `leminh+cnb@pmh.com.vn` (cnb)
 pnpm install                 # cài deps
 pnpm dev                     # api :3000 + web :5173 (chạy ở app con)
 docker compose up -d --build # postgres + api + worker + web(nginx) + mailpit(:8025)
+                             # containers chạy BUILD PROD (NODE_ENV=production) NGAY TỪ ĐẦU —
+                             # dev nhanh dùng `pnpm dev`. KHÔNG bao giờ chạy ts-node/watch trong image.
 pnpm db:generate             # drizzle-kit generate → migration NNNN_slug.sql
 pnpm db:migrate              # apply migration (forward-only)
 pnpm db:seed                 # seed 2 project + categories + role_capabilities + SSA
@@ -49,6 +51,10 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 - Junk thủ công GIỮ category gốc (không đẩy về "Khác") — nếu không, rò ticket lương sang nhóm khác.
 - Reply vào ticket junk/spam/locked → append/log, KHÔNG reopen.
 - UIDVALIDITY đổi → re-scan bằng Message-ID, đừng tin UID cũ.
+- **Docker prod build (đã trả giá):** (a) PG18 mount volume tại `/var/lib/postgresql` KHÔNG phải `/data`; (b) `nest build` cần `tsconfig.build.json` (chỉ `src`, `rootDir:src`) nếu không ra `dist/src/main.js` thay vì `dist/main.js`; (c) compose ép `NODE_ENV=production` (thắng `.env` dev) — nếu không pino bật `pino-pretty` (devDep, không có trong prod deploy) → crash; (d) worker phải giữ 1 active handle (timer) mới không exit 0 + `restart:always` quay vòng.
+- `unaccent()` là STABLE → KHÔNG dùng trong generated column; bọc `f_unaccent()` IMMUTABLE (form 2 tham số) cho FTS tsvector.
+- Seed idempotent cần **conflict target THẬT** (vd unique `(project_id,name_en)`); `onConflictDoNothing()` trống chỉ bắt PK → re-seed nhân đôi data.
+- `test:it` đặt `maxWorkers:1` — mỗi suite tự bật 1 Postgres/GreenMail container; chạy song song đói Docker → flake (connection reset).
 
 ## Vai trò tài liệu (một sự thật, một nhà)
 - `architecture.md` = **tại sao** (quyết định + Post-Review Amendments A–E).

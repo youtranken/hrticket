@@ -69,7 +69,12 @@ export const categories = pgTable(
     disabled: boolean('disabled').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('idx_categories_project').on(t.projectId)],
+  (t) => [
+    index('idx_categories_project').on(t.projectId),
+    // Natural key: a project can't have two categories with the same English name.
+    // Also makes the seed idempotent (onConflictDoNothing needs a real target).
+    unique('uq_categories_project_name_en').on(t.projectId, t.nameEn),
+  ],
 );
 
 /** Keywords used to auto-classify into a category (FR21). */

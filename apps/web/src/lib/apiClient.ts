@@ -8,11 +8,19 @@ export class ApiError extends Error {
   }
 }
 
+import { getActiveProject } from './activeProject';
+
 /** Fetch wrapper: always sends cookies, surfaces {code,message}, redirects on 401. */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const activeProject = getActiveProject();
   const res = await fetch(`/api${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      // SSA active-project selector — the BE gate enforces who may use it.
+      ...(activeProject ? { 'X-Project': activeProject } : {}),
+      ...(init.headers ?? {}),
+    },
     ...init,
   });
 
