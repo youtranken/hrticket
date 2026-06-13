@@ -35,6 +35,8 @@
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "nodemailer": "^6.9.16",
+    "@types/nodemailer": "^6.4.17"
   }
 }
