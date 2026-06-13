@@ -4,8 +4,11 @@ import { withActor, systemActor } from '../../infra/db/with-actor';
 import { inboxMessages } from '../../infra/db/schema';
 import { parseMail } from '../email-engine/parser';
 import { findThread } from '../email-engine/threading';
+import { isAutoSubmitted } from '../email-engine/auto-submitted';
+import { writeAudit } from '../../infra/audit/audit';
 import { createTicketFromMail } from './create-ticket.usecase';
 import { appendMessageToTicket } from './append-message.usecase';
+import { linkCrossPost } from './cross-post';
 
 /**
  * Intake orchestrator: consume received inbound mail and turn it into tickets.
@@ -51,13 +54,46 @@ export class IntakeService {
       }
 
       const parsed = await parseMail(row.raw);
+      const autoReply = isAutoSubmitted(parsed.headers);
 
       // FIXED pipeline — middle stages are no-op hooks until Epic 7.
       // dedupe: already enforced by the (message_id, mailbox) unique at poll time.
       // blocklist / mail-bomb / junk: pass-through.
 
-      // create-or-append: thread match (header → subject-code+anti-spoof) decides.
       const match = await findThread(tx, parsed, row.projectId);
+
+      // Auto-submitted mail (FR11): never start a thread or trigger a reply.
+      if (autoReply) {
+        if (match) {
+          await appendMessageToTicket(tx, {
+            ticketId: match.ticketId,
+            ticketStatus: match.status,
+            projectId: row.projectId,
+            inboxMessageId: row.id,
+            parsed,
+            isAutoReply: true,
+          });
+          this.logger.log(`mail ${row.id} → auto-reply appended to ${match.ticketId}`);
+        } else {
+          // No thread → do NOT create a ticket (kills the loop), but keep the trace.
+          await tx
+            .update(inboxMessages)
+            .set({ status: 'processed' })
+            .where(eq(inboxMessages.id, row.id));
+          await writeAudit(tx, {
+            projectId: row.projectId,
+            actorLabel: 'system:intake',
+            action: 'auto_reply_dropped',
+            objectType: 'inbox_message',
+            objectId: row.id,
+            newValue: { messageId: row.messageId },
+          });
+          this.logger.log(`mail ${row.id} → auto-reply dropped (no thread, no new ticket)`);
+        }
+        return true;
+      }
+
+      // create-or-append: thread match (header → subject-code+anti-spoof) decides.
       if (match) {
         const res = await appendMessageToTicket(tx, {
           ticketId: match.ticketId,
@@ -76,6 +112,13 @@ export class IntakeService {
           mailbox: row.mailbox,
           inboxMessageId: row.id,
           parsed,
+        });
+        // Cross-post: link/tag if the same Message-ID already became a ticket elsewhere.
+        await linkCrossPost(tx, {
+          ticketId: res.ticketId,
+          projectId: row.projectId,
+          mailbox: row.mailbox,
+          messageId: row.messageId,
         });
         this.logger.log(`mail ${row.id} → ticket ${res.ticketCode}`);
       }
