@@ -3,6 +3,10 @@ import { ErrorCode } from '@hris/shared';
 // The ONE place that imports the raw db handle (same-dir import is intentional).
 import { db, type DbTx } from './db';
 
+// Re-exported so use-cases can type their `tx` param without importing the raw
+// handle (which ESLint bans). Type-only — carries no runtime db reference.
+export type { DbTx } from './db';
+
 /** Actor context carried through every DB transaction (drives RLS). */
 export type ActorContext =
   | {
