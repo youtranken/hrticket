@@ -2,24 +2,33 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Req,
   Res,
   UseGuards,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { AuthService } from './auth.service';
 import { SessionService } from './session.service';
+import { OtpService } from './otp.service';
+import { PasswordResetService } from './password-reset.service';
 import { MeService } from './me.service';
 import { SessionGuard, SESSION_COOKIE, type AuthedRequest } from './session.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { SessionUser } from './session.service';
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+const otpVerifySchema = z.object({ preAuthToken: z.string().min(1), code: z.string().length(6) });
+const otpToggleSchema = z.object({ enabled: z.boolean(), password: z.string().min(1) });
+const forgotSchema = z.object({ email: z.string().email() });
+const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8) });
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
 });
 
 function setSessionCookie(res: Response, sid: string): void {
@@ -37,7 +46,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
-    private readonly me: MeService,
+    private readonly reset: PasswordResetService,
   ) {}
 
   @Post('login')
@@ -51,10 +60,19 @@ export class AuthController {
     const ip = req.ip ?? 'unknown';
     const result = await this.auth.login(parsed.data.email, parsed.data.password, ip);
     if (result.kind === 'otp_required') {
-      return { otpRequired: true, userId: result.userId };
+      return { otpRequired: true, preAuthToken: result.preAuthToken };
     }
     setSessionCookie(res, result.sessionId);
     return { otpRequired: false };
+  }
+
+  @Post('otp/verify')
+  async otpVerify(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
+    const parsed = otpVerifySchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid OTP payload');
+    const sid = await this.auth.verifyOtp(parsed.data.preAuthToken, parsed.data.code);
+    setSessionCookie(res, sid);
+    return { ok: true };
   }
 
   @Post('logout')
@@ -64,15 +82,63 @@ export class AuthController {
     res.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
   }
+
+  /** Always 200 (no email enumeration). */
+  @Post('forgot')
+  async forgot(@Body() body: unknown, @Req() req: AuthedRequest) {
+    const parsed = forgotSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    const base = `${req.protocol}://${req.get('host')}`;
+    await this.reset.request(parsed.data.email, base);
+    return { ok: true };
+  }
+
+  @Post('reset')
+  async resetPassword(@Body() body: unknown) {
+    const parsed = resetSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    const ok = await this.reset.reset(parsed.data.token, parsed.data.password);
+    if (!ok) throw new BadRequestException('Liên kết không còn hiệu lực');
+    return { ok: true };
+  }
 }
 
 @Controller('api')
 export class MeController {
-  constructor(private readonly me: MeService) {}
+  constructor(
+    private readonly me: MeService,
+    private readonly auth: AuthService,
+    private readonly otp: OtpService,
+  ) {}
 
   @Get('me')
   @UseGuards(SessionGuard)
   async whoami(@CurrentUser() user: SessionUser) {
     return this.me.build(user);
+  }
+
+  @Patch('me/otp')
+  @UseGuards(SessionGuard)
+  async toggleOtp(@CurrentUser() user: SessionUser, @Body() body: unknown) {
+    const parsed = otpToggleSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    const ok = await this.auth.confirmPassword(user.id, parsed.data.password);
+    if (!ok) throw new UnauthorizedException('Mật khẩu không đúng');
+    await this.otp.setEnabled(user.id, parsed.data.enabled);
+    return { otpEnabled: parsed.data.enabled };
+  }
+
+  @Post('me/change-password')
+  @UseGuards(SessionGuard)
+  async changePassword(@CurrentUser() user: SessionUser, @Body() body: unknown) {
+    const parsed = changePasswordSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    const ok = await this.auth.changePassword(
+      user.id,
+      parsed.data.currentPassword,
+      parsed.data.newPassword,
+    );
+    if (!ok) throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+    return { ok: true };
   }
 }

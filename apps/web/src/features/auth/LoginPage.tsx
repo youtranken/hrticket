@@ -24,7 +24,9 @@ export function LoginPage() {
     try {
       const res = await login(values.email, values.password);
       if (res.otpRequired) {
-        navigate('/otp', { state: { email: values.email } });
+        navigate('/otp', {
+          state: { preAuthToken: res.preAuthToken, returnUrl: params.get('returnUrl') },
+        });
         return;
       }
       await qc.invalidateQueries({ queryKey: ['me'] });

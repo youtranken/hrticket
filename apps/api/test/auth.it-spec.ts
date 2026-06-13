@@ -50,7 +50,7 @@ describe('IT-AUTH-001: authentication', () => {
       .post('/api/auth/login')
       .send({ email: 'm@test.local', password: 'test-password' })
       .expect(201);
-    const cookie = ok.headers['set-cookie'];
+    const cookie = ok.headers['set-cookie'] as unknown as string[];
     expect(cookie).toBeDefined();
 
     // /me with cookie

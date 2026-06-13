@@ -35,7 +35,8 @@ export default tseslint.config(
   // The trap is installed now, before infra/db/db exists, so the rule is enforced from day one.
   {
     files: ['apps/api/src/**/*.ts'],
-    ignores: ['apps/api/src/infra/db/with-actor.ts'],
+    // with-actor is THE gateway; cli/* are out-of-band host scripts (break-glass).
+    ignores: ['apps/api/src/infra/db/with-actor.ts', 'apps/api/src/cli/**'],
     rules: {
       'no-restricted-imports': [
         'error',
