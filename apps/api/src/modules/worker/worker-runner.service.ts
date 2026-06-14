@@ -5,11 +5,15 @@ import { PollerService } from '../email-engine/poller.service';
 import { OutboxSender } from '../email-engine/outbox-sender.service';
 import { IntakeService } from '../intake/intake.service';
 import { repairAttachments } from '../intake/attachment-repair';
+import { ReminderService } from '../reminders/reminder.service';
 import { startLoop } from './loop-runner';
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 60_000); // NFR3: 60s
 const OUTBOX_INTERVAL_MS = Number(process.env.OUTBOX_INTERVAL_MS ?? 10_000);
-const SCHEDULER_INTERVAL_MS = Number(process.env.SCHEDULER_INTERVAL_MS ?? 3_600_000); // hourly
+// Scheduler ticks every minute so the digest fires close to its configured VN hour;
+// the attachment-repair sweep only needs to run ~hourly, so it's gated by a counter.
+const SCHEDULER_INTERVAL_MS = Number(process.env.SCHEDULER_INTERVAL_MS ?? 60_000);
+const REPAIR_EVERY_TICKS = 60;
 
 /**
  * Owns the worker's THREE independent loops (Story 2.7): IMAP poll+intake, outbox
@@ -23,10 +27,13 @@ export class WorkerRunner {
   private readonly logger = new Logger(WorkerRunner.name);
   private stops: Array<() => void> = [];
 
+  private schedulerTicks = 0;
+
   constructor(
     private readonly poller: PollerService,
     private readonly intake: IntakeService,
     private readonly outboxSender: OutboxSender,
+    private readonly reminders: ReminderService,
   ) {}
 
   start(): void {
@@ -67,9 +74,20 @@ export class WorkerRunner {
   }
 
   private async schedulerTick(): Promise<void> {
-    const res = await repairAttachments();
-    if (res.failed > 0 || res.orphanFiles > 0) {
-      this.logger.warn(`attachment repair: ${res.failed} failed, ${res.orphanFiles} orphan files`);
+    // Reminders/digests every minute (the log tables dedup so re-ticks are no-ops).
+    const rem = await this.reminders.runDigests();
+    if (rem.digests > 0) this.logger.log(`scheduler: ${rem.digests} digest(s) enqueued`);
+    // Snooze-due reminders are FIXED behaviour — run even when digest is disabled.
+    const snz = await this.reminders.runSnoozeReminders();
+    if (snz.reminders > 0) this.logger.log(`scheduler: ${snz.reminders} snooze reminder(s)`);
+
+    // Attachment-repair sweep only ~hourly — it's heavier and rarely finds anything.
+    if (this.schedulerTicks % REPAIR_EVERY_TICKS === 0) {
+      const res = await repairAttachments();
+      if (res.failed > 0 || res.orphanFiles > 0) {
+        this.logger.warn(`attachment repair: ${res.failed} failed, ${res.orphanFiles} orphan files`);
+      }
     }
+    this.schedulerTicks += 1;
   }
 }

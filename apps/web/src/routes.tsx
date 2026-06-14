@@ -9,6 +9,7 @@ import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { CategoriesPage } from './features/admin/CategoriesPage';
+import { ReminderConfigPage } from './features/admin/ReminderConfigPage';
 import { InboxPage, MyTicketsPage, PoolPage } from './features/inbox/InboxPage';
 import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
@@ -70,6 +71,14 @@ function ProtectedApp() {
           element={
             <RequireRole roles={admin} me={me}>
               <CategoriesPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/reminders"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <ReminderConfigPage />
             </RequireRole>
           }
         />

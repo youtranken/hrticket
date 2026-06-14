@@ -23,6 +23,7 @@ export function menuForRole(me: Me): MenuEntry[] {
   ];
   const admin: MenuEntry[] = [
     { key: 'categories', path: '/admin/categories', labelKey: 'menu.categories' },
+    { key: 'reminders', path: '/admin/reminders', labelKey: 'menu.reminders' },
     { key: 'junk', path: '/junk', labelKey: 'menu.junk' },
     { key: 'users', path: '/admin/users', labelKey: 'menu.users' },
     { key: 'settings', path: '/admin/settings', labelKey: 'menu.settings' },

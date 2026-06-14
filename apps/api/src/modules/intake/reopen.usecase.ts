@@ -4,12 +4,15 @@ import {
   tickets,
   users,
   userGroupMembership,
-  notifications,
   reopenNoticeLog,
 } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
+import { emitNotification } from '../notifications/emit';
 import { loadTemplate, renderTemplate } from '../email-engine/templates';
 import { sendOutboundMail } from '../tickets/send-mail.usecase';
+import { enqueue, generateMessageId } from '../../infra/queue/outbox.service';
+
+const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:8080';
 
 export interface ReplyTransitionInput {
   ticketId: string;
@@ -38,7 +41,7 @@ interface ReopenTicketRow {
 }
 
 async function notify(tx: DbTx, userId: string, type: string, payload: object): Promise<void> {
-  await tx.insert(notifications).values({ actorId: userId, type, payload: JSON.stringify(payload) });
+  await emitNotification(tx, { actorId: userId, type, payload });
 }
 
 /**
@@ -197,6 +200,30 @@ export async function handleReplyTransition(
       ticketCode: t.ticketCode,
       by: input.fromAddr,
     });
+    // Plus ONE email to the assignee per reopen (Story 6.3 FR51, in-app + email).
+    const [au] = await tx
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, t.assigneeId!));
+    const tpl = au ? await loadTemplate(tx, input.projectId, 'ticket_reopened') : null;
+    if (au && tpl) {
+      const rendered = renderTemplate(tpl, 'vi', {
+        ticketCode: t.ticketCode,
+        subject: t.subject,
+        by: input.fromAddr,
+        link: `${APP_BASE_URL}/tickets/${input.ticketId}`,
+      });
+      await enqueue(tx, {
+        projectId: input.projectId,
+        ticketId: input.ticketId,
+        to: [au.email],
+        subject: rendered.subject,
+        bodyHtml: rendered.bodyHtml,
+        bodyText: rendered.bodyText,
+        messageId: generateMessageId(t.mailbox),
+        headers: { autoSubmitted: true },
+      });
+    }
   } else {
     // Assignee gone/removed-from-group → Closed → OPEN (pool), assignee NULL, so the
     // claim SQL (WHERE status='open' AND assignee IS NULL) picks it up — no ghost

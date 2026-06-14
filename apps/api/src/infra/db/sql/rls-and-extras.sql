@@ -117,6 +117,27 @@ CREATE POLICY drafts_owner ON drafts
   USING (NOT app_is_system() AND user_id = app_actor_id())
   WITH CHECK (NOT app_is_system() AND user_id = app_actor_id());
 
+-- Notifications are strictly per-recipient on READ (Story 6.1 AC4): a user can only
+-- ever see / mark-read their OWN, even via a crafted query. INSERT stays open to any
+-- authenticated user, because cross-user emits are normal (manual assign / claim-over
+-- notify the OTHER person); the system actor has full scope for worker/intake emits.
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS notifications_system ON notifications;
+CREATE POLICY notifications_system ON notifications
+  USING (app_is_system())
+  WITH CHECK (app_is_system());
+DROP POLICY IF EXISTS notifications_read ON notifications;
+CREATE POLICY notifications_read ON notifications
+  FOR SELECT USING (NOT app_is_system() AND actor_id = app_actor_id());
+DROP POLICY IF EXISTS notifications_update ON notifications;
+CREATE POLICY notifications_update ON notifications
+  FOR UPDATE USING (NOT app_is_system() AND actor_id = app_actor_id())
+  WITH CHECK (actor_id = app_actor_id());
+DROP POLICY IF EXISTS notifications_insert ON notifications;
+CREATE POLICY notifications_insert ON notifications
+  FOR INSERT WITH CHECK (NOT app_is_system());
+
 -- ── Grants for the app runtime role ──────────────────────────────────────────
 -- Everything exists by now (base tables + audit_log). The app role gets DML on
 -- all of them; RLS — not privileges — is what scopes ticket visibility.

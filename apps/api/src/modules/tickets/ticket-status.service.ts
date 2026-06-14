@@ -7,10 +7,11 @@ import {
 import { eq, sql } from 'drizzle-orm';
 import type { TicketStatus } from '@hris/shared';
 import { withActor, type DbTx } from '../../infra/db/with-actor';
-import { tickets, ticketMessages, notifications } from '../../infra/db/schema';
+import { tickets, ticketMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
+import { emitNotification } from '../notifications/emit';
 import { canTransition, assertCanActOnTicket, type TransitionReason } from './ticket.state-machine';
 
 interface StatusTicketRow {
@@ -127,10 +128,10 @@ export class TicketStatusService {
 
       // Notify the assignee when someone else resumes their snoozed ticket.
       if (from === 'pending' && to === 'in_progress' && t.assigneeId && t.assigneeId !== user.id) {
-        await tx.insert(notifications).values({
+        await emitNotification(tx, {
           actorId: t.assigneeId,
           type: 'ticket_resumed',
-          payload: JSON.stringify({ ticketId, ticketCode: t.ticketCode, by: user.email }),
+          payload: { ticketId, ticketCode: t.ticketCode, by: user.email },
         });
       }
 

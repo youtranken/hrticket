@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
-import { inboxMessages, users, notifications } from '../../infra/db/schema';
+import { inboxMessages, users } from '../../infra/db/schema';
+import { emitNotification } from '../notifications/emit';
 import { parseMail } from '../email-engine/parser';
 import { findThread } from '../email-engine/threading';
 import { isAutoSubmitted } from '../email-engine/auto-submitted';
@@ -183,10 +184,10 @@ export class IntakeService {
           .from(users)
           .where(and(inArray(users.role, ['admin', 'ssa']), eq(users.disabled, false)));
         for (const a of admins) {
-          await tx.insert(notifications).values({
+          await emitNotification(tx, {
             actorId: a.id,
             type: 'inbox_failed',
-            payload: JSON.stringify({ inboxMessageId: row.id, reason }),
+            payload: { inboxMessageId: row.id, reason },
           });
         }
         this.logger.error(`inbox ${row.id} dead-lettered after ${attempts} attempts: ${reason}`);

@@ -8,6 +8,7 @@ import { FilesModule } from './modules/files/files.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
@@ -20,6 +21,7 @@ import { AdminModule } from './modules/admin/admin.module';
     MonitorModule,
     UsersModule,
     AdminModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
 })

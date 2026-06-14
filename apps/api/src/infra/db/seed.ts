@@ -72,6 +72,24 @@ const TEMPLATES: Array<{
     bodyVi: 'Chào {{requesterName}},\n\nDanh sách phiếu cần chú ý hôm nay.\n\nBộ phận Nhân sự',
     bodyEn: 'Hi {{requesterName}},\n\nHere are the tickets needing attention today.\n\nHR Team',
   },
+  {
+    key: 'snooze_due',
+    subjectVi: '[{{ticketCode}}] Đến hạn xử lý lại',
+    subjectEn: '[{{ticketCode}}] Snoozed ticket is due',
+    bodyVi:
+      'Phiếu {{ticketCode}} "{{subject}}" đã đến hạn hẹn lại — vui lòng tiếp tục xử lý.\nMở phiếu: {{link}}\n\nBộ phận Nhân sự',
+    bodyEn:
+      'Ticket {{ticketCode}} "{{subject}}" has reached its snooze date — please pick it back up.\nOpen ticket: {{link}}\n\nHR Team',
+  },
+  {
+    key: 'ticket_reopened',
+    subjectVi: '[{{ticketCode}}] Phiếu được mở lại',
+    subjectEn: '[{{ticketCode}}] Ticket reopened',
+    bodyVi:
+      'Phiếu {{ticketCode}} "{{subject}}" vừa được mở lại bởi {{by}}.\nMở phiếu: {{link}}\n\nBộ phận Nhân sự',
+    bodyEn:
+      'Ticket {{ticketCode}} "{{subject}}" was reopened by {{by}}.\nOpen ticket: {{link}}\n\nHR Team',
+  },
 ];
 
 // PRD §2 capability matrix — coarse seed (SSA edits at runtime, Story 9.4).

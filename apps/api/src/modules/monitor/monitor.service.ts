@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, inArray } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
-import { workerHeartbeats, notifications, users } from '../../infra/db/schema';
+import { workerHeartbeats, users, notifications } from '../../infra/db/schema';
+import { emitNotification } from '../notifications/emit';
 import { Mailer } from '../../infra/mail/mailer';
 
 const STALE_MS = Number(process.env.MONITOR_STALE_MS ?? 180_000); // 3× the 60s poll
@@ -68,10 +69,10 @@ export class MonitorService {
         .from(users)
         .where(and(inArray(users.role, ['admin', 'ssa']), eq(users.disabled, false)));
       for (const a of admins) {
-        await tx.insert(notifications).values({
+        await emitNotification(tx, {
           actorId: a.id,
           type: ALERT_TYPE,
-          payload: JSON.stringify({ reason, at: new Date(now).toISOString() }),
+          payload: { reason, at: new Date(now).toISOString() },
         });
       }
       return admins;

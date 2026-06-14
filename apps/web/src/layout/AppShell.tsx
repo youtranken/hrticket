@@ -6,6 +6,7 @@ import { useMe, logout } from '../lib/auth';
 import { setActiveProject } from '../lib/activeProject';
 import { menuForRole } from './menu';
 import { AvailabilityMenu } from '../features/profile/AvailabilityMenu';
+import { NotificationBell } from '../features/notifications/NotificationBell';
 import { setLanguage } from '../i18n';
 import i18n from '../i18n';
 
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label={t('header.project')}
             />
           )}
+          <NotificationBell />
           <AvailabilityMenu />
           <Tag color="blue">{me.role.toUpperCase()}</Tag>
           <Segmented

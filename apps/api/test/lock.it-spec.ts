@@ -110,12 +110,17 @@ describe('IT-LOCK: reopen lock lifecycle', () => {
     await lockSvc.setLock(A, t, true);
     expect((await load(t)).reopenLocked).toBe(true);
 
-    // Now a reply appends + sends the notice, does NOT reopen or bump.
+    // Now a reply appends + sends the "contact HR" notice, does NOT reopen or bump.
+    // (The earlier reopens each e-mailed the assignee — Story 6.3 — so assert the
+    // NEW notice row rather than the absolute count.)
+    const before = (await harness!.db.select().from(outbox).where(eq(outbox.ticketId, t))).length;
     const r = await fire(t);
     expect(r.action).toBe('locked_notice');
     expect((await load(t)).status).toBe('closed');
     expect((await load(t)).reopenCount).toBe(6);
-    expect((await harness!.db.select().from(outbox).where(eq(outbox.ticketId, t))).length).toBe(1);
+    const afterRows = await harness!.db.select().from(outbox).where(eq(outbox.ticketId, t));
+    expect(afterRows.length).toBe(before + 1); // exactly one notice enqueued
+    expect(afterRows.some((o) => (o.subject ?? '').includes('vui lòng tạo yêu cầu mới'))).toBe(true);
 
     // Untick → replies reopen again.
     await lockSvc.setLock(A, t, false);

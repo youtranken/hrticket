@@ -12,9 +12,9 @@ import {
   users,
   categories,
   userGroupMembership,
-  notifications,
 } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
+import { emitNotification } from '../notifications/emit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
 
@@ -38,7 +38,7 @@ export type AssignResult =
   | { needsCategory: true; options: CategoryOption[] };
 
 async function notify(tx: DbTx, userId: string, type: string, payload: object): Promise<void> {
-  await tx.insert(notifications).values({ actorId: userId, type, payload: JSON.stringify(payload) });
+  await emitNotification(tx, { actorId: userId, type, payload });
 }
 
 @Injectable()

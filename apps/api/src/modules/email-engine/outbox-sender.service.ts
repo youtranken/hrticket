@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
-import { outbox, ticketMessages, attachments, projects, notifications, users } from '../../infra/db/schema';
+import { outbox, ticketMessages, attachments, projects, users } from '../../infra/db/schema';
+import { emitNotification } from '../notifications/emit';
 import type { ProjectKey } from '../../infra/db/schema';
 import { smtpConfigFor } from '../../infra/mail/smtp-config';
 import { readFile } from '../../infra/storage/fs-storage';
@@ -277,10 +278,10 @@ export class OutboxSender {
           .from(users)
           .where(and(inArray(users.role, ['admin', 'ssa']), eq(users.disabled, false)));
         for (const a of rows) {
-          await tx.insert(notifications).values({
+          await emitNotification(tx, {
             actorId: a.id,
             type: 'outbox_failed',
-            payload: JSON.stringify({ outboxId: row.id, to: row.toAddrs, reason }),
+            payload: { outboxId: row.id, to: row.toAddrs, reason },
           });
         }
         return rows;

@@ -5,9 +5,9 @@ import {
   autoAssignConfig,
   assignCursors,
   tickets,
-  notifications,
 } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
+import { emitNotification } from '../notifications/emit';
 
 export type AssignStrategy = 'round_robin' | 'least_load';
 
@@ -125,10 +125,10 @@ export async function autoAssign(
     .set({ assigneeId: chosen, status: 'assigned', assignedAt: new Date() })
     .where(eq(tickets.id, ticketId));
 
-  await tx.insert(notifications).values({
+  await emitNotification(tx, {
     actorId: chosen,
     type: 'ticket_assigned',
-    payload: JSON.stringify({ ticketId, ticketCode, categoryId, auto: true }),
+    payload: { ticketId, ticketCode, categoryId, auto: true },
   });
 
   await writeAudit(tx, {
