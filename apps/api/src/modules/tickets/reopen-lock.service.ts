@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
+import { REOPEN_WARN_THRESHOLD } from '@hris/shared';
 import { withActor, type DbTx } from '../../infra/db/with-actor';
 import { tickets } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
@@ -23,6 +24,7 @@ export class ReopenLockService {
         assigneeId: tickets.assigneeId,
         categoryId: tickets.categoryId,
         reopenLocked: tickets.reopenLocked,
+        reopenCount: tickets.reopenCount,
       })
       .from(tickets)
       .where(eq(tickets.id, ticketId));
@@ -40,6 +42,12 @@ export class ReopenLockService {
     return withActor(actor, async (tx) => {
       const t = await this.load(tx, ticketId);
       assertCanActOnTicket(user, groups, t);
+      // Lock is only offered once a ticket is a repeat-reopener (FR41) — the FE hides
+      // the tickbox below the threshold, but that's UX, not a fence (P4). Unlock is
+      // always allowed (so a mistaken lock can be undone).
+      if (locked && t.reopenCount <= REOPEN_WARN_THRESHOLD) {
+        throw new UnprocessableEntityException('Reopen lock unavailable before the warn threshold');
+      }
 
       await tx.update(tickets).set({ reopenLocked: locked }).where(eq(tickets.id, ticketId));
       await writeAudit(tx, {

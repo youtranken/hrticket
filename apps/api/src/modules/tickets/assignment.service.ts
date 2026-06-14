@@ -74,6 +74,11 @@ export class AssignmentService {
     return withActor(actor, async (tx) => {
       const t = await this.loadTicket(tx, ticketId);
       this.assertInGroup(user, (actor.kind === 'user' ? actor.groups : []), t);
+      // Never claim a terminal ticket (P2): closed/resolved are out of the worklist —
+      // claim-over especially must not resurrect them past the state machine.
+      if (t.status === 'closed' || t.status === 'resolved') {
+        throw new ConflictException('Ticket already closed');
+      }
 
       if (t.assigneeId === user.id) {
         return { assigneeId: user.id, from: user.id }; // already mine — idempotent
@@ -166,6 +171,11 @@ export class AssignmentService {
       await tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.id, ticketId)).for('update');
       const t = await this.loadTicket(tx, ticketId);
       this.assertCanAssign(user, (actor.kind === 'user' ? actor.groups : []), t);
+      // A lifecycle write must respect the state machine (P1): never (re)assign a
+      // terminal ticket — closed/resolved are out of the active worklist.
+      if (t.status === 'closed' || t.status === 'resolved') {
+        throw new ConflictException('INVALID_TRANSITION');
+      }
 
       const [target] = await tx
         .select({ id: users.id, projectId: users.projectId, disabled: users.disabled })

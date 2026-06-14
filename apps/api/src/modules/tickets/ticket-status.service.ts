@@ -78,6 +78,12 @@ export class TicketStatusService {
       const from = t.status;
       const to = input.to;
 
+      // Reopen is reply-driven (reopen.usecase) and never a manual pick — block any
+      // manual transition out of `closed` so it can't bypass the reopen count + lock (P3).
+      if (from === 'closed') {
+        throw new ConflictException('INVALID_TRANSITION');
+      }
+
       // Pending needs a snooze date; validate it's not in the past (VN calendar day)
       // BEFORE consulting the state machine so the 422 wins over a 409.
       let snoozeDate: string | null = null;

@@ -105,12 +105,18 @@ export class ReplyService {
           categoryId: tickets.categoryId,
         })
         .from(tickets)
-        .where(eq(tickets.id, ticketId));
+        // Lock the ticket for the whole tx so Reply & Close is atomic: the status can't
+        // move between the legality precheck and the close write — no half-done state (P6/AC1).
+        .where(eq(tickets.id, ticketId))
+        .for('update');
       if (!t) throw new NotFoundException('Ticket not found');
 
       // Reply & Close: the close half of the atomic op must be legal + permitted
       // BEFORE we send, so we never end up with a sent mail on a ticket we couldn't
       // close (or vice-versa). Both halves live in this one tx (AC1).
+      // Reply & Close (AC1): the close must be legal + permitted BEFORE we send, so we
+      // never leave a sent mail on a ticket we couldn't close. The ticket row is locked
+      // above, so the status is stable for the rest of the tx.
       if (input.closeAfter) {
         assertCanActOnTicket(user, groups, t);
         if (!canTransition(t.status as TicketStatus, 'closed').ok) {

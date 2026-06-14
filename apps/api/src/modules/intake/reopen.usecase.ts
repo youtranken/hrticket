@@ -68,7 +68,10 @@ export async function handleReplyTransition(
       subject: tickets.subject,
     })
     .from(tickets)
-    .where(eq(tickets.id, input.ticketId));
+    .where(eq(tickets.id, input.ticketId))
+    // Lock the ticket so a concurrent reply/manual transition can't lost-update the
+    // status or double-bump reopen_count (P5) — the read-then-write below is now safe.
+    .for('update');
   if (!row) return { action: 'none' };
   const t = row as ReopenTicketRow;
 
@@ -138,6 +141,17 @@ export async function handleReplyTransition(
           await tx
             .insert(reopenNoticeLog)
             .values({ ticketId: input.ticketId, requesterEmail: t.requesterEmail });
+        } else {
+          // FR52 "contact HR" notice is always-on — a missing template must not be a
+          // silent no-op; leave an audit trail so the gap is visible (P7).
+          await writeAudit(tx, {
+            projectId: input.projectId,
+            actorLabel: 'system:intake',
+            action: 'reopen_locked_notice.template_missing',
+            objectType: 'ticket',
+            objectId: input.ticketId,
+            newValue: { requesterEmail: t.requesterEmail },
+          });
         }
       }
     }
@@ -193,7 +207,7 @@ export async function handleReplyTransition(
     // Assignee still owns it → Closed → In Progress, keep them, notify per-reopen.
     await tx
       .update(tickets)
-      .set({ status: 'in_progress', reopenCount, lastOpenedAt: now })
+      .set({ status: 'in_progress', reopenCount, lastOpenedAt: now, closedAt: null })
       .where(eq(tickets.id, input.ticketId));
     await notify(tx, t.assigneeId!, 'ticket_reopened', {
       ticketId: input.ticketId,
@@ -230,7 +244,14 @@ export async function handleReplyTransition(
     // ticket (party-mode M2/M9). Notify the whole group NOW (FR51/C5), not via digest.
     await tx
       .update(tickets)
-      .set({ status: 'open', assigneeId: null, assignedAt: null, reopenCount, lastOpenedAt: now })
+      .set({
+        status: 'open',
+        assigneeId: null,
+        assignedAt: null,
+        reopenCount,
+        lastOpenedAt: now,
+        closedAt: null,
+      })
       .where(eq(tickets.id, input.ticketId));
     if (t.categoryId !== null) {
       const members = await tx
