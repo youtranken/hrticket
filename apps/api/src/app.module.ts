@@ -6,10 +6,21 @@ import { AuthModule } from './modules/auth/auth.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { FilesModule } from './modules/files/files.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
+import { UsersModule } from './modules/users/users.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
-  imports: [CoreModule, HealthModule, AuthModule, TicketsModule, FilesModule, MonitorModule],
+  imports: [
+    CoreModule,
+    HealthModule,
+    AuthModule,
+    TicketsModule,
+    FilesModule,
+    MonitorModule,
+    UsersModule,
+    AdminModule,
+  ],
   controllers: [AppController],
 })
 export class AppModule {}

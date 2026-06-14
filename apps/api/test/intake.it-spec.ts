@@ -102,11 +102,13 @@ describe('IT-INTAKE: create ticket from mail', () => {
     expect(t.assigneeId).toBeNull();
     expect(t.ticketCode).toBe('#00001');
     expect(t.requesterEmail).toBe('a@x.com');
-    const other = (await harness!.db
+    // Classification is now live (Story 4.1): "nghỉ phép" routes to Leave, not the
+    // old "always Other" stub. Ticket is still pooled (assignee null) until 4.2.
+    const leave = (await harness!.db
       .select({ id: categories.id })
       .from(categories)
-      .where(and(eq(categories.projectId, HRIS), eq(categories.isSystem, true))))[0]!;
-    expect(t.categoryId).toBe(other.id);
+      .where(and(eq(categories.projectId, HRIS), eq(categories.nameEn, 'Leave'))))[0]!;
+    expect(t.categoryId).toBe(leave.id);
 
     const msgs = await harness!.db
       .select()

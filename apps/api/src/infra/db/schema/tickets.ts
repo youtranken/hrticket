@@ -34,6 +34,9 @@ export const tickets = pgTable(
     categoryId: integer('category_id').references(() => categories.id),
     status: ticketStatusEnum('status').notNull().default('open'),
     assigneeId: uuid('assignee_id').references(() => users.id),
+    // When the current assignee was set (auto-assign/claim/manual). Drives the
+    // least-load tie-break (FR26 party-mode A10: longest-idle wins) + reporting.
+    assignedAt: timestamp('assigned_at', { withTimezone: true }),
     reopenCount: integer('reopen_count').notNull().default(0),
     reopenLocked: boolean('reopen_locked').notNull().default(false),
     isJunk: boolean('is_junk').notNull().default(false),
@@ -122,6 +125,23 @@ export const ticketTags = pgTable(
       .references(() => tags.id),
   },
   (t) => [primaryKey({ columns: [t.ticketId, t.tagId] })],
+);
+
+/** Keyword rules that auto-apply a tag — used for priority tagging (FR32). Same
+ *  shape as category_keywords; CRUD on the admin Tag tab (Story 4.6). */
+export const tagKeywords = pgTable(
+  'tag_keywords',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    tagId: integer('tag_id')
+      .notNull()
+      .references(() => tags.id),
+    keyword: text('keyword').notNull(),
+  },
+  (t) => [
+    index('idx_tag_keywords_tag').on(t.tagId),
+    unique('uq_tag_keyword').on(t.tagId, t.keyword),
+  ],
 );
 
 /** Links two tickets, e.g. cross-post pair (FR17). */

@@ -66,6 +66,11 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 - Signed file URL cần **cả session + RLS**, không chỉ chữ ký (copy URL sang trình duyệt chưa login phải 401). Render HTML **in-DOM, KHÔNG iframe sandbox** (origin opaque → ảnh cid signed mất cookie → 401).
 - `*.it-spec` dọn bảng theo thứ tự **con→cha** (FK: `inbox_messages`/`outbox`/`ticket_messages` → `tickets`). GreenMail `withStartupTimeout` cao (compose chạy song song làm Docker bind port chậm → suite skip nhầm `ready=false`).
 - Cột thêm bằng custom-SQL / migration viết tay (vd `attachments.content_id`) mà cũng khai trong Drizzle schema → `db:generate` về sau dễ sinh migration trùng; nhớ resnapshot khi generate.
+- Classify = substring `position(f_unaccent(lower(kw)) IN f_unaccent(lower(subject||body))) > 0`; **1 khớp → category đó, nhiều/không khớp → "Khác"**. Keyword seed phải đặc trưng (từ ngắn như "ot" nuốt nhầm).
+- Auto-assign **khóa `assign_cursors` FOR UPDATE đầu tx** → mutex per-category cho CẢ round-robin LẪN least-load (chống TOCTOU/double-assign). Least-load đếm `Open/Assigned/In Progress` (không Pending/Closed); hòa → `max(assigned_at)` asc (null trước) → user_id. "Đang vắng" = `(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date BETWEEN away_from AND away_to` tính LÚC ĐỌC (không job flip).
+- Claim mặc định **pool-only** (atomic `WHERE assignee IS NULL AND status='open'`, 0 dòng → 409). Claim-over là chủ ý TƯỜNG MINH `{over:true}` (`WHERE assignee_id=<holder>`) — đừng auto-fallback, không thì kẻ thua race AC1 lại âm thầm cướp ticket.
+- Gán thủ công BỎ QUA vắng mặt + target `disabled` → 422; re-classify "Khác" theo nhóm người nhận (1→set, n→`needsCategory` bắt chọn, 0→giữ) là bước SAU claim trong cùng flow (không phá atomic).
+- **e2e tiêu đề mail dùng ASCII** — dấu tiếng Việt bị chuẩn hóa lại (NFC/NFD) qua MIME round-trip nên `getByText` trượt; classify bỏ dấu nên ASCII vẫn về đúng nhóm. Bảng ticket nhiều cột phải đặt `width` cho cột subject + `scroll={{x}}` nếu không cột flex co về 0 (Playwright coi là hidden).
 
 ## Vai trò tài liệu (một sự thật, một nhà)
 - `architecture.md` = **tại sao** (quyết định + Post-Review Amendments A–E).

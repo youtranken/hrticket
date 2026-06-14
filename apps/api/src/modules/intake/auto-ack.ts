@@ -1,6 +1,17 @@
+import { createHash } from 'node:crypto';
 import type { DbTx } from '../../infra/db/with-actor';
 import { loadTemplate, renderTemplate } from '../email-engine/templates';
 import { sendOutboundMail } from '../tickets/send-mail.usecase';
+
+/** Stable UUID derived from a name (v5-shaped) — lets the auto-ack carry a
+ *  deterministic outbox idempotency key so a re-enqueue collapses to one row. */
+function deterministicUuid(name: string): string {
+  const h = createHash('sha256').update(name).digest();
+  h[6] = (h[6]! & 0x0f) | 0x50; // version
+  h[8] = (h[8]! & 0x3f) | 0x80; // variant
+  const x = h.toString('hex');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
+}
 
 export interface AutoAckInput {
   projectId: number;
@@ -53,8 +64,8 @@ export async function enqueueAutoAck(tx: DbTx, input: AutoAckInput): Promise<voi
     references: input.inboundMessageId,
     isAutoReply: true,
     autoSubmitted: true,
-    // No explicit idempotency key needed: the ack is enqueued in the SAME tx as
-    // ticket creation, and the replay guard (inbox_messages.ticket_id) stops the
-    // ticket — and thus the ack — from being produced twice.
+    // Deterministic key (1 ack per ticket): the inbox replay guard already prevents
+    // a double ack, this makes the outbox layer itself idempotent as defence-in-depth.
+    idempotencyKey: deterministicUuid(`auto_ack:${input.ticketId}`),
   });
 }

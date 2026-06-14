@@ -1,8 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
-import { ticketMessages, participants, inboxMessages } from '../../infra/db/schema';
+import { ticketMessages, participants, attachments, inboxMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { ingestAttachments } from './attachments';
+import { applyAutoTags } from '../routing/auto-tag.service';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import type { ParsedMail } from '../email-engine/parser';
 
@@ -79,6 +80,24 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
       strangers.push(email);
     }
   }
+
+  // Auto-tag the ticket from this message's signals (FR33): an auto-reply in the
+  // thread, or a freshly-stored attachment. Idempotent (onConflictDoNothing).
+  const [hasStored] = await tx
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(and(eq(attachments.ticketId, ticketId), eq(attachments.status, 'stored')))
+    .limit(1);
+  await applyAutoTags(tx, {
+    projectId: input.projectId,
+    ticketId,
+    subject: parsed.subject,
+    body: parsed.bodyText,
+    signals: {
+      hasStoredAttachment: !!hasStored,
+      isAutoReply: input.isAutoReply ?? false,
+    },
+  });
 
   await tx
     .update(inboxMessages)

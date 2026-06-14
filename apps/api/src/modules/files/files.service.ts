@@ -23,7 +23,7 @@ export class FilesService {
    * absent). A copied URL opened logged-out fails the session gate → 401 (AC2).
    */
   async serve(user: SessionUser, id: string, token: string): Promise<FilePayload> {
-    if (!token || !verifyFileToken(id, token)) {
+    if (!token || !verifyFileToken(id, user.id, token)) {
       throw new ForbiddenException('Invalid or expired file token');
     }
     const actor = await actorForUser(user);

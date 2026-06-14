@@ -78,7 +78,7 @@ describe('IT-UPLOAD/FILES: upload gates + signed serve', () => {
     expect(res.status).toBe('stored');
     expect(res.mimeType).toBe('application/pdf');
 
-    const served = await files.serve(ssa, res.id, signFileToken(res.id));
+    const served = await files.serve(ssa, res.id, signFileToken(res.id, ssa.id));
     expect(served.fileName).toBe('payslip.pdf');
     expect(served.buffer.equals(PDF)).toBe(true);
   });
@@ -109,7 +109,7 @@ describe('IT-UPLOAD/FILES: upload gates + signed serve', () => {
     if (!ready) return;
     const res = await uploads.store(ssa, ticketId, { fileName: 'x.pdf', content: PDF });
     await expect(files.serve(ssa, res.id, 'not-a-valid-token')).rejects.toMatchObject({ status: 403 });
-    const expired = signFileToken(res.id, Date.now() - FILE_TOKEN_TTL_MS - 1000);
+    const expired = signFileToken(res.id, ssa.id, Date.now() - FILE_TOKEN_TTL_MS - 1000);
     await expect(files.serve(ssa, res.id, expired)).rejects.toMatchObject({ status: 403 });
   });
 });

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
-import { userGroupMembership, roleCapabilities } from '../../infra/db/schema';
+import { userGroupMembership, roleCapabilities, users } from '../../infra/db/schema';
 import type { SessionUser } from './session.service';
 import { ProjectContextService, type ProjectRef } from './project-context.service';
 
@@ -14,6 +14,7 @@ export interface MePayload {
   groups: number[];
   capabilities: string[];
   mustChangePassword: boolean;
+  availability: { awayFrom: string | null; awayTo: string | null };
 }
 
 @Injectable()
@@ -40,6 +41,11 @@ export class MeService {
         .from(roleCapabilities)
         .where(and(eq(roleCapabilities.role, u.role), eq(roleCapabilities.allowed, true)));
 
+      const [av] = await tx
+        .select({ awayFrom: users.awayFrom, awayTo: users.awayTo })
+        .from(users)
+        .where(eq(users.id, u.id));
+
       return {
         user: { id: u.id, email: u.email, name: u.name },
         role: u.role,
@@ -49,6 +55,7 @@ export class MeService {
         groups: groupRows.map((g) => g.categoryId),
         capabilities: capRows.map((c) => c.capability),
         mustChangePassword: u.mustChangePassword,
+        availability: { awayFrom: av?.awayFrom ?? null, awayTo: av?.awayTo ?? null },
       };
     });
   }

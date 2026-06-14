@@ -87,7 +87,11 @@ export const categoryKeywords = pgTable(
       .references(() => categories.id),
     keyword: text('keyword').notNull(),
   },
-  (t) => [index('idx_category_keywords_cat').on(t.categoryId)],
+  (t) => [
+    index('idx_category_keywords_cat').on(t.categoryId),
+    // Real conflict target so re-seed / re-add is idempotent (CLAUDE.md pitfall).
+    unique('uq_category_keyword').on(t.categoryId, t.keyword),
+  ],
 );
 
 /** User ↔ category membership (FR58). 1 user belongs to n categories. */

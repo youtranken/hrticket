@@ -1,4 +1,5 @@
 import * as argon2 from 'argon2';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, sql } from './db';
 import * as s from './schema';
 
@@ -9,15 +10,33 @@ import * as s from './schema';
  * Re-running does not duplicate (ON CONFLICT DO NOTHING).
  */
 
-const DEFAULT_CATEGORIES: Array<{ vi: string; en: string; system?: boolean; sensitive?: boolean }> =
-  [
-    { vi: 'Chấm công', en: 'Attendance' },
-    { vi: 'Nghỉ phép', en: 'Leave' },
-    { vi: 'OT', en: 'Overtime' },
-    { vi: 'Lương', en: 'Payroll', sensitive: true },
-    { vi: 'Bảo hiểm', en: 'Insurance', sensitive: true },
-    { vi: 'Khác', en: 'Other', system: true },
-  ];
+const DEFAULT_CATEGORIES: Array<{
+  vi: string;
+  en: string;
+  system?: boolean;
+  sensitive?: boolean;
+  keywords?: string[];
+}> = [
+  // Keywords are matched accent- + case-insensitively (f_unaccent) as substrings,
+  // so they stay distinctive to avoid cross-category false positives (Story 4.1).
+  { vi: 'Chấm công', en: 'Attendance', keywords: ['chấm công', 'timesheet', 'đi trễ'] },
+  { vi: 'Nghỉ phép', en: 'Leave', keywords: ['nghỉ phép', 'annual leave'] },
+  { vi: 'OT', en: 'Overtime', keywords: ['tăng ca', 'overtime', 'làm thêm giờ'] },
+  { vi: 'Lương', en: 'Payroll', sensitive: true, keywords: ['lương', 'payroll', 'bảng lương', 'salary'] },
+  { vi: 'Bảo hiểm', en: 'Insurance', sensitive: true, keywords: ['bảo hiểm', 'bhxh', 'bhyt', 'insurance'] },
+  { vi: 'Khác', en: 'Other', system: true },
+];
+
+// System auto-tags (FR33) + a default priority tag with keyword rules (FR32).
+// Tag names are DATA, so Vietnamese is allowed here (unlike code/i18n keys).
+const AUTO_TAGS: Array<{ name: string; color: string }> = [
+  { name: 'Attachment', color: '#fa8c16' },
+  { name: 'Cross-post', color: '#fa8c16' },
+  { name: 'Auto-reply', color: '#fa8c16' },
+];
+const PRIORITY_TAGS: Array<{ name: string; color: string; keywords: string[] }> = [
+  { name: 'Ưu tiên cao', color: '#f5222d', keywords: ['khẩn', 'gấp', 'urgent'] },
+];
 
 // Bilingual email templates (FR10/FR53). Placeholders: {{ticketCode}} {{subject}}
 // {{requesterName}}. Seeded per project; SSA edits wording at runtime (Epic 6/11).
@@ -96,6 +115,47 @@ export async function seedOnce(): Promise<void> {
           })
           .onConflictDoNothing({ target: [s.categories.projectId, s.categories.nameEn] });
       }
+      // Classification keywords (FR21) — id needed, so re-read the categories.
+      const catRows = await tx
+        .select({ id: s.categories.id, nameEn: s.categories.nameEn })
+        .from(s.categories)
+        .where(eq(s.categories.projectId, proj.id));
+      const catByEn = new Map(catRows.map((r) => [r.nameEn, r.id]));
+      for (const c of DEFAULT_CATEGORIES) {
+        const catId = catByEn.get(c.en);
+        if (!catId || !c.keywords) continue;
+        for (const kw of c.keywords) {
+          await tx
+            .insert(s.categoryKeywords)
+            .values({ categoryId: catId, keyword: kw })
+            .onConflictDoNothing({ target: [s.categoryKeywords.categoryId, s.categoryKeywords.keyword] });
+        }
+      }
+      // Auto-tags (FR33) + priority tags with keyword rules (FR32).
+      for (const tg of AUTO_TAGS) {
+        await tx
+          .insert(s.tags)
+          .values({ projectId: proj.id, name: tg.name, kind: 'auto', color: tg.color })
+          .onConflictDoNothing({ target: [s.tags.projectId, s.tags.name] });
+      }
+      for (const tg of PRIORITY_TAGS) {
+        await tx
+          .insert(s.tags)
+          .values({ projectId: proj.id, name: tg.name, kind: 'priority', color: tg.color })
+          .onConflictDoNothing({ target: [s.tags.projectId, s.tags.name] });
+        const [row] = await tx
+          .select({ id: s.tags.id })
+          .from(s.tags)
+          .where(and(eq(s.tags.projectId, proj.id), eq(s.tags.name, tg.name)));
+        if (row) {
+          for (const kw of tg.keywords) {
+            await tx
+              .insert(s.tagKeywords)
+              .values({ tagId: row.id, keyword: kw })
+              .onConflictDoNothing({ target: [s.tagKeywords.tagId, s.tagKeywords.keyword] });
+          }
+        }
+      }
       // Counters / config / settings
       await tx
         .insert(s.projectCounters)
@@ -169,6 +229,53 @@ export async function seedOnce(): Promise<void> {
             mustChangePassword: false,
           })
           .onConflictDoNothing({ target: s.users.email });
+      }
+
+      // Wire dev users into category groups + an auto-assign roster so Epic 4 flows
+      // (auto-assign, pool/claim, manual assign) have realistic data on a fresh seed.
+      const devRows = await tx
+        .select({ id: s.users.id, email: s.users.email })
+        .from(s.users)
+        .where(inArray(s.users.email, devUsers.map((u) => u.email)));
+      const byEmail = new Map(devRows.map((u) => [u.email, u.id]));
+      const hrisId = byKey.get('hris')!;
+      const hrisCats = await tx
+        .select({ id: s.categories.id, nameEn: s.categories.nameEn })
+        .from(s.categories)
+        .where(eq(s.categories.projectId, hrisId));
+      const Payroll = hrisCats.find((c) => c.nameEn === 'Payroll')?.id;
+      const Leave = hrisCats.find((c) => c.nameEn === 'Leave')?.id;
+      const memberId = byEmail.get('member@dev.local');
+      const leadId = byEmail.get('lead@dev.local');
+      if (Payroll && Leave && memberId && leadId) {
+        for (const cat of [Payroll, Leave]) {
+          for (const uid of [memberId, leadId]) {
+            await tx
+              .insert(s.userGroupMembership)
+              .values({ userId: uid, categoryId: cat })
+              .onConflictDoNothing();
+          }
+        }
+        // Payroll → round-robin [lead, member]; Leave is left config-less → pooled
+        // (so the "Pool nhóm" + claim flow has tickets to act on).
+        await tx
+          .insert(s.autoAssignConfig)
+          .values({ categoryId: Payroll, strategy: 'round_robin' })
+          .onConflictDoNothing({ target: s.autoAssignConfig.categoryId });
+        const [cfg] = await tx
+          .select({ id: s.autoAssignConfig.id })
+          .from(s.autoAssignConfig)
+          .where(eq(s.autoAssignConfig.categoryId, Payroll));
+        if (cfg) {
+          await tx
+            .insert(s.autoAssignMembers)
+            .values({ configId: cfg.id, userId: leadId, position: 0 })
+            .onConflictDoNothing();
+          await tx
+            .insert(s.autoAssignMembers)
+            .values({ configId: cfg.id, userId: memberId, position: 1 })
+            .onConflictDoNothing();
+        }
       }
     }
   });

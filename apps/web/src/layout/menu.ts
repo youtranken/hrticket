@@ -14,6 +14,7 @@ export function menuForRole(me: Me): MenuEntry[] {
   const member: MenuEntry[] = [
     { key: 'inbox', path: '/inbox', labelKey: 'menu.inbox' },
     { key: 'my', path: '/my-tickets', labelKey: 'menu.myTickets' },
+    { key: 'pool', path: '/pool', labelKey: 'menu.pool' },
     { key: 'pending', path: '/pending', labelKey: 'menu.pending' },
   ];
   const teamLead: MenuEntry[] = [
@@ -21,6 +22,7 @@ export function menuForRole(me: Me): MenuEntry[] {
     { key: 'audit', path: '/audit', labelKey: 'menu.audit' },
   ];
   const admin: MenuEntry[] = [
+    { key: 'categories', path: '/admin/categories', labelKey: 'menu.categories' },
     { key: 'junk', path: '/junk', labelKey: 'menu.junk' },
     { key: 'users', path: '/admin/users', labelKey: 'menu.users' },
     { key: 'settings', path: '/admin/settings', labelKey: 'menu.settings' },

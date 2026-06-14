@@ -6,6 +6,8 @@ import { useTicket, useApproveParticipant, displayCode } from '../../lib/tickets
 import { StatusTag } from '../../components/StatusTag';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { ComposeBox } from './ComposeBox';
+import { AssignControls } from './AssignControls';
+import { TagEditor } from './TagEditor';
 import i18n from '../../i18n';
 
 const { Title, Text } = Typography;
@@ -61,13 +63,10 @@ export function TicketDetailPage() {
             </Descriptions.Item>
             <Descriptions.Item label={t('ticket.time')}>{vnTime(ticket.createdAt)}</Descriptions.Item>
             <Descriptions.Item label={t('ticket.tags')}>
-              {tags.map((tg) => (
-                <Tag key={tg.name} color={tg.color ?? 'default'}>
-                  {tg.name}
-                </Tag>
-              ))}
+              <TagEditor ticketId={ticket.id} tags={tags} />
             </Descriptions.Item>
           </Descriptions>
+          <AssignControls ticket={ticket} />
           {links.length > 0 && (
             <Space wrap>
               <Text type="secondary">{t('ticket.crossPost')}:</Text>

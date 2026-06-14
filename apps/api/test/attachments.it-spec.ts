@@ -17,6 +17,7 @@ import {
   attachments,
   projectCounters,
   outbox,
+  ticketTags,
 } from '../src/infra/db/schema';
 
 interface Att {
@@ -76,6 +77,7 @@ describe('IT-FILE: attachment ingest', () => {
       await harness!.db.delete(ticketMessages);
       await harness!.db.delete(inboxMessages);
       await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
+      await harness!.db.delete(ticketTags); // Epic 4 auto-tags FK→tickets
       await harness!.db.delete(tickets);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
     }

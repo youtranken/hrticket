@@ -17,6 +17,7 @@ export interface Me {
   groups: number[];
   capabilities: string[];
   mustChangePassword: boolean;
+  availability: { awayFrom: string | null; awayTo: string | null };
 }
 
 /** Loads the current user; null when unauthenticated. */

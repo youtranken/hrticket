@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
 import { tickets, ticketMessages, participants } from '../../infra/db/schema';
 import type { ParsedMail } from './parser';
@@ -38,6 +38,8 @@ export async function findThread(
       .from(ticketMessages)
       .innerJoin(tickets, eq(tickets.id, ticketMessages.ticketId))
       .where(and(inArray(ticketMessages.messageId, refIds), eq(tickets.projectId, projectId)))
+      // Deterministic when a References chain spans >1 ticket: oldest = thread root.
+      .orderBy(asc(ticketMessages.createdAt))
       .limit(1);
     if (hit) return { ticketId: hit.ticketId, status: hit.status };
   }

@@ -5,6 +5,7 @@ import { Layout, Menu, Dropdown, Segmented, Button, Tag, Select, App as AntApp }
 import { useMe, logout } from '../lib/auth';
 import { setActiveProject } from '../lib/activeProject';
 import { menuForRole } from './menu';
+import { AvailabilityMenu } from '../features/profile/AvailabilityMenu';
 import { setLanguage } from '../i18n';
 import i18n from '../i18n';
 
@@ -62,6 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label={t('header.project')}
             />
           )}
+          <AvailabilityMenu />
           <Tag color="blue">{me.role.toUpperCase()}</Tag>
           <Segmented
             size="small"

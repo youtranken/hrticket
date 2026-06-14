@@ -46,14 +46,17 @@ export class IntakeService {
   }
 
   /** Claims and processes a single received message. Returns false when the queue is empty. */
-  private async processOne(now = new Date()): Promise<boolean> {
+  private async processOne(): Promise<boolean> {
     let claimed: ClaimedInbox | null = null;
     try {
       return await withActor(systemActor, async (tx) => {
         const [row] = await tx
           .select()
           .from(inboxMessages)
-          .where(and(eq(inboxMessages.status, 'received'), lte(inboxMessages.nextAttemptAt, now)))
+          // Compare against DB now() (NOT a JS Date): next_attempt_at defaults to DB
+          // now(), and the test Postgres (Docker VM) clock can run ahead of the host's,
+          // which would skip a just-seeded row and wedge intake.
+          .where(and(eq(inboxMessages.status, 'received'), lte(inboxMessages.nextAttemptAt, sql`now()`)))
           .orderBy(asc(inboxMessages.createdAt))
           .limit(1)
           .for('update', { skipLocked: true });

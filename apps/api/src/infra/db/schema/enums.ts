@@ -61,6 +61,7 @@ export const attachmentStatusEnum = pgEnum('attachment_status', [
 
 /** Tag kind. */
 export const tagKindEnum = pgEnum('tag_kind', ['manual', 'auto', 'priority']);
+export type TagKind = (typeof tagKindEnum.enumValues)[number];
 
 /** Draft kind (party-mode — reply vs note draft are independent). */
 export const draftKindEnum = pgEnum('draft_kind', ['reply', 'note']);

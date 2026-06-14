@@ -8,7 +8,8 @@ import { ResetPage } from './features/auth/ResetPage';
 import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
-import { InboxPage } from './features/inbox/InboxPage';
+import { CategoriesPage } from './features/admin/CategoriesPage';
+import { InboxPage, MyTicketsPage, PoolPage } from './features/inbox/InboxPage';
 import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
 import { Placeholder, ForbiddenPage } from './components/Placeholder';
@@ -37,7 +38,8 @@ function ProtectedApp() {
         <Route index element={<Navigate to="/inbox" replace />} />
         <Route path="inbox" element={<InboxPage />} />
         <Route path="tickets/:id" element={<TicketDetailPage />} />
-        <Route path="my-tickets" element={<Placeholder titleKey="menu.myTickets" />} />
+        <Route path="my-tickets" element={<MyTicketsPage />} />
+        <Route path="pool" element={<PoolPage />} />
         <Route path="pending" element={<Placeholder titleKey="menu.pending" />} />
         <Route
           path="reports"
@@ -60,6 +62,14 @@ function ProtectedApp() {
           element={
             <RequireRole roles={admin} me={me}>
               <Placeholder titleKey="menu.junk" />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/categories"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <CategoriesPage />
             </RequireRole>
           }
         />

@@ -10,6 +10,7 @@ const base: Omit<Me, 'role'> = {
   groups: [],
   capabilities: [],
   mustChangePassword: false,
+  availability: { awayFrom: null, awayTo: null },
 };
 
 function keys(role: Me['role']): string[] {
@@ -17,8 +18,8 @@ function keys(role: Me['role']): string[] {
 }
 
 describe('menuForRole (Story 1.8 — sidebar by role)', () => {
-  it('member sees only inbox/my/pending', () => {
-    expect(keys('member')).toEqual(['inbox', 'my', 'pending']);
+  it('member sees inbox/my/pool/pending', () => {
+    expect(keys('member')).toEqual(['inbox', 'my', 'pool', 'pending']);
   });
   it('team_lead adds reports + audit', () => {
     expect(keys('team_lead')).toContain('reports');

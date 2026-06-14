@@ -31,6 +31,8 @@ export class AdminUsersController {
           role: users.role,
           disabled: users.disabled,
           projectId: users.projectId,
+          awayFrom: users.awayFrom,
+          awayTo: users.awayTo,
         })
         .from(users)
         .where(

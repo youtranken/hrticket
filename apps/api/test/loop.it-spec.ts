@@ -13,6 +13,7 @@ import {
   ticketLink,
   projectCounters,
   outbox,
+  tagKeywords,
 } from '../src/infra/db/schema';
 
 /**
@@ -52,6 +53,7 @@ describe('IT-LOOP: anti mail-loop + cross-post', () => {
       await harness!.db.delete(inboxMessages);
       await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
       await harness!.db.delete(tickets);
+      await harness!.db.delete(tagKeywords); // Epic 4 classify rules FK→tags
       await harness!.db.delete(tags);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
     }

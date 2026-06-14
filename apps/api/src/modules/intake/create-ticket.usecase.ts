@@ -1,16 +1,13 @@
 import { and, eq } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
-import {
-  tickets,
-  ticketMessages,
-  participants,
-  categories,
-  inboxMessages,
-} from '../../infra/db/schema';
+import { tickets, ticketMessages, participants, attachments, inboxMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { nextTicketCode } from '../tickets/ticket-code';
 import { ingestAttachments } from './attachments';
 import { enqueueAutoAck } from './auto-ack';
+import { classifyTicket } from '../routing/classify.service';
+import { applyAutoTags } from '../routing/auto-tag.service';
+import { autoAssign } from '../routing/auto-assign.service';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import type { ParsedMail } from '../email-engine/parser';
 
@@ -33,28 +30,20 @@ export interface CreateTicketResult {
   messageId: string;
 }
 
-/** "Khác"/Other is the seeded system category — every new ticket lands here until
- *  real classification (Epic 4); routing here is the FR18 stub "always Other + pool". */
-async function otherCategoryId(tx: DbTx, projectId: number): Promise<number> {
-  const [row] = await tx
-    .select({ id: categories.id })
-    .from(categories)
-    .where(and(eq(categories.projectId, projectId), eq(categories.isSystem, true)));
-  return row!.id;
-}
-
 /**
  * Create a brand-new ticket from a parsed mail — ALL in the caller's transaction:
- * atomic ticket code, ticket (Open, Other category, pooled), the inbound message
- * with full metadata + raw, participants (From + CC active), audit, and flip the
- * inbox row to processed. Routing (classify + auto-assign) is a stub until Epic 4.
+ * atomic ticket code, keyword classification (Story 4.1), the ticket (Open, pooled
+ * — auto-assign is Story 4.2), the inbound message with full metadata + raw,
+ * participants (From + CC active), auto-tags, audit, and flip the inbox row to
+ * processed.
  */
 export async function createTicketFromMail(
   tx: DbTx,
   input: CreateTicketInput,
 ): Promise<CreateTicketResult> {
   const { projectId, mailbox, parsed } = input;
-  const categoryId = await otherCategoryId(tx, projectId);
+  const classified = await classifyTicket(tx, projectId, parsed.subject, parsed.bodyText);
+  const categoryId = classified.categoryId;
   const ticketCode = await nextTicketCode(tx, projectId);
   const requesterEmail = parsed.from?.address ?? 'unknown@unknown';
   const createdAt = input.createdAt ?? new Date();
@@ -120,6 +109,28 @@ export async function createTicketFromMail(
       .onConflictDoNothing({ target: [participants.ticketId, participants.email] });
   }
 
+  // Auto-tag (FR32/FR33): a stored attachment, an auto-reply message, priority
+  // keyword rules. Cross-post is tagged later by linkCrossPost (intake orchestrator).
+  const [hasStored] = await tx
+    .select({ id: attachments.id })
+    .from(attachments)
+    .where(and(eq(attachments.ticketId, ticketId), eq(attachments.status, 'stored')))
+    .limit(1);
+  await applyAutoTags(tx, {
+    projectId,
+    ticketId,
+    subject: parsed.subject,
+    body: parsed.bodyText,
+    signals: {
+      hasStoredAttachment: !!hasStored,
+      isAutoReply: input.isAutoReply ?? false,
+    },
+  });
+
+  // Auto-assign (Story 4.2) in the SAME tx: round-robin / least-load over the
+  // category roster, skipping away members. "Khác", no config, or all-away → pool.
+  await autoAssign(tx, { projectId, ticketId, ticketCode, categoryId });
+
   await tx
     .update(inboxMessages)
     .set({ status: 'processed', ticketId })
@@ -131,7 +142,14 @@ export async function createTicketFromMail(
     action: 'ticket.created_from_email',
     objectType: 'ticket',
     objectId: ticketId,
-    newValue: { ticketCode, requesterEmail, mailbox },
+    newValue: {
+      ticketCode,
+      requesterEmail,
+      mailbox,
+      categoryId,
+      classifyReason: classified.reason,
+      matchedKeywords: classified.matchedKeywords,
+    },
   });
 
   // Auto-ack the requester (FR10) — only for genuine NEW tickets. Auto-submitted

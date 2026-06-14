@@ -43,6 +43,13 @@
       "when": 1781412028271,
       "tag": "0005_simple_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781414793332,
+      "tag": "0006_nasty_changeling",
+      "breakpoints": true
     }
   ]
 }

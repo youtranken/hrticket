@@ -10,6 +10,10 @@ import { NotesService } from './notes.service';
 import { DraftsService } from './drafts.service';
 import { TicketAttachmentsController } from './ticket-attachments.controller';
 import { UploadService } from './upload.service';
+import { TicketTagsController } from './ticket-tags.controller';
+import { TicketTagsService } from './ticket-tags.service';
+import { AssignmentController } from './assignment.controller';
+import { AssignmentService } from './assignment.service';
 
 /**
  * HTTP module for ticket resources: list/detail (2.6) + participant approval (2.3)
@@ -22,6 +26,8 @@ import { UploadService } from './upload.service';
     ParticipantsController,
     ComposeController,
     TicketAttachmentsController,
+    TicketTagsController,
+    AssignmentController,
   ],
   providers: [
     ParticipantsService,
@@ -30,6 +36,8 @@ import { UploadService } from './upload.service';
     NotesService,
     DraftsService,
     UploadService,
+    TicketTagsService,
+    AssignmentService,
   ],
 })
 export class TicketsModule {}

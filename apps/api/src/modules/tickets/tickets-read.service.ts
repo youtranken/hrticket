@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { withActor } from '../../infra/db/with-actor';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   tickets,
   ticketMessages,
@@ -11,6 +12,7 @@ import {
   ticketLink,
   categories,
   projects,
+  users,
 } from '../../infra/db/schema';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
@@ -18,12 +20,19 @@ import { signedFileUrl } from '../../infra/crypto/signed-url';
 
 /** Replace the stable inline-image placeholders left by the sanitizer (3.7) with
  *  freshly-signed, short-lived URLs at READ time (a stored token would be stale). */
-function signInlineImages(html: string | null): string | null {
+function signInlineImages(html: string | null, userId: string): string | null {
   if (!html) return html;
   return html.replace(
     /\/api\/files\/([0-9a-fA-F-]{36})(?!\?)/g,
-    (_m, id: string) => signedFileUrl(id),
+    (_m, id: string) => signedFileUrl(id, userId),
   );
+}
+
+export interface TicketAssignee {
+  id: string;
+  name: string;
+  awayFrom: string | null;
+  awayTo: string | null;
 }
 
 export interface TicketListItem {
@@ -34,9 +43,12 @@ export interface TicketListItem {
   requesterEmail: string;
   status: string;
   category: { vi: string; en: string } | null;
+  assignee: TicketAssignee | null;
   tags: { name: string; color: string | null }[];
   createdAt: Date;
 }
+
+export type TicketView = 'all' | 'pool' | 'mine';
 
 export interface TicketListResult {
   items: TicketListItem[];
@@ -47,11 +59,26 @@ export interface TicketListResult {
 
 @Injectable()
 export class TicketsReadService {
-  /** Paginated, RLS-filtered ticket list (newest first). FR8. */
-  async list(user: SessionUser, page = 1, pageSize = 20): Promise<TicketListResult> {
+  /** Paginated, RLS-filtered ticket list (newest first). FR8. The `view` narrows to
+   *  the group pool (unassigned) or my own tickets (Story 4.4). */
+  async list(
+    user: SessionUser,
+    page = 1,
+    pageSize = 20,
+    view: TicketView = 'all',
+  ): Promise<TicketListResult> {
     const actor = await actorForUser(user);
     const offset = (page - 1) * pageSize;
+    const assignee = alias(users, 'assignee');
     return withActor(actor, async (tx) => {
+      // View filter rides on top of RLS (which already scopes visibility).
+      const filter: SQL | undefined =
+        view === 'pool'
+          ? and(isNull(tickets.assigneeId), eq(tickets.status, 'open'))
+          : view === 'mine'
+            ? eq(tickets.assigneeId, user.id)
+            : undefined;
+
       const rows = await tx
         .select({
           id: tickets.id,
@@ -62,16 +89,25 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          assigneeId: assignee.id,
+          assigneeName: assignee.name,
+          assigneeAwayFrom: assignee.awayFrom,
+          assigneeAwayTo: assignee.awayTo,
           createdAt: tickets.createdAt,
         })
         .from(tickets)
         .innerJoin(projects, eq(projects.id, tickets.projectId))
         .leftJoin(categories, eq(categories.id, tickets.categoryId))
+        .leftJoin(assignee, eq(assignee.id, tickets.assigneeId))
+        .where(filter)
         .orderBy(desc(tickets.createdAt))
         .limit(pageSize)
         .offset(offset);
 
-      const countRows = await tx.select({ count: sql<number>`count(*)::int` }).from(tickets);
+      const countRows = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(tickets)
+        .where(filter);
       const total = countRows[0]?.count ?? 0;
 
       const ids = rows.map((r) => r.id);
@@ -91,6 +127,14 @@ export class TicketsReadService {
         requesterEmail: r.requesterEmail,
         status: r.status,
         category: r.categoryVi ? { vi: r.categoryVi, en: r.categoryEn! } : null,
+        assignee: r.assigneeId
+          ? {
+              id: r.assigneeId,
+              name: r.assigneeName!,
+              awayFrom: r.assigneeAwayFrom,
+              awayTo: r.assigneeAwayTo,
+            }
+          : null,
         tags: tagRows.filter((t) => t.ticketId === r.id).map((t) => ({ name: t.name, color: t.color })),
         createdAt: r.createdAt,
       }));
@@ -104,6 +148,7 @@ export class TicketsReadService {
    *  sanitisation is Story 3.7). FR12/FR19. */
   async getDetail(user: SessionUser, id: string) {
     const actor = await actorForUser(user);
+    const assignee = alias(users, 'assignee');
     return withActor(actor, async (tx) => {
       const [t] = await tx
         .select({
@@ -116,11 +161,17 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categoryId: tickets.categoryId,
+          assigneeId: assignee.id,
+          assigneeName: assignee.name,
+          assigneeAwayFrom: assignee.awayFrom,
+          assigneeAwayTo: assignee.awayTo,
           createdAt: tickets.createdAt,
         })
         .from(tickets)
         .innerJoin(projects, eq(projects.id, tickets.projectId))
         .leftJoin(categories, eq(categories.id, tickets.categoryId))
+        .leftJoin(assignee, eq(assignee.id, tickets.assigneeId))
         .where(eq(tickets.id, id));
       if (!t) throw new NotFoundException('Ticket not found');
 
@@ -188,9 +239,18 @@ export class TicketsReadService {
           requesterEmail: t.requesterEmail,
           status: t.status,
           category: t.categoryVi ? { vi: t.categoryVi, en: t.categoryEn! } : null,
+          categoryId: t.categoryId,
+          assignee: t.assigneeId
+            ? {
+                id: t.assigneeId,
+                name: t.assigneeName!,
+                awayFrom: t.assigneeAwayFrom,
+                awayTo: t.assigneeAwayTo,
+              }
+            : null,
           createdAt: t.createdAt,
         },
-        messages: messages.map((m) => ({ ...m, bodyHtmlSafe: signInlineImages(m.bodyHtmlSafe) })),
+        messages: messages.map((m) => ({ ...m, bodyHtmlSafe: signInlineImages(m.bodyHtmlSafe, user.id) })),
         participants: ppl,
         tags: tg,
         attachments: att,

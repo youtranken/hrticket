@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './apiClient';
 
+export interface TicketAssignee {
+  id: string;
+  name: string;
+  awayFrom: string | null;
+  awayTo: string | null;
+}
+
 export interface TicketListItem {
   id: string;
   ticketCode: string;
@@ -9,9 +16,12 @@ export interface TicketListItem {
   requesterEmail: string;
   status: string;
   category: { vi: string; en: string } | null;
+  assignee: TicketAssignee | null;
   tags: { name: string; color: string | null }[];
   createdAt: string;
 }
+
+export type TicketView = 'all' | 'pool' | 'mine';
 
 export interface TicketListResult {
   items: TicketListItem[];
@@ -20,10 +30,10 @@ export interface TicketListResult {
   pageSize: number;
 }
 
-export function useTickets(page: number, pageSize: number) {
+export function useTickets(page: number, pageSize: number, view: TicketView = 'all') {
   return useQuery<TicketListResult>({
-    queryKey: ['tickets', page, pageSize],
-    queryFn: () => api(`/tickets?page=${page}&pageSize=${pageSize}`),
+    queryKey: ['tickets', page, pageSize, view],
+    queryFn: () => api(`/tickets?page=${page}&pageSize=${pageSize}&view=${view}`),
   });
 }
 
@@ -57,6 +67,8 @@ export interface TicketDetail {
     requesterEmail: string;
     status: string;
     category: { vi: string; en: string } | null;
+    categoryId: number | null;
+    assignee: TicketAssignee | null;
     createdAt: string;
   };
   messages: TicketMessage[];
@@ -191,4 +203,122 @@ export async function uploadAttachment(
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error((body.message as string) ?? 'Upload failed');
   return body as unknown as UploadedAttachment;
+}
+
+// ── Routing & assignment: claim (4.4) / assign + reclassify (4.5) / tags (4.1) ──
+
+export function useClaim(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ assigneeId: string; from: string | null }, Error, { over?: boolean }>({
+    mutationFn: (vars) =>
+      api(`/tickets/${ticketId}/claim`, { method: 'POST', body: JSON.stringify(vars) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export interface AssignableUser {
+  id: string;
+  name: string;
+  email: string;
+  awayFrom: string | null;
+  awayTo: string | null;
+}
+export function useAssignableUsers(ticketId: string, enabled: boolean) {
+  return useQuery<AssignableUser[]>({
+    queryKey: ['assignable-users', ticketId],
+    queryFn: () => api(`/tickets/${ticketId}/assignable-users`),
+    enabled,
+  });
+}
+
+export interface CategoryOption {
+  id: number;
+  nameVi: string;
+  nameEn: string;
+}
+export type AssignResponse =
+  | { assigneeId: string; categoryId: number | null }
+  | { needsCategory: true; options: CategoryOption[] };
+
+export function useAssign(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<AssignResponse, Error, { assigneeId: string; categoryId?: number }>({
+    mutationFn: (vars) =>
+      api(`/tickets/${ticketId}/assign`, { method: 'POST', body: JSON.stringify(vars) }),
+    onSuccess: (res) => {
+      if (!('needsCategory' in res)) {
+        qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+        qc.invalidateQueries({ queryKey: ['tickets'] });
+      }
+    },
+  });
+}
+
+export interface AssignCategory {
+  id: number;
+  nameVi: string;
+  nameEn: string;
+  isSystem: boolean;
+}
+export function useAssignCategories(ticketId: string, enabled: boolean) {
+  return useQuery<AssignCategory[]>({
+    queryKey: ['assign-categories', ticketId],
+    queryFn: () => api(`/tickets/${ticketId}/categories`),
+    enabled,
+  });
+}
+
+export function useChangeCategory(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ categoryId: number }, Error, { categoryId: number }>({
+    mutationFn: (vars) =>
+      api(`/tickets/${ticketId}/category`, { method: 'POST', body: JSON.stringify(vars) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export interface AvailableTag {
+  id: number;
+  name: string;
+  kind: string;
+  color: string | null;
+  applied: boolean;
+}
+export function useTicketTags(ticketId: string, enabled: boolean) {
+  return useQuery<AvailableTag[]>({
+    queryKey: ['ticket-tags', ticketId],
+    queryFn: () => api(`/tickets/${ticketId}/tags`),
+    enabled,
+  });
+}
+export function useToggleTag(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { tagId: number; on: boolean }>({
+    mutationFn: ({ tagId, on }) =>
+      on
+        ? api(`/tickets/${ticketId}/tags`, { method: 'POST', body: JSON.stringify({ tagId }) })
+        : api(`/tickets/${ticketId}/tags/${tagId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      qc.invalidateQueries({ queryKey: ['ticket-tags', ticketId] });
+    },
+  });
+}
+
+// ── Availability (4.3) ──────────────────────────────────────────────────────
+export function setMyAvailability(awayFrom: string | null, awayTo: string | null): Promise<unknown> {
+  return api('/me/availability', { method: 'PATCH', body: JSON.stringify({ awayFrom, awayTo }) });
+}
+
+/** Is this away window active on the given (or current) VN date? */
+export function isAwayNow(awayFrom: string | null, awayTo: string | null): boolean {
+  if (!awayFrom) return false;
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+  return today >= awayFrom && (awayTo === null || today <= awayTo);
 }

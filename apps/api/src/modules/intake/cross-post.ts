@@ -1,30 +1,10 @@
 import { and, eq, ne, or, isNotNull } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
-import { inboxMessages, tags, ticketTags, ticketLink } from '../../infra/db/schema';
+import { inboxMessages, ticketLink } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
+import { AUTO_TAG, ensureTag, addTicketTag } from '../routing/auto-tag.service';
 
-const CROSS_POST_TAG = 'Cross-post';
-
-async function getOrCreateTag(tx: DbTx, projectId: number, name: string): Promise<number> {
-  const [existing] = await tx
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.projectId, projectId), eq(tags.name, name)));
-  if (existing) return existing.id;
-  await tx
-    .insert(tags)
-    .values({ projectId, name, kind: 'auto', color: '#fa8c16' })
-    .onConflictDoNothing({ target: [tags.projectId, tags.name] });
-  const [row] = await tx
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.projectId, projectId), eq(tags.name, name)));
-  return row!.id;
-}
-
-async function tagTicket(tx: DbTx, ticketId: string, tagId: number): Promise<void> {
-  await tx.insert(ticketTags).values({ ticketId, tagId }).onConflictDoNothing();
-}
+const CROSS_POST_TAG = AUTO_TAG.crossPost;
 
 /**
  * Cross-post (FR17): the same Message-ID delivered to BOTH mailboxes yields one
@@ -49,8 +29,8 @@ export async function linkCrossPost(
   for (const sib of siblings) {
     if (!sib.ticketId) continue;
 
-    await tagTicket(tx, opts.ticketId, await getOrCreateTag(tx, opts.projectId, CROSS_POST_TAG));
-    await tagTicket(tx, sib.ticketId, await getOrCreateTag(tx, sib.projectId, CROSS_POST_TAG));
+    await addTicketTag(tx, opts.ticketId, await ensureTag(tx, opts.projectId, CROSS_POST_TAG));
+    await addTicketTag(tx, sib.ticketId, await ensureTag(tx, sib.projectId, CROSS_POST_TAG));
 
     const [exists] = await tx
       .select({ id: ticketLink.id })
