@@ -19,6 +19,42 @@ const DEFAULT_CATEGORIES: Array<{ vi: string; en: string; system?: boolean; sens
     { vi: 'Khác', en: 'Other', system: true },
   ];
 
+// Bilingual email templates (FR10/FR53). Placeholders: {{ticketCode}} {{subject}}
+// {{requesterName}}. Seeded per project; SSA edits wording at runtime (Epic 6/11).
+const TEMPLATES: Array<{
+  key: string;
+  subjectVi: string;
+  subjectEn: string;
+  bodyVi: string;
+  bodyEn: string;
+}> = [
+  {
+    key: 'auto_ack',
+    subjectVi: '[{{ticketCode}}] Đã tiếp nhận yêu cầu của bạn',
+    subjectEn: '[{{ticketCode}}] We have received your request',
+    bodyVi:
+      'Chào {{requesterName}},\n\nChúng tôi đã tiếp nhận yêu cầu "{{subject}}" và tạo phiếu mã {{ticketCode}}.\nVui lòng trả lời ngay trên email này (giữ nguyên mã {{ticketCode}} ở tiêu đề) nếu cần bổ sung thông tin.\n\nTrân trọng,\nBộ phận Nhân sự',
+    bodyEn:
+      'Hi {{requesterName}},\n\nWe have received your request "{{subject}}" and opened ticket {{ticketCode}}.\nPlease reply directly to this email (keep {{ticketCode}} in the subject) if you have anything to add.\n\nBest regards,\nHR Team',
+  },
+  {
+    key: 'reopen_locked_notice',
+    subjectVi: '[{{ticketCode}}] Yêu cầu đã đóng — vui lòng tạo yêu cầu mới',
+    subjectEn: '[{{ticketCode}}] This request is closed — please open a new one',
+    bodyVi:
+      'Chào {{requesterName}},\n\nPhiếu {{ticketCode}} đã đóng và không thể mở lại. Vui lòng gửi một email mới để tạo yêu cầu mới.\n\nTrân trọng,\nBộ phận Nhân sự',
+    bodyEn:
+      'Hi {{requesterName}},\n\nTicket {{ticketCode}} is closed and cannot be reopened. Please send a new email to open a new request.\n\nBest regards,\nHR Team',
+  },
+  {
+    key: 'digest',
+    subjectVi: 'Tổng hợp phiếu cần xử lý',
+    subjectEn: 'Your open tickets digest',
+    bodyVi: 'Chào {{requesterName}},\n\nDanh sách phiếu cần chú ý hôm nay.\n\nBộ phận Nhân sự',
+    bodyEn: 'Hi {{requesterName}},\n\nHere are the tickets needing attention today.\n\nHR Team',
+  },
+];
+
 // PRD §2 capability matrix — coarse seed (SSA edits at runtime, Story 9.4).
 const CAPABILITIES: Array<{ role: s.Role; capability: string; allowed: boolean }> = [
   { role: 'member', capability: 'ticket.reply', allowed: true },
@@ -73,6 +109,20 @@ export async function seedOnce(): Promise<void> {
           allowedExtensions: ['mp3', 'mp4', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'],
         })
         .onConflictDoNothing();
+      // Email templates (FR10) — conflict target (project_id, key) keeps re-seed idempotent.
+      for (const tpl of TEMPLATES) {
+        await tx
+          .insert(s.emailTemplates)
+          .values({
+            projectId: proj.id,
+            key: tpl.key,
+            subjectVi: tpl.subjectVi,
+            subjectEn: tpl.subjectEn,
+            bodyVi: tpl.bodyVi,
+            bodyEn: tpl.bodyEn,
+          })
+          .onConflictDoNothing({ target: [s.emailTemplates.projectId, s.emailTemplates.key] });
+      }
     }
 
     // Role capabilities

@@ -3,6 +3,7 @@ import type { DbTx } from '../../infra/db/with-actor';
 import { ticketMessages, participants, inboxMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { ingestAttachments } from './attachments';
+import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface AppendInput {
@@ -47,13 +48,18 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
     })
     .returning({ id: ticketMessages.id });
 
-  await ingestAttachments(tx, {
+  const cidMap = await ingestAttachments(tx, {
     ticketId,
     messageId: message!.id,
     projectId: input.projectId,
     when: parsed.date ?? new Date(),
     attachments: parsed.attachments,
   });
+
+  await tx
+    .update(ticketMessages)
+    .set({ bodyHtmlSafe: sanitizeEmailHtml(parsed.bodyHtml, cidMap) })
+    .where(eq(ticketMessages.id, message!.id));
 
   const strangers: string[] = [];
   const addresses = new Set(

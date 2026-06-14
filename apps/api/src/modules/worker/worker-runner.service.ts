@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { withActor, systemActor } from '../../infra/db/with-actor';
 import { projects as projectsTable } from '../../infra/db/schema';
 import { PollerService } from '../email-engine/poller.service';
+import { OutboxSender } from '../email-engine/outbox-sender.service';
 import { IntakeService } from '../intake/intake.service';
 import { repairAttachments } from '../intake/attachment-repair';
 import { startLoop } from './loop-runner';
@@ -25,6 +26,7 @@ export class WorkerRunner {
   constructor(
     private readonly poller: PollerService,
     private readonly intake: IntakeService,
+    private readonly outboxSender: OutboxSender,
   ) {}
 
   start(): void {
@@ -57,10 +59,11 @@ export class WorkerRunner {
     if (n > 0) this.logger.log(`intake processed ${n} message(s)`);
   }
 
-  private outboxTick(): Promise<void> {
-    // Outbox sender lands in Epic 3. The loop runs now so its heartbeat exists and
-    // the monitor/watchdog can see all three loops alive.
-    return Promise.resolve();
+  private async outboxTick(): Promise<void> {
+    const res = await this.outboxSender.runOnce();
+    if (res.sent > 0 || res.failed > 0) {
+      this.logger.log(`outbox: ${res.sent} sent, ${res.retried} retry, ${res.failed} dead-letter`);
+    }
   }
 
   private async schedulerTick(): Promise<void> {

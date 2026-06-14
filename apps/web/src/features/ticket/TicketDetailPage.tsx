@@ -4,9 +4,11 @@ import { Card, Descriptions, Tag, Space, Typography, Button, List, Alert, Spin, 
 import { useMe } from '../../lib/auth';
 import { useTicket, useApproveParticipant, displayCode } from '../../lib/tickets';
 import { StatusTag } from '../../components/StatusTag';
+import { SafeMessageBody } from '../../components/SafeMessageBody';
+import { ComposeBox } from './ComposeBox';
 import i18n from '../../i18n';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 function vnTime(iso: string): string {
   return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
@@ -121,28 +123,39 @@ export function TicketDetailPage() {
       )}
 
       {messages.map((m) => (
-        <Card key={m.id} size="small" type="inner" title={
-          <Space>
-            <Tag color={m.direction === 'inbound' ? 'green' : 'blue'}>{t(`ticket.${m.direction}`)}</Tag>
-            <Text strong>{m.fromAddr}</Text>
-            {m.isAutoReply && <Tag>{t('ticket.autoReply')}</Tag>}
-            {m.isInternal && <Tag color="purple">{t('ticket.internal')}</Tag>}
-            <Text type="secondary">{vnTime(m.createdAt)}</Text>
-          </Space>
-        }>
+        <Card
+          key={m.id}
+          size="small"
+          type="inner"
+          style={m.isInternal ? { background: '#fffbe6' } : undefined}
+          title={
+            <Space>
+              {m.isInternal ? (
+                <Tag color="purple">{t('ticket.internal')}</Tag>
+              ) : (
+                <Tag color={m.direction === 'inbound' ? 'green' : 'blue'}>{t(`ticket.${m.direction}`)}</Tag>
+              )}
+              <Text strong>{m.fromAddr}</Text>
+              {m.isAutoReply && <Tag>{t('ticket.autoReply')}</Tag>}
+              <Text type="secondary">{vnTime(m.createdAt)}</Text>
+            </Space>
+          }
+        >
           <Space direction="vertical" size={2} style={{ width: '100%' }}>
-            {m.toAddrs?.length ? <Text type="secondary">To: {m.toAddrs.join(', ')}</Text> : null}
-            {m.ccAddrs?.length ? <Text type="secondary">Cc: {m.ccAddrs.join(', ')}</Text> : null}
-            {/* BCC only ever shown on outbound (FR8). */}
-            {m.direction === 'outbound' && m.bccAddrs?.length ? (
+            {/* Notes have no recipients; emails show From/To/CC (BCC outbound only, FR8). */}
+            {!m.isInternal && m.toAddrs?.length ? <Text type="secondary">To: {m.toAddrs.join(', ')}</Text> : null}
+            {!m.isInternal && m.ccAddrs?.length ? <Text type="secondary">Cc: {m.ccAddrs.join(', ')}</Text> : null}
+            {m.direction === 'outbound' && !m.isInternal && m.bccAddrs?.length ? (
               <Text type="secondary">Bcc: {m.bccAddrs.join(', ')}</Text>
             ) : null}
-            <Paragraph style={{ whiteSpace: 'pre-wrap', marginTop: 8, marginBottom: 0 }}>
-              {m.bodyText || <Text type="secondary">({t('ticket.emptyBody')})</Text>}
-            </Paragraph>
+            <div style={{ marginTop: 8 }}>
+              <SafeMessageBody html={m.bodyHtmlSafe} text={m.bodyText} />
+            </div>
           </Space>
         </Card>
       ))}
+
+      <ComposeBox ticketId={id} />
     </Space>
   );
 }

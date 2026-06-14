@@ -14,6 +14,9 @@ export interface IngestAttachmentsInput {
   attachments: ParsedAttachment[];
 }
 
+/** cid (Content-ID) → stored attachment id, for inline-image rewriting (3.7). */
+export type CidMap = Record<string, string>;
+
 /**
  * Store email attachments under the write-file-before-commit protocol (A.2):
  *  - sniff the real type; only whitelisted signatures are stored (sniff beats the
@@ -23,8 +26,9 @@ export interface IngestAttachmentsInput {
  *  - unsafe files are NOT written; a metadata-only `blocked_unsafe` row keeps the
  *    trace and drives the "⚠ dangerous attachment" note in the UI (FR15)
  */
-export async function ingestAttachments(tx: DbTx, input: IngestAttachmentsInput): Promise<void> {
-  if (input.attachments.length === 0) return;
+export async function ingestAttachments(tx: DbTx, input: IngestAttachmentsInput): Promise<CidMap> {
+  const cidMap: CidMap = {};
+  if (input.attachments.length === 0) return cidMap;
 
   const [settings] = await tx
     .select({ allowed: projectSettings.allowedExtensions })
@@ -44,6 +48,7 @@ export async function ingestAttachments(tx: DbTx, input: IngestAttachmentsInput)
         mimeType: att.contentType || 'application/octet-stream',
         size: att.content.length,
         storagePath: '', // no file on disk
+        contentId: att.contentId ?? null,
         status: 'blocked_unsafe',
       });
       continue;
@@ -53,23 +58,28 @@ export async function ingestAttachments(tx: DbTx, input: IngestAttachmentsInput)
     const relPath = storagePathFor(input.projectId, uuid, input.when);
     await writeFile(relPath, att.content); // BEFORE the row exists
 
-    await tx.insert(attachments).values({
-      ticketId: input.ticketId,
-      messageId: input.messageId,
-      fileName: att.filename, // original name — metadata only
-      mimeType: mimeFor(sniffed),
-      size: att.content.length,
-      storagePath: relPath,
-      status: 'pending',
-    });
+    const [row] = await tx
+      .insert(attachments)
+      .values({
+        ticketId: input.ticketId,
+        messageId: input.messageId,
+        fileName: att.filename, // original name — metadata only
+        mimeType: mimeFor(sniffed),
+        size: att.content.length,
+        storagePath: relPath,
+        contentId: att.contentId ?? null,
+        status: 'pending',
+      })
+      .returning({ id: attachments.id });
 
     const stat = await statFile(relPath);
     if (stat.exists && stat.size === att.content.length) {
-      await tx
-        .update(attachments)
-        .set({ status: 'stored' })
-        .where(eq(attachments.storagePath, relPath));
+      await tx.update(attachments).set({ status: 'stored' }).where(eq(attachments.id, row!.id));
     }
     // else: stays pending → the repair job resolves it (no permanent pending).
+
+    if (att.contentId) cidMap[att.contentId] = row!.id;
   }
+
+  return cidMap;
 }

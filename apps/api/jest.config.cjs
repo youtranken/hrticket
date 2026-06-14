@@ -4,6 +4,7 @@ module.exports = {
   testEnvironment: 'node',
   rootDir: 'src',
   testRegex: '.*\\.spec\\.ts$',
+  setupFiles: ['<rootDir>/../test/unit-env.cjs'],
   moduleNameMapper: {
     '^@hris/shared$': '<rootDir>/../../../packages/shared/src/index.ts',
   },

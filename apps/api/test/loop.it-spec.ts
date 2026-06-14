@@ -12,6 +12,7 @@ import {
   ticketTags,
   ticketLink,
   projectCounters,
+  outbox,
 } from '../src/infra/db/schema';
 
 /**
@@ -49,6 +50,7 @@ describe('IT-LOOP: anti mail-loop + cross-post', () => {
       await harness!.db.delete(participants);
       await harness!.db.delete(ticketMessages);
       await harness!.db.delete(inboxMessages);
+      await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
       await harness!.db.delete(tickets);
       await harness!.db.delete(tags);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
@@ -87,8 +89,11 @@ describe('IT-LOOP: anti mail-loop + cross-post', () => {
     await intake.processReceived();
 
     expect(await tall()).toHaveLength(1); // off-thread auto mail made no ticket
-    const msgs = await harness!.db.select().from(ticketMessages).where(eq(ticketMessages.ticketId, t!.id));
-    expect(msgs).toHaveLength(2);
+    const msgs = await harness!.db
+      .select()
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, t!.id), eq(ticketMessages.direction, 'inbound')));
+    expect(msgs).toHaveLength(2); // original + auto-reply append (auto-ack outbound excluded)
     expect(msgs.find((m) => m.messageId === '<l1-oof@x.com>')!.isAutoReply).toBe(true);
     expect(t!.status).toBe('open'); // auto-reply did not change status
 

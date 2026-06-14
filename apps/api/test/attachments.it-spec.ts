@@ -16,6 +16,7 @@ import {
   participants,
   attachments,
   projectCounters,
+  outbox,
 } from '../src/infra/db/schema';
 
 interface Att {
@@ -74,6 +75,7 @@ describe('IT-FILE: attachment ingest', () => {
       await harness!.db.delete(participants);
       await harness!.db.delete(ticketMessages);
       await harness!.db.delete(inboxMessages);
+      await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
       await harness!.db.delete(tickets);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
     }

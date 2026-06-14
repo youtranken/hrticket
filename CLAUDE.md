@@ -42,7 +42,9 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 
 ## Test (story đóng khi test XANH)
 - **BE:** integration `*.it-spec.ts` (Testcontainers Postgres 18.4 + GreenMail cho mail), đặt tên `IT-<DOMAIN>-NNN` (vd `IT-MAIL-001`). 4 vùng test KỸ: outbox, state machine, atomic assign/claim, idempotency mail.
-- **FE:** kịch bản `[FE-DT]` = **Playwright** (`apps/web/e2e/*.e2e.ts`, config riêng) chạy thật trên browser với stack compose live (`:8080`), assert + screenshot, **Console 0 error**. Lệnh: bật `docker compose up -d --build` → `SEED_DEV_USERS=true pnpm --filter @hris/api db:seed` (tạo 4 user vai trò `@dev.local`) → `pnpm --filter @hris/web e2e`. Browser cài 1 lần: `pnpm --filter @hris/web exec playwright install chromium`. Mail xem ở **Mailpit UI** (`:8025`), KHÔNG MailHog.
+- **FE:** kịch bản `[FE-DT]` nghiệm thu bằng **Playwright qua MCP** (plugin `playwright@claude-plugins-official`) — agent (phiên chính / subagent / teammate) **tự lái browser thật (headed, xem trực tiếp)** trên stack compose live (`:8080`): `browser_navigate` → `browser_snapshot` → `browser_click`/`browser_fill_form`/`browser_type` → assert theo acceptance criteria; `browser_take_screenshot` lưu chứng cứ; **Console 0 error** (`browser_console_messages`). Chuẩn bị 1 lần: `docker compose up -d --build` → `SEED_DEV_USERS=true pnpm --filter @hris/api db:seed` (4 user vai trò `@dev.local`). Mail xem ở **Mailpit UI** (`:8025`), KHÔNG MailHog.
+  - **Luồng CRITICAL kèm e2e cam kết (cho CI):** login, tạo ticket từ mail, reply outbound, phân quyền/visibility → BẮT BUỘC xuất thêm 1 file `apps/web/e2e/*.e2e.ts` để CI chạy lại (`pnpm --filter @hris/web e2e`; xem trực quan `playwright test --headed`/`--ui`). FE không-critical chỉ cần MCP là đủ.
+  - **CHỈ Playwright** (MCP để nghiệm thu + e2e suite cho CI) — KHÔNG dùng Chrome DevTools MCP hay công cụ browser khác. (BE vẫn integration test `*.it-spec.ts` như trên.)
 - Đừng TDD full; code + test cùng story.
 
 ## Cạm bẫy đã biết
@@ -59,6 +61,11 @@ pnpm test:it                 # integration *.it-spec.ts (Testcontainers Postgres
 - `file-type` (npm) là ESM-only → không require được trong CJS api; dùng `email-engine/magic-bytes.ts` (sniffer tự viết cho whitelist cố định).
 - GreenMail canonicalise plus-alias (`a+b@x → a@x`) → test cross-post 2 mailbox phải dùng 2 địa chỉ KHÁC HẲN (không plus-alias).
 - Dev IMAP = container **greenmail** trong compose (worker poll `:3143`, inject `:3025`); KHÔNG trỏ worker vào mailbox production.
+- Outbox backoff đặt `next_attempt_at = now()` của **DB** (không phải `now` truyền vào hàm) → test re-claim phải đẩy thời gian bằng dữ liệu, không "tua" được qua tham số.
+- Ảnh inline `cid:`: sanitize lúc ingest chỉ để **placeholder** `/api/files/{id}`, **ký URL ở read-time** (token TTL 15' sẽ chết nếu ký lúc ingest). `allowedStyles` whitelist typography — chặn `background/url()` để diệt `javascript:` trong CSS.
+- Signed file URL cần **cả session + RLS**, không chỉ chữ ký (copy URL sang trình duyệt chưa login phải 401). Render HTML **in-DOM, KHÔNG iframe sandbox** (origin opaque → ảnh cid signed mất cookie → 401).
+- `*.it-spec` dọn bảng theo thứ tự **con→cha** (FK: `inbox_messages`/`outbox`/`ticket_messages` → `tickets`). GreenMail `withStartupTimeout` cao (compose chạy song song làm Docker bind port chậm → suite skip nhầm `ready=false`).
+- Cột thêm bằng custom-SQL / migration viết tay (vd `attachments.content_id`) mà cũng khai trong Drizzle schema → `db:generate` về sau dễ sinh migration trùng; nhớ resnapshot khi generate.
 
 ## Vai trò tài liệu (một sự thật, một nhà)
 - `architecture.md` = **tại sao** (quyết định + Post-Review Amendments A–E).

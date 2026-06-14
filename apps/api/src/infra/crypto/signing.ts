@@ -1,7 +1,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 function key(): string {
-  return process.env.HMAC_SIGNING_KEY ?? 'dev-hmac-key';
+  const k = process.env.HMAC_SIGNING_KEY;
+  // No insecure default: a missing key must fail closed, never sign with a
+  // publicly-known constant that would let anyone forge file/auth tokens.
+  if (!k) throw new Error('HMAC_SIGNING_KEY is required');
+  return k;
 }
 
 /** Signs a payload string → `payload.signature`. Used for pre-auth tokens, file URLs. */

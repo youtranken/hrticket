@@ -89,3 +89,106 @@ export function useApproveParticipant(ticketId: string) {
 export function displayCode(code: string, projectKey: string, ssa: boolean): string {
   return ssa ? `${projectKey.toUpperCase()} ${code}` : code;
 }
+
+// ── Compose: reply (3.2) / note (3.4) / draft (3.5) / upload (3.6) ──────────────
+
+export interface ReplyDefaults {
+  to: string[];
+  cc: string[];
+  subject: string;
+  isSensitive: boolean;
+}
+
+export function useReplyDefaults(ticketId: string, enabled: boolean) {
+  return useQuery<ReplyDefaults>({
+    queryKey: ['reply-defaults', ticketId],
+    queryFn: () => api(`/tickets/${ticketId}/reply-defaults`),
+    enabled,
+  });
+}
+
+export interface ReplyPayload {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  body: string;
+  attachmentIds?: string[];
+  confirmNewRecipients?: boolean;
+}
+export type ReplyResponse =
+  | { ticketMessageId: string; messageId: string }
+  | { needsConfirm: true; newRecipients: string[] };
+
+export function useReply(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<ReplyResponse, Error, ReplyPayload>({
+    mutationFn: (payload) =>
+      api(`/tickets/${ticketId}/replies`, { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: (res) => {
+      if (!('needsConfirm' in res)) qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+    },
+  });
+}
+
+export function useNote(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ id: string }, Error, { body: string }>({
+    mutationFn: (payload) =>
+      api(`/tickets/${ticketId}/notes`, { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ticket', ticketId] }),
+  });
+}
+
+export interface DraftView {
+  body: string;
+  recipients: { to?: string[]; cc?: string[]; bcc?: string[] } | null;
+  updatedAt: string;
+}
+
+export function useDraft(ticketId: string, kind: 'reply' | 'note') {
+  return useQuery<DraftView | null>({
+    queryKey: ['draft', ticketId, kind],
+    queryFn: () => api(`/tickets/${ticketId}/draft?kind=${kind}`),
+  });
+}
+
+export function putDraft(
+  ticketId: string,
+  kind: 'reply' | 'note',
+  body: string,
+  recipients?: unknown,
+): Promise<{ updatedAt: string }> {
+  return api(`/tickets/${ticketId}/draft`, {
+    method: 'PUT',
+    body: JSON.stringify({ kind, body, recipients }),
+  });
+}
+
+export function deleteDraft(ticketId: string, kind: 'reply' | 'note'): Promise<unknown> {
+  return api(`/tickets/${ticketId}/draft?kind=${kind}`, { method: 'DELETE' });
+}
+
+export interface UploadedAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  status: string;
+}
+
+/** Multipart upload — bypasses the JSON api() wrapper (different Content-Type). */
+export async function uploadAttachment(
+  ticketId: string,
+  file: File,
+): Promise<UploadedAttachment> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`/api/tickets/${ticketId}/attachments`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error((body.message as string) ?? 'Upload failed');
+  return body as unknown as UploadedAttachment;
+}

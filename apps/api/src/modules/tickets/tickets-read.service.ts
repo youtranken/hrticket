@@ -14,6 +14,17 @@ import {
 } from '../../infra/db/schema';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
+import { signedFileUrl } from '../../infra/crypto/signed-url';
+
+/** Replace the stable inline-image placeholders left by the sanitizer (3.7) with
+ *  freshly-signed, short-lived URLs at READ time (a stored token would be stale). */
+function signInlineImages(html: string | null): string | null {
+  if (!html) return html;
+  return html.replace(
+    /\/api\/files\/([0-9a-fA-F-]{36})(?!\?)/g,
+    (_m, id: string) => signedFileUrl(id),
+  );
+}
 
 export interface TicketListItem {
   id: string;
@@ -179,7 +190,7 @@ export class TicketsReadService {
           category: t.categoryVi ? { vi: t.categoryVi, en: t.categoryEn! } : null,
           createdAt: t.createdAt,
         },
-        messages,
+        messages: messages.map((m) => ({ ...m, bodyHtmlSafe: signInlineImages(m.bodyHtmlSafe) })),
         participants: ppl,
         tags: tg,
         attachments: att,

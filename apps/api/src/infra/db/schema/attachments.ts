@@ -18,6 +18,7 @@ export const attachments = pgTable(
     mimeType: text('mime_type').notNull(),
     size: integer('size').notNull(),
     storagePath: text('storage_path').notNull(), // UUID-based path under storage root
+    contentId: text('content_id'), // inbound inline-image cid (FR12/3.7), null otherwise
     status: attachmentStatusEnum('status').notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

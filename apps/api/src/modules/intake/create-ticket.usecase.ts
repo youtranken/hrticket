@@ -10,6 +10,8 @@ import {
 import { writeAudit } from '../../infra/audit/audit';
 import { nextTicketCode } from '../tickets/ticket-code';
 import { ingestAttachments } from './attachments';
+import { enqueueAutoAck } from './auto-ack';
+import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface CreateTicketInput {
@@ -93,13 +95,19 @@ export async function createTicketFromMail(
     })
     .returning({ id: ticketMessages.id });
 
-  await ingestAttachments(tx, {
+  const cidMap = await ingestAttachments(tx, {
     ticketId,
     messageId: message!.id,
     projectId,
     when: createdAt,
     attachments: parsed.attachments,
   });
+
+  // Sanitize the HTML body for display (3.7) — raw stays in body_html for audit (FR19).
+  await tx
+    .update(ticketMessages)
+    .set({ bodyHtmlSafe: sanitizeEmailHtml(parsed.bodyHtml, cidMap) })
+    .where(eq(ticketMessages.id, message!.id));
 
   // Participants: requester + CC, all active. Dedup against the unique (ticket,email).
   const people = new Set<string>(
@@ -124,6 +132,21 @@ export async function createTicketFromMail(
     objectType: 'ticket',
     objectId: ticketId,
     newValue: { ticketCode, requesterEmail, mailbox },
+  });
+
+  // Auto-ack the requester (FR10) — only for genuine NEW tickets. Auto-submitted
+  // mail never gets one (anti-loop layer 2, AC3); junk is a no-op hook until Epic 7.
+  await enqueueAutoAck(tx, {
+    projectId,
+    ticketId,
+    ticketCode,
+    mailbox, // project mailbox = From
+    requesterEmail,
+    requesterName: parsed.from?.name ?? requesterEmail,
+    subject: parsed.subject,
+    inboundMessageId: parsed.messageId,
+    isAutoReply: input.isAutoReply ?? false,
+    isJunk: false,
   });
 
   return { ticketId, ticketCode, messageId: message!.id };

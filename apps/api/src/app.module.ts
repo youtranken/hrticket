@@ -4,11 +4,12 @@ import { CoreModule } from './core.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { FilesModule } from './modules/files/files.module';
 import { MonitorModule } from './modules/monitor/monitor.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
-  imports: [CoreModule, HealthModule, AuthModule, TicketsModule, MonitorModule],
+  imports: [CoreModule, HealthModule, AuthModule, TicketsModule, FilesModule, MonitorModule],
   controllers: [AppController],
 })
 export class AppModule {}

@@ -1,5 +1,7 @@
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
 import nodemailer from 'nodemailer';
+import { ImapFlow } from 'imapflow';
+import { parseMail, type ParsedMail } from '../../src/modules/email-engine/parser';
 
 export interface GreenMail {
   host: string;
@@ -27,7 +29,7 @@ export async function startGreenMail(): Promise<GreenMail> {
         '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose -Dgreenmail.api.enabled',
     })
     .withWaitStrategy(Wait.forListeningPorts())
-    .withStartupTimeout(60_000)
+    .withStartupTimeout(150_000) // Docker is often busy (compose stack + other suites)
     .start();
 
   return {
@@ -83,6 +85,53 @@ export async function injectMail(gm: GreenMail, mail: InjectMail): Promise<void>
     attachments: mail.attachments,
   });
   transport.close();
+}
+
+/** Read every message delivered to an address (via IMAP), fully parsed — used to
+ *  assert what the outbox sender actually delivered (headers, To/CC, body, attachments). */
+export async function fetchMailbox(gm: GreenMail, address: string): Promise<ParsedMail[]> {
+  const client = new ImapFlow({
+    host: gm.host,
+    port: gm.imapPort,
+    secure: false,
+    auth: { user: address, pass: 'test' },
+    logger: false,
+  });
+  await client.connect();
+  const out: ParsedMail[] = [];
+  const lock = await client.getMailboxLock('INBOX');
+  try {
+    const status = await client.status('INBOX', { messages: true });
+    if ((status.messages ?? 0) > 0) {
+      for await (const msg of client.fetch('1:*', { source: true })) {
+        out.push(await parseMail(msg.source!.toString('utf8')));
+      }
+    }
+  } finally {
+    lock.release();
+  }
+  await client.logout();
+  return out;
+}
+
+/** Point the hris project's SMTP env (outbox sender) at this GreenMail instance. */
+export function useGreenMailSmtpForHris(gm: GreenMail, from = 'hris@test.local'): void {
+  process.env.SMTP_HRIS_HOST = gm.host;
+  process.env.SMTP_HRIS_PORT = String(gm.smtpPort);
+  process.env.SMTP_HRIS_SECURE = 'false';
+  process.env.SMTP_HRIS_FROM = from;
+  delete process.env.SMTP_HRIS_USER;
+  delete process.env.SMTP_HRIS_PASSWORD;
+}
+
+/** Point the cnb project's SMTP env (outbox sender) at this GreenMail instance. */
+export function useGreenMailSmtpForCnb(gm: GreenMail, from = 'cnb@test.local'): void {
+  process.env.SMTP_CNB_HOST = gm.host;
+  process.env.SMTP_CNB_PORT = String(gm.smtpPort);
+  process.env.SMTP_CNB_SECURE = 'false';
+  process.env.SMTP_CNB_FROM = from;
+  delete process.env.SMTP_CNB_USER;
+  delete process.env.SMTP_CNB_PASSWORD;
 }
 
 /** Point the hris project's IMAP env at this GreenMail instance. */

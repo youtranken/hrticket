@@ -37,6 +37,7 @@
     "vite": "^8.0.16",
     "vitest": "^4.1.8",
     "nodemailer": "^6.9.16",
-    "@types/nodemailer": "^6.4.17"
+    "@types/nodemailer": "^6.4.17",
+    "postgres": "^3.4.5"
   }
 }

@@ -10,6 +10,8 @@ export interface ParsedAttachment {
   contentType: string;
   size: number;
   content: Buffer;
+  /** Content-ID for inline images (`cid:` references in the HTML body, 3.7). */
+  contentId?: string | null;
 }
 
 export interface ParsedMail {
@@ -71,6 +73,7 @@ export async function parseMail(raw: string): Promise<ParsedMail> {
       contentType: a.contentType ?? 'application/octet-stream',
       size: a.size ?? a.content.length,
       content: a.content,
+      contentId: a.cid ? a.cid.replace(/^<|>$/g, '') : null,
     })),
   };
 }

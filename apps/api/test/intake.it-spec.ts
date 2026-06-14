@@ -12,6 +12,7 @@ import {
   participants,
   categories,
   projectCounters,
+  outbox,
 } from '../src/infra/db/schema';
 
 interface RawOpts {
@@ -75,6 +76,7 @@ describe('IT-INTAKE: create ticket from mail', () => {
       await harness!.db.delete(participants);
       await harness!.db.delete(ticketMessages);
       await harness!.db.delete(inboxMessages);
+      await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
       await harness!.db.delete(tickets);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
     }
@@ -106,8 +108,11 @@ describe('IT-INTAKE: create ticket from mail', () => {
       .where(and(eq(categories.projectId, HRIS), eq(categories.isSystem, true))))[0]!;
     expect(t.categoryId).toBe(other.id);
 
-    const msgs = await harness!.db.select().from(ticketMessages).where(eq(ticketMessages.ticketId, t.id));
-    expect(msgs).toHaveLength(1);
+    const msgs = await harness!.db
+      .select()
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, t.id), eq(ticketMessages.direction, 'inbound')));
+    expect(msgs).toHaveLength(1); // 1 inbound (the auto-ack is a separate outbound message)
     expect(msgs[0]!.direction).toBe('inbound');
     expect(msgs[0]!.ccAddrs).toEqual(['b@x.com']);
 

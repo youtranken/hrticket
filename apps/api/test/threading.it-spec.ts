@@ -15,6 +15,7 @@ import {
   ticketMessages,
   participants,
   projectCounters,
+  outbox,
 } from '../src/infra/db/schema';
 
 /**
@@ -56,6 +57,7 @@ describe('IT-THREAD: inbound threading', () => {
       await harness!.db.delete(participants);
       await harness!.db.delete(ticketMessages);
       await harness!.db.delete(inboxMessages);
+      await harness!.db.delete(outbox); // auto-ack rows FK→tickets; clear before tickets
       await harness!.db.delete(tickets);
       await harness!.db.update(projectCounters).set({ lastNo: 0 });
     }
@@ -77,8 +79,11 @@ describe('IT-THREAD: inbound threading', () => {
     await intake.processReceived();
 
     expect(await tall()).toHaveLength(1); // no new ticket
-    const msgs = await harness!.db.select().from(ticketMessages).where(eq(ticketMessages.ticketId, t!.id));
-    expect(msgs).toHaveLength(2);
+    const msgs = await harness!.db
+      .select()
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, t!.id), eq(ticketMessages.direction, 'inbound')));
+    expect(msgs).toHaveLength(2); // original + reply append (auto-ack outbound excluded)
   });
 
   it('IT-THREAD-002: subject code appends only for a participant; stranger → new ticket', async () => {
@@ -96,8 +101,11 @@ describe('IT-THREAD: inbound threading', () => {
     const all = await tall();
     expect(all).toHaveLength(2); // original + stranger's new ticket
     const orig = all.find((t) => t.ticketCode === code)!;
-    const msgs = await harness!.db.select().from(ticketMessages).where(eq(ticketMessages.ticketId, orig.id));
-    expect(msgs).toHaveLength(2); // original + participant's append (not the spoof)
+    const msgs = await harness!.db
+      .select()
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, orig.id), eq(ticketMessages.direction, 'inbound')));
+    expect(msgs).toHaveLength(2); // original + participant's append (not the spoof; auto-ack excluded)
   });
 
   it('IT-THREAD-003: a subject code from another project does not match', async () => {

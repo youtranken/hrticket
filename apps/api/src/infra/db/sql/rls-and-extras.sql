@@ -104,6 +104,19 @@ CREATE POLICY tickets_user ON tickets
     )
   );
 
+-- Drafts are strictly per-user (FR105) — RLS so one employee can never read
+-- another's half-written reply, even via a crafted query (Story 3.5 / AC3).
+ALTER TABLE drafts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drafts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS drafts_system ON drafts;
+CREATE POLICY drafts_system ON drafts
+  USING (app_is_system())
+  WITH CHECK (app_is_system());
+DROP POLICY IF EXISTS drafts_owner ON drafts;
+CREATE POLICY drafts_owner ON drafts
+  USING (NOT app_is_system() AND user_id = app_actor_id())
+  WITH CHECK (NOT app_is_system() AND user_id = app_actor_id());
+
 -- ── Grants for the app runtime role ──────────────────────────────────────────
 -- Everything exists by now (base tables + audit_log). The app role gets DML on
 -- all of them; RLS — not privileges — is what scopes ticket visibility.

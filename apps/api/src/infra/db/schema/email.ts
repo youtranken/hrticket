@@ -28,6 +28,12 @@ export const inboxMessages = pgTable(
     raw: text('raw').notNull(),
     status: inboxStatusEnum('status').notNull().default('received'),
     ticketId: uuid('ticket_id').references(() => tickets.id),
+    // Inbound dead-letter (mirror of outbox): a poison mail (parse/process failure)
+    // is retried with backoff, then flipped to `failed` so it can never wedge the
+    // head of the `received` queue and block every mail behind it.
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
