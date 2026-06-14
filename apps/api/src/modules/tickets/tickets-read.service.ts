@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { DEFAULT_OVERDUE_DAYS } from '@hris/shared';
 import { withActor } from '../../infra/db/with-actor';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -13,7 +14,26 @@ import {
   categories,
   projects,
   users,
+  reminderConfig,
 } from '../../infra/db/schema';
+
+/**
+ * Overdue / snooze SQL, computed server-side so FE has ONE source of truth (5.6).
+ * `now()` is the DB clock — tests move time by back-dating rows, never the clock
+ * (CLAUDE.md). Snoozed-and-still-waiting tickets are excluded; a snoozed ticket past
+ * its date is measured FROM the snooze date (5.5/C5); Resolved/Closed never overdue.
+ */
+const VN_TODAY = sql`(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date`;
+function overdueExprs() {
+  const threshold = sql`COALESCE(${reminderConfig.overdueDays}, ${DEFAULT_OVERDUE_DAYS})`;
+  const base = sql`CASE WHEN ${tickets.status} = 'pending' AND ${tickets.snoozeUntil} IS NOT NULL AND ${tickets.snoozeUntil} < ${VN_TODAY} THEN ${tickets.snoozeUntil}::timestamptz ELSE ${tickets.lastOpenedAt} END`;
+  const ageDays = sql`floor(extract(epoch from (now() - (${base})))/86400)`;
+  const snoozedWaiting = sql`(${tickets.status} = 'pending' AND ${tickets.snoozeUntil} IS NOT NULL AND ${tickets.snoozeUntil} >= ${VN_TODAY})`;
+  const isOverdue = sql<boolean>`(${tickets.status} NOT IN ('resolved','closed') AND NOT ${snoozedWaiting} AND (${ageDays}) > (${threshold}))`;
+  const overdueDays = sql<number>`(CASE WHEN ${tickets.status} NOT IN ('resolved','closed') AND NOT ${snoozedWaiting} AND (${ageDays}) > (${threshold}) THEN ((${ageDays}) - (${threshold}))::int ELSE 0 END)`;
+  const snoozeDue = sql<boolean>`(${tickets.status} = 'pending' AND ${tickets.snoozeUntil} IS NOT NULL AND ${tickets.snoozeUntil} <= ${VN_TODAY})`;
+  return { isOverdue, overdueDays, snoozeDue };
+}
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
 import { signedFileUrl } from '../../infra/crypto/signed-url';
@@ -46,6 +66,10 @@ export interface TicketListItem {
   assignee: TicketAssignee | null;
   tags: { name: string; color: string | null }[];
   createdAt: Date;
+  isOverdue: boolean;
+  overdueDays: number;
+  snoozeUntil: string | null;
+  snoozeDue: boolean;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine';
@@ -55,6 +79,8 @@ export interface TicketListResult {
   total: number;
   page: number;
   pageSize: number;
+  /** Count of overdue tickets in scope (header badge — Story 5.6). */
+  overdueTotal: number;
 }
 
 @Injectable()
@@ -70,6 +96,7 @@ export class TicketsReadService {
     const actor = await actorForUser(user);
     const offset = (page - 1) * pageSize;
     const assignee = alias(users, 'assignee');
+    const ov = overdueExprs();
     return withActor(actor, async (tx) => {
       // View filter rides on top of RLS (which already scopes visibility).
       const filter: SQL | undefined =
@@ -94,21 +121,31 @@ export class TicketsReadService {
           assigneeAwayFrom: assignee.awayFrom,
           assigneeAwayTo: assignee.awayTo,
           createdAt: tickets.createdAt,
+          snoozeUntil: tickets.snoozeUntil,
+          isOverdue: ov.isOverdue,
+          overdueDays: ov.overdueDays,
+          snoozeDue: ov.snoozeDue,
         })
         .from(tickets)
         .innerJoin(projects, eq(projects.id, tickets.projectId))
         .leftJoin(categories, eq(categories.id, tickets.categoryId))
         .leftJoin(assignee, eq(assignee.id, tickets.assigneeId))
+        .leftJoin(reminderConfig, eq(reminderConfig.projectId, tickets.projectId))
         .where(filter)
         .orderBy(desc(tickets.createdAt))
         .limit(pageSize)
         .offset(offset);
 
       const countRows = await tx
-        .select({ count: sql<number>`count(*)::int` })
+        .select({
+          count: sql<number>`count(*)::int`,
+          overdue: sql<number>`count(*) FILTER (WHERE ${ov.isOverdue})::int`,
+        })
         .from(tickets)
+        .leftJoin(reminderConfig, eq(reminderConfig.projectId, tickets.projectId))
         .where(filter);
       const total = countRows[0]?.count ?? 0;
+      const overdueTotal = countRows[0]?.overdue ?? 0;
 
       const ids = rows.map((r) => r.id);
       const tagRows = ids.length
@@ -137,9 +174,13 @@ export class TicketsReadService {
           : null,
         tags: tagRows.filter((t) => t.ticketId === r.id).map((t) => ({ name: t.name, color: t.color })),
         createdAt: r.createdAt,
+        isOverdue: r.isOverdue,
+        overdueDays: r.overdueDays,
+        snoozeUntil: r.snoozeUntil,
+        snoozeDue: r.snoozeDue,
       }));
 
-      return { items, total, page, pageSize };
+      return { items, total, page, pageSize, overdueTotal };
     });
   }
 
@@ -149,6 +190,7 @@ export class TicketsReadService {
   async getDetail(user: SessionUser, id: string) {
     const actor = await actorForUser(user);
     const assignee = alias(users, 'assignee');
+    const ov = overdueExprs();
     return withActor(actor, async (tx) => {
       const [t] = await tx
         .select({
@@ -167,11 +209,18 @@ export class TicketsReadService {
           assigneeAwayFrom: assignee.awayFrom,
           assigneeAwayTo: assignee.awayTo,
           createdAt: tickets.createdAt,
+          snoozeUntil: tickets.snoozeUntil,
+          reopenCount: tickets.reopenCount,
+          reopenLocked: tickets.reopenLocked,
+          isOverdue: ov.isOverdue,
+          overdueDays: ov.overdueDays,
+          snoozeDue: ov.snoozeDue,
         })
         .from(tickets)
         .innerJoin(projects, eq(projects.id, tickets.projectId))
         .leftJoin(categories, eq(categories.id, tickets.categoryId))
         .leftJoin(assignee, eq(assignee.id, tickets.assigneeId))
+        .leftJoin(reminderConfig, eq(reminderConfig.projectId, tickets.projectId))
         .where(eq(tickets.id, id));
       if (!t) throw new NotFoundException('Ticket not found');
 
@@ -249,6 +298,12 @@ export class TicketsReadService {
               }
             : null,
           createdAt: t.createdAt,
+          snoozeUntil: t.snoozeUntil,
+          reopenCount: t.reopenCount,
+          reopenLocked: t.reopenLocked,
+          isOverdue: t.isOverdue,
+          overdueDays: t.overdueDays,
+          snoozeDue: t.snoozeDue,
         },
         messages: messages.map((m) => ({ ...m, bodyHtmlSafe: signInlineImages(m.bodyHtmlSafe, user.id) })),
         participants: ppl,

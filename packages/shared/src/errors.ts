@@ -11,6 +11,10 @@ export enum ErrorCode {
   CONFLICT = 'CONFLICT',
   // Data access gateway (invariant #1)
   MISSING_ACTOR = 'MISSING_ACTOR',
+  // Ticket lifecycle (Epic 5)
+  INVALID_TRANSITION = 'INVALID_TRANSITION',
+  PENDING_REQUIRES_SNOOZE = 'PENDING_REQUIRES_SNOOZE',
+  SNOOZE_DATE_IN_PAST = 'SNOOZE_DATE_IN_PAST',
 }
 
 export interface AppErrorShape {

@@ -7,7 +7,9 @@ import { StatusTag } from '../../components/StatusTag';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { ComposeBox } from './ComposeBox';
 import { AssignControls } from './AssignControls';
+import { LifecycleControls } from './LifecycleControls';
 import { TagEditor } from './TagEditor';
+import { REOPEN_WARN_THRESHOLD } from '@hris/shared';
 import i18n from '../../i18n';
 
 const { Title, Text } = Typography;
@@ -55,6 +57,11 @@ export function TicketDetailPage() {
               {displayCode(ticket.ticketCode, ticket.projectKey, ssa)} · {ticket.subject}
             </Title>
             <StatusTag status={ticket.status} />
+            {ticket.reopenCount > 0 && <Tag color="volcano">{t('lifecycle.reopened')}</Tag>}
+            {ticket.reopenLocked && <Tag color="red">🔒 {t('lifecycle.lockReopen')}</Tag>}
+            {ticket.isOverdue && (
+              <Tag color="error">{t('lifecycle.overdueDays', { count: ticket.overdueDays })}</Tag>
+            )}
           </Space>
           <Descriptions size="small" column={2} style={{ marginTop: 8 }}>
             <Descriptions.Item label={t('ticket.requester')}>{ticket.requesterEmail}</Descriptions.Item>
@@ -67,6 +74,7 @@ export function TicketDetailPage() {
             </Descriptions.Item>
           </Descriptions>
           <AssignControls ticket={ticket} />
+          <LifecycleControls ticket={ticket} />
           {links.length > 0 && (
             <Space wrap>
               <Text type="secondary">{t('ticket.crossPost')}:</Text>
@@ -79,6 +87,16 @@ export function TicketDetailPage() {
           )}
         </Space>
       </Card>
+
+      {ticket.isOverdue && (
+        <Alert type="error" showIcon message={t('lifecycle.overdueBanner', { count: ticket.overdueDays })} />
+      )}
+      {ticket.reopenCount > REOPEN_WARN_THRESHOLD && !ticket.reopenLocked && (
+        <Alert type="warning" showIcon message={t('lifecycle.reopenWarn', { count: ticket.reopenCount })} />
+      )}
+      {ticket.status === 'pending' && ticket.snoozeUntil && (
+        <Alert type="info" showIcon message={t('lifecycle.snoozedUntil', { date: ticket.snoozeUntil })} />
+      )}
 
       {pendingStrangers.length > 0 && (
         <Alert
@@ -154,7 +172,11 @@ export function TicketDetailPage() {
         </Card>
       ))}
 
-      <ComposeBox ticketId={id} />
+      {ticket.status === 'closed' ? (
+        <Alert type="info" showIcon message={t('lifecycle.closedBanner')} />
+      ) : (
+        <ComposeBox ticketId={id} status={ticket.status} />
+      )}
     </Space>
   );
 }

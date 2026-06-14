@@ -19,6 +19,10 @@ export interface TicketListItem {
   assignee: TicketAssignee | null;
   tags: { name: string; color: string | null }[];
   createdAt: string;
+  isOverdue: boolean;
+  overdueDays: number;
+  snoozeUntil: string | null;
+  snoozeDue: boolean;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine';
@@ -28,6 +32,7 @@ export interface TicketListResult {
   total: number;
   page: number;
   pageSize: number;
+  overdueTotal: number;
 }
 
 export function useTickets(page: number, pageSize: number, view: TicketView = 'all') {
@@ -70,6 +75,12 @@ export interface TicketDetail {
     categoryId: number | null;
     assignee: TicketAssignee | null;
     createdAt: string;
+    snoozeUntil: string | null;
+    reopenCount: number;
+    reopenLocked: boolean;
+    isOverdue: boolean;
+    overdueDays: number;
+    snoozeDue: boolean;
   };
   messages: TicketMessage[];
   participants: TicketParticipant[];
@@ -126,9 +137,10 @@ export interface ReplyPayload {
   body: string;
   attachmentIds?: string[];
   confirmNewRecipients?: boolean;
+  closeAfter?: boolean;
 }
 export type ReplyResponse =
-  | { ticketMessageId: string; messageId: string }
+  | { ticketMessageId: string; messageId: string; closed: boolean }
   | { needsConfirm: true; newRecipients: string[] };
 
 export function useReply(ticketId: string) {
@@ -308,6 +320,35 @@ export function useToggleTag(ticketId: string) {
       qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
       qc.invalidateQueries({ queryKey: ['ticket-tags', ticketId] });
     },
+  });
+}
+
+// ── Lifecycle: status transition (5.1/5.2/5.5) + reopen lock (5.4) ──────────────
+
+export interface ChangeStatusPayload {
+  to: string;
+  snoozeUntil?: string;
+  note?: string;
+  reason?: 'junk' | 'duplicate';
+}
+export function useChangeStatus(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ status: string }, Error, ChangeStatusPayload>({
+    mutationFn: (payload) =>
+      api(`/tickets/${ticketId}/status`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
+
+export function useSetReopenLock(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ reopenLocked: boolean }, Error, { locked: boolean }>({
+    mutationFn: (payload) =>
+      api(`/tickets/${ticketId}/reopen-lock`, { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ticket', ticketId] }),
   });
 }
 

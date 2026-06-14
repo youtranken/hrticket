@@ -97,6 +97,22 @@ export const digestLog = pgTable(
   (t) => [unique('uq_digest').on(t.recipient, t.dateVn)],
 );
 
+/** "Contact HR" reopen-locked notice throttle: ≤1 notice / 24h / requester per
+ *  ticket (Story 5.4 party-mode M7 — stop 50 replies = 50 mails). Time-window dedup,
+ *  so no unique constraint; we query the latest sent_at within 24h. */
+export const reopenNoticeLog = pgTable(
+  'reopen_notice_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    requesterEmail: text('requester_email').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_reopen_notice_ticket').on(t.ticketId, t.requesterEmail)],
+);
+
 /** Snooze-reminder dedup per (ticket, VN date). */
 export const snoozeReminderLog = pgTable(
   'snooze_reminder_log',

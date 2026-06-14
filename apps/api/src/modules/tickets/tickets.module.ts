@@ -14,6 +14,9 @@ import { TicketTagsController } from './ticket-tags.controller';
 import { TicketTagsService } from './ticket-tags.service';
 import { AssignmentController } from './assignment.controller';
 import { AssignmentService } from './assignment.service';
+import { LifecycleController } from './lifecycle.controller';
+import { TicketStatusService } from './ticket-status.service';
+import { ReopenLockService } from './reopen-lock.service';
 
 /**
  * HTTP module for ticket resources: list/detail (2.6) + participant approval (2.3)
@@ -28,6 +31,7 @@ import { AssignmentService } from './assignment.service';
     TicketAttachmentsController,
     TicketTagsController,
     AssignmentController,
+    LifecycleController,
   ],
   providers: [
     ParticipantsService,
@@ -38,6 +42,8 @@ import { AssignmentService } from './assignment.service';
     UploadService,
     TicketTagsService,
     AssignmentService,
+    TicketStatusService,
+    ReopenLockService,
   ],
 })
 export class TicketsModule {}

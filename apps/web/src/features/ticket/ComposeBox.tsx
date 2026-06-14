@@ -13,7 +13,9 @@ import {
   Upload,
   Modal,
   Input,
+  Checkbox,
 } from 'antd';
+import { canTransition, type TicketStatus } from '@hris/shared';
 import {
   useReplyDefaults,
   useReply,
@@ -35,6 +37,8 @@ const sameSet = (a: string[], b: string[]) =>
 
 interface Props {
   ticketId: string;
+  /** Current ticket status — gates the "Reply & Close" checkbox (5.2). */
+  status: string;
 }
 
 /**
@@ -44,10 +48,14 @@ interface Props {
  * ticket is sensitive OR the server flags a brand-new recipient. Drafts autosave
  * server-side (3.5), per (ticket,user,kind).
  */
-export function ComposeBox({ ticketId }: Props) {
+export function ComposeBox({ ticketId, status }: Props) {
   const { t } = useTranslation();
   const { message } = AntApp.useApp();
   const [tab, setTab] = useState<'reply' | 'note'>('reply');
+  const [closeAfter, setCloseAfter] = useState(false);
+  // Reply & Close is only offered where closing is a legal shortcut (In Progress /
+  // Resolved) — mirrors the server's state machine so we never send an illegal close.
+  const canCloseAfter = canTransition(status as TicketStatus, 'closed').ok;
 
   const defaults = useReplyDefaults(ticketId, true);
   const replyDraft = useDraft(ticketId, 'reply');
@@ -120,18 +128,19 @@ export function ComposeBox({ ticketId }: Props) {
 
   const submitReply = (confirmNewRecipients?: boolean) => {
     reply.mutate(
-      { to, cc, bcc, body: replyBody, attachmentIds: attachments.map((a) => a.id), confirmNewRecipients },
+      { to, cc, bcc, body: replyBody, attachmentIds: attachments.map((a) => a.id), confirmNewRecipients, closeAfter },
       {
         onSuccess: (res) => {
           if ('needsConfirm' in res) {
             setConfirm({ recipients: [...to, ...cc, ...bcc], newRecipients: res.newRecipients, sensitive: defaults.data?.isSensitive ?? false });
             return;
           }
-          message.success(t('compose.sent'));
+          message.success(res.closed ? t('compose.sentAndClosed') : t('compose.sent'));
           void deleteDraft(ticketId, 'reply');
           setReplyBody('');
           setAttachments([]);
           setConfirm(null);
+          setCloseAfter(false);
           setDraftLabel((p) => ({ ...p, reply: undefined }));
         },
         onError: (e) => message.error(e.message),
@@ -213,6 +222,11 @@ export function ComposeBox({ ticketId }: Props) {
         <Upload beforeUpload={beforeUpload} showUploadList={false} multiple>
           <Button>{t('compose.attach')}</Button>
         </Upload>
+        {canCloseAfter && (
+          <Checkbox checked={closeAfter} onChange={(e) => setCloseAfter(e.target.checked)}>
+            {t('compose.closeAfter')}
+          </Checkbox>
+        )}
         {draftLabel.reply && (
           <Text type="secondary" style={{ fontSize: 12 }}>
             {t('compose.draftSavedAt', { time: vnTime(draftLabel.reply) })}{' '}

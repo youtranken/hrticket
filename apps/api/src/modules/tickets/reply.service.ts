@@ -1,11 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
+import type { TicketStatus } from '@hris/shared';
 import { withActor } from '../../infra/db/with-actor';
 import { tickets, ticketMessages, participants, categories, drafts } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
 import { sendOutboundMail } from './send-mail.usecase';
+import { canTransition, assertCanActOnTicket } from './ticket.state-machine';
 
 export interface ReplyInput {
   to: string[];
@@ -16,6 +18,8 @@ export interface ReplyInput {
   attachmentIds?: string[];
   /** Client acknowledges the new-recipient warning (AC3). */
   confirmNewRecipients?: boolean;
+  /** Reply & Close (FR39): send the reply AND close the ticket in one tx (5.2). */
+  closeAfter?: boolean;
 }
 
 export interface ReplyDefaults {
@@ -82,8 +86,12 @@ export class ReplyService {
     user: SessionUser,
     ticketId: string,
     input: ReplyInput,
-  ): Promise<{ ticketMessageId: string; messageId: string } | { needsConfirm: true; newRecipients: string[] }> {
+  ): Promise<
+    | { ticketMessageId: string; messageId: string; closed: boolean }
+    | { needsConfirm: true; newRecipients: string[] }
+  > {
     const actor = await actorForUser(user);
+    const groups = actor.kind === 'user' ? actor.groups : [];
     return withActor(actor, async (tx) => {
       const [t] = await tx
         .select({
@@ -92,10 +100,23 @@ export class ReplyService {
           mailbox: tickets.mailbox,
           subject: tickets.subject,
           ticketCode: tickets.ticketCode,
+          status: tickets.status,
+          assigneeId: tickets.assigneeId,
+          categoryId: tickets.categoryId,
         })
         .from(tickets)
         .where(eq(tickets.id, ticketId));
       if (!t) throw new NotFoundException('Ticket not found');
+
+      // Reply & Close: the close half of the atomic op must be legal + permitted
+      // BEFORE we send, so we never end up with a sent mail on a ticket we couldn't
+      // close (or vice-versa). Both halves live in this one tx (AC1).
+      if (input.closeAfter) {
+        assertCanActOnTicket(user, groups, t);
+        if (!canTransition(t.status as TicketStatus, 'closed').ok) {
+          throw new ConflictException('INVALID_TRANSITION');
+        }
+      }
 
       const allRecipients = [...input.to, ...(input.cc ?? []), ...(input.bcc ?? [])].map((e) =>
         e.toLowerCase(),
@@ -182,7 +203,27 @@ export class ReplyService {
           and(eq(drafts.ticketId, ticketId), eq(drafts.userId, user.id), eq(drafts.kind, 'reply')),
         );
 
-      return { ticketMessageId: res.ticketMessageId, messageId: res.messageId };
+      // Reply & Close (FR39/NFR10): flip to Closed in the SAME tx. The outbox row is
+      // already enqueued, so the mail is guaranteed to go even though we're now closed
+      // — a rollback (e.g. enqueue failure above) takes the close down with it.
+      if (input.closeAfter) {
+        await tx
+          .update(tickets)
+          .set({ status: 'closed', closedAt: new Date() })
+          .where(eq(tickets.id, ticketId));
+        await writeAudit(tx, {
+          projectId: t.projectId,
+          actorId: user.id,
+          actorLabel: user.email,
+          action: 'ticket.status_changed',
+          objectType: 'ticket',
+          objectId: ticketId,
+          oldValue: { status: t.status },
+          newValue: { status: 'closed', via: 'reply_and_close' },
+        });
+      }
+
+      return { ticketMessageId: res.ticketMessageId, messageId: res.messageId, closed: !!input.closeAfter };
     });
   }
 }

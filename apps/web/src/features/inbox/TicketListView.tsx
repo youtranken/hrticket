@@ -58,8 +58,14 @@ export function TicketListView({ view, titleKey }: { view: TicketView; titleKey:
     {
       title: t('ticket.status'),
       dataIndex: 'status',
-      width: 120,
-      render: (s: string) => <StatusTag status={s} />,
+      width: 140,
+      render: (s: string, r) => (
+        <Space direction="vertical" size={2}>
+          <StatusTag status={s} />
+          {r.isOverdue && <Tag color="error">{t('lifecycle.overdueDays', { count: r.overdueDays })}</Tag>}
+          {r.snoozeDue && <Tag color="gold">{t('lifecycle.snoozeDue')}</Tag>}
+        </Space>
+      ),
     },
     {
       title: t('ticket.tags'),
@@ -88,7 +94,14 @@ export function TicketListView({ view, titleKey }: { view: TicketView; titleKey:
 
   return (
     <div>
-      <Typography.Title level={4}>{t(titleKey)}</Typography.Title>
+      <Space align="center" style={{ marginBottom: 8 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          {t(titleKey)}
+        </Typography.Title>
+        {(data?.overdueTotal ?? 0) > 0 && (
+          <Tag color="error">{t('lifecycle.overdueCount', { count: data!.overdueTotal })}</Tag>
+        )}
+      </Space>
       <Table<TicketListItem>
         rowKey="id"
         loading={isLoading}
@@ -102,7 +115,8 @@ export function TicketListView({ view, titleKey }: { view: TicketView; titleKey:
             if ((e.target as HTMLElement).closest('button')) return;
             navigate(`/tickets/${r.id}`);
           },
-          style: { cursor: 'pointer' },
+          // Overdue rows get a soft-red background so the worklist screams at a glance (5.6).
+          style: { cursor: 'pointer', background: r.isOverdue ? '#fff1f0' : undefined },
         })}
         pagination={{
           current: page,

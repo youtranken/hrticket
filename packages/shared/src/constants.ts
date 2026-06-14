@@ -37,10 +37,10 @@ export type TicketStatus = (typeof TICKET_STATUSES)[number];
  * keys are `status.<value>` in the web bundle.
  */
 export const TICKET_STATUS_COLOR: Record<TicketStatus, string> = {
-  open: 'blue',
-  assigned: 'cyan',
-  in_progress: 'gold',
-  pending: 'orange',
-  resolved: 'green',
-  closed: 'default',
+  open: 'default', // xám
+  assigned: 'blue', // xanh dương
+  in_progress: 'green', // xanh lá
+  pending: 'gold', // vàng
+  resolved: 'purple', // tím
+  closed: '#262626', // đen
 };

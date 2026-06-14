@@ -26,6 +26,7 @@ const replySchema = z.object({
   bodyHtml: z.string().optional(),
   attachmentIds: z.array(z.string().uuid()).optional(),
   confirmNewRecipients: z.boolean().optional(),
+  closeAfter: z.boolean().optional(),
 });
 
 const noteSchema = z.object({ body: z.string().min(1) });

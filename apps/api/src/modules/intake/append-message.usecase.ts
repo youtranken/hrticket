@@ -4,6 +4,7 @@ import { ticketMessages, participants, attachments, inboxMessages } from '../../
 import { writeAudit } from '../../infra/audit/audit';
 import { ingestAttachments } from './attachments';
 import { applyAutoTags } from '../routing/auto-tag.service';
+import { handleReplyTransition } from './reopen.usecase';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import type { ParsedMail } from '../email-engine/parser';
 
@@ -115,6 +116,26 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
       strangers,
       appendedToClosed: input.ticketStatus === 'closed',
     },
+  });
+
+  // Lifecycle reaction (Epic 5): reopen a Closed ticket / wake a Pending one when an
+  // active participant replies; locked/junk/spam append-only; auto-reply & strangers
+  // never drive a transition. The new message is already persisted above.
+  const from = parsed.from?.address;
+  let fromIsActiveParticipant = false;
+  if (from) {
+    const [p] = await tx
+      .select({ status: participants.status })
+      .from(participants)
+      .where(and(eq(participants.ticketId, ticketId), eq(participants.email, from)));
+    fromIsActiveParticipant = p?.status === 'active';
+  }
+  await handleReplyTransition(tx, {
+    ticketId,
+    projectId: input.projectId,
+    fromAddr: from ?? 'unknown@unknown',
+    fromIsActiveParticipant,
+    isAutoReply: input.isAutoReply ?? false,
   });
 
   return { messageId: message!.id, strangers };
