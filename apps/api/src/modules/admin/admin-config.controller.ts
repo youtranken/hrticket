@@ -91,7 +91,7 @@ export class AdminConfigController {
   ) {
     const parsed = updateCategory.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
-    return this.config.updateCategory(user, await this.project(user, xp), Number(id), parsed.data);
+    return this.config.updateCategory(user, await this.project(user, xp), this.parseId(id), parsed.data);
   }
 
   @Delete('categories/:id')
@@ -100,7 +100,7 @@ export class AdminConfigController {
     @Param('id') id: string,
     @Headers('x-project') xp?: string,
   ) {
-    return this.config.deleteCategory(user, await this.project(user, xp), Number(id));
+    return this.config.deleteCategory(user, await this.project(user, xp), this.parseId(id));
   }
 
   @Put('categories/:id/auto-assign')
@@ -112,7 +112,7 @@ export class AdminConfigController {
   ) {
     const parsed = autoAssign.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
-    return this.config.putAutoAssign(user, await this.project(user, xp), Number(id), parsed.data);
+    return this.config.putAutoAssign(user, await this.project(user, xp), this.parseId(id), parsed.data);
   }
 
   // Tags
@@ -141,7 +141,7 @@ export class AdminConfigController {
   ) {
     const parsed = updateTag.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
-    return this.config.updateTag(user, await this.project(user, xp), Number(id), parsed.data);
+    return this.config.updateTag(user, await this.project(user, xp), this.parseId(id), parsed.data);
   }
 
   @Delete('tags/:id')
@@ -151,6 +151,13 @@ export class AdminConfigController {
     @Query('confirm') confirm?: string,
     @Headers('x-project') xp?: string,
   ) {
-    return this.config.deleteTag(user, await this.project(user, xp), Number(id), confirm === 'true');
+    return this.config.deleteTag(user, await this.project(user, xp), this.parseId(id), confirm === 'true');
+  }
+
+  /** Parse a positive-integer path id; reject NaN/0/negative so it never reaches a query (P4). */
+  private parseId(id: string): number {
+    const n = Number(id);
+    if (!Number.isInteger(n) || n <= 0) throw new BadRequestException('Invalid id');
+    return n;
   }
 }

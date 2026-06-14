@@ -211,6 +211,11 @@ export class AdminConfigService {
     return withActor(systemActor, async (tx) => {
       const cat = await this.loadCategory(tx, projectId, categoryId);
       if (cat.isSystem) throw new UnprocessableEntityException('"Khác" is never auto-assigned');
+      // An empty roster would persist a config that silently never auto-assigns (every
+      // ticket → pool_empty_roster, no warning). Reject it (P5).
+      if (input.members.length === 0) {
+        throw new UnprocessableEntityException('Auto-assign needs at least one member');
+      }
 
       // Members must be real users in this project.
       if (input.members.length) {

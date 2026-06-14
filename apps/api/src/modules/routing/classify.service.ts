@@ -38,6 +38,12 @@ export async function classifyTicket(
 ): Promise<ClassifyResult> {
   const haystack = `${subject ?? ''}\n${body ?? ''}`;
 
+  // Whole-word match (P9): escape regex metachars in the keyword, then anchor with
+  // \m … \M (Postgres word boundaries) so a short keyword like "ot" no longer matches
+  // INSIDE "robot". META/REPL are passed as params to dodge JS/SQL/regex quoting.
+  const META = '[.^$*+?()\\[\\]{}|\\\\-]'; // metachars to backslash-escape
+  const REPL = '\\\\\\&'; // Postgres replacement "\\\&" → literal backslash + matched char
+
   const matched = (await tx.execute(sql`
     SELECT c.id AS category_id, k.keyword AS keyword
     FROM categories c
@@ -45,7 +51,9 @@ export async function classifyTicket(
     WHERE c.project_id = ${projectId}
       AND c.disabled = false
       AND c.is_system = false
-      AND position(f_unaccent(lower(k.keyword)) IN f_unaccent(lower(${haystack}))) > 0
+      AND f_unaccent(lower(${haystack})) ~ (
+        '\\m' || regexp_replace(f_unaccent(lower(k.keyword)), ${META}, ${REPL}, 'g') || '\\M'
+      )
   `)) as unknown as Array<{ category_id: number; keyword: string }>;
 
   const distinct = new Set(matched.map((m) => Number(m.category_id)));
@@ -61,7 +69,9 @@ export async function classifyTicket(
 
   return {
     categoryId: await otherCategoryId(tx, projectId),
-    matchedKeywords: [],
+    // On multi-match keep the colliding keywords for the audit trail (P6) so an operator
+    // can see WHY it fell to "Khác"; on no-match there is nothing to show.
+    matchedKeywords: distinct.size > 1 ? [...new Set(matched.map((m) => m.keyword))] : [],
     reason: distinct.size > 1 ? 'multi_match' : 'no_match',
   };
 }

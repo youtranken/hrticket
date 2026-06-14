@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { ItHarness } from './setup.it';
 import { startHarness } from './setup.it';
 import { withActor, systemActor } from '../src/infra/db/with-actor';
-import { categories, tickets, ticketTags, tags, projectSettings } from '../src/infra/db/schema';
+import { categories, categoryKeywords, tickets, ticketTags, tags, projectSettings } from '../src/infra/db/schema';
 import { classifyTicket } from '../src/modules/routing/classify.service';
 import { applyAutoTags } from '../src/modules/routing/auto-tag.service';
 
@@ -150,5 +150,24 @@ describe('IT-ROUTE: keyword classify + auto-tag', () => {
       .update(projectSettings)
       .set({ autotagAttachment: true })
       .where(eq(projectSettings.projectId, PROJECT));
+  });
+
+  it('IT-ROUTE-003: keyword matches whole words only, not substrings (P9)', async () => {
+    if (!ready) return;
+    const [wb] = await harness!.db
+      .insert(categories)
+      .values({ projectId: PROJECT, nameVi: 'WB', nameEn: 'WBTest' })
+      .returning({ id: categories.id });
+    await harness!.db.insert(categoryKeywords).values({ categoryId: wb!.id, keyword: 'zzk' });
+
+    // Whole word → matches the category.
+    const whole = await classify('Ma zzk hop le', '');
+    expect(whole.categoryId).toBe(wb!.id);
+    expect(whole.reason).toBe('single_match');
+
+    // Substring inside a longer word → does NOT match → "Khác"/Other (P9).
+    const inside = await classify('Chuoi zzkx khong khop', '');
+    expect(inside.categoryId).toBe(catId.get('Other')!);
+    expect(inside.reason).toBe('no_match');
   });
 });

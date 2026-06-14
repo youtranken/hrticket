@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
 import { tags, ticketTags, projectSettings } from '../../infra/db/schema';
 import type { TagKind } from '../../infra/db/schema';
@@ -18,24 +18,34 @@ export async function ensureTag(
   kind: TagKind = 'auto',
   color = '#fa8c16',
 ): Promise<number> {
-  const [existing] = await tx
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.projectId, projectId), eq(tags.name, name)));
-  if (existing) return existing.id;
-  await tx
+  // Atomic upsert (P7): DO UPDATE forces a RETURNING row even on a concurrent insert,
+  // so two first-uses of the same tag can't both miss and leave a 0-row SELECT.
+  const [row] = await tx
     .insert(tags)
     .values({ projectId, name, kind, color })
-    .onConflictDoNothing({ target: [tags.projectId, tags.name] });
-  const [row] = await tx
-    .select({ id: tags.id })
-    .from(tags)
-    .where(and(eq(tags.projectId, projectId), eq(tags.name, name)));
+    .onConflictDoUpdate({ target: [tags.projectId, tags.name], set: { name } })
+    .returning({ id: tags.id });
   return row!.id;
 }
 
-export async function addTicketTag(tx: DbTx, ticketId: string, tagId: number): Promise<void> {
-  await tx.insert(ticketTags).values({ ticketId, tagId }).onConflictDoNothing();
+/** Returns true if a NEW ticket↔tag link was created (false = already present). */
+export async function addTicketTag(tx: DbTx, ticketId: string, tagId: number): Promise<boolean> {
+  const rows = await tx
+    .insert(ticketTags)
+    .values({ ticketId, tagId })
+    .onConflictDoNothing()
+    .returning({ ticketId: ticketTags.ticketId });
+  return rows.length > 0;
+}
+
+/** Drop quoted-reply lines (`> …`) so a priority keyword living in quoted history
+ *  doesn't re-tag every reply (D3). Crude line filter, matches mail-client quoting. */
+function stripQuoted(body: string | null | undefined): string {
+  if (!body) return '';
+  return body
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('>'))
+    .join('\n');
 }
 
 export interface AutoTagSignals {
@@ -72,8 +82,8 @@ export async function applyAutoTags(
     .where(eq(projectSettings.projectId, input.projectId));
 
   const addByName = async (name: string) => {
-    await addTicketTag(tx, input.ticketId, await ensureTag(tx, input.projectId, name));
-    if (!applied.includes(name)) applied.push(name);
+    const inserted = await addTicketTag(tx, input.ticketId, await ensureTag(tx, input.projectId, name));
+    if (inserted && !applied.includes(name)) applied.push(name);
   };
 
   if (input.signals.hasStoredAttachment && (settings?.attachment ?? true)) {
@@ -86,8 +96,11 @@ export async function applyAutoTags(
     await addByName(AUTO_TAG.crossPost);
   }
 
-  // Priority keyword rules (FR32). No toggle — a rule existing IS the opt-in.
-  const haystack = `${input.subject ?? ''}\n${input.body ?? ''}`;
+  // Priority keyword rules (FR32). No toggle — a rule existing IS the opt-in. Scan only
+  // the NEW message text — stripping quoted history so a keyword living in a quoted
+  // original doesn't re-prioritise every reply (D3). Priority stays keyword-driven
+  // regardless of the auto-reply signal (per the Epic 4 design / IT-ROUTE-002).
+  const haystack = `${input.subject ?? ''}\n${stripQuoted(input.body)}`;
   const prio = (await tx.execute(sql`
     SELECT DISTINCT t.id AS id, t.name AS name
     FROM tag_keywords k
@@ -97,8 +110,8 @@ export async function applyAutoTags(
       AND position(f_unaccent(lower(k.keyword)) IN f_unaccent(lower(${haystack}))) > 0
   `)) as unknown as Array<{ id: number; name: string }>;
   for (const p of prio) {
-    await addTicketTag(tx, input.ticketId, Number(p.id));
-    if (!applied.includes(p.name)) applied.push(p.name);
+    const inserted = await addTicketTag(tx, input.ticketId, Number(p.id));
+    if (inserted && !applied.includes(p.name)) applied.push(p.name);
   }
 
   return applied;

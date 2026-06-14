@@ -107,6 +107,32 @@ export class AssignmentService {
         if (won.length === 0) throw new ConflictException('Ticket already claimed');
       }
 
+      // Re-classify a claimed "Khác" ticket into the claimer's group (FR35) — only the
+      // unambiguous single-group case; multi/none stays "Khác" (resolve via changeCategory).
+      let newCategoryId = t.categoryId;
+      const [cat] = await tx
+        .select({ isSystem: categories.isSystem })
+        .from(categories)
+        .where(eq(categories.id, t.categoryId ?? -1));
+      if (cat?.isSystem) {
+        const groups = await tx
+          .select({ id: categories.id })
+          .from(userGroupMembership)
+          .innerJoin(categories, eq(categories.id, userGroupMembership.categoryId))
+          .where(
+            and(
+              eq(userGroupMembership.userId, user.id),
+              eq(categories.projectId, t.projectId),
+              eq(categories.isSystem, false),
+              eq(categories.disabled, false),
+            ),
+          );
+        if (groups.length === 1) {
+          newCategoryId = groups[0]!.id;
+          await tx.update(tickets).set({ categoryId: newCategoryId }).where(eq(tickets.id, ticketId));
+        }
+      }
+
       await writeAudit(tx, {
         projectId: t.projectId,
         actorId: user.id,
@@ -114,8 +140,8 @@ export class AssignmentService {
         action: 'ticket.claimed',
         objectType: 'ticket',
         objectId: ticketId,
-        oldValue: { assigneeId: t.assigneeId },
-        newValue: { assigneeId: user.id },
+        oldValue: { assigneeId: t.assigneeId, categoryId: t.categoryId },
+        newValue: { assigneeId: user.id, categoryId: newCategoryId },
       });
       return { assigneeId: user.id, from: t.assigneeId };
     });
@@ -135,6 +161,9 @@ export class AssignmentService {
   ): Promise<AssignResult> {
     const actor = await actorForUser(user);
     return withActor(actor, async (tx) => {
+      // Serialize concurrent manual assigns on the same ticket (P1): lock the row
+      // before reading so two TL/Admin assigns can't lost-update each other.
+      await tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.id, ticketId)).for('update');
       const t = await this.loadTicket(tx, ticketId);
       this.assertCanAssign(user, (actor.kind === 'user' ? actor.groups : []), t);
 
@@ -229,6 +258,8 @@ export class AssignmentService {
   ): Promise<{ categoryId: number }> {
     const actor = await actorForUser(user);
     return withActor(actor, async (tx) => {
+      // Lock the row so a concurrent assign/category-change can't lost-update it (P1).
+      await tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.id, ticketId)).for('update');
       const t = await this.loadTicket(tx, ticketId);
       this.assertCanAssign(user, (actor.kind === 'user' ? actor.groups : []), t);
 

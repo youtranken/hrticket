@@ -73,13 +73,13 @@ export async function autoAssign(
     .where(eq(autoAssignConfig.categoryId, categoryId));
   if (!cfg) return { assigneeId: null, reason: 'pool_no_config' };
 
-  // Lock the cursor row first (mutex for this category). Ensure it exists.
-  await tx.execute(sql`
-    INSERT INTO assign_cursors (category_id) VALUES (${categoryId})
-    ON CONFLICT (category_id) DO NOTHING
-  `);
+  // Lock the cursor row (per-category mutex). DO UPDATE forces a row write-lock even
+  // when the row already exists, so a concurrent first-assignment can't slip past with
+  // no lock held (P2: an INSERT … DO NOTHING acquires no lock for the loser).
   const cursorRows = (await tx.execute(sql`
-    SELECT last_user_id FROM assign_cursors WHERE category_id = ${categoryId} FOR UPDATE
+    INSERT INTO assign_cursors (category_id) VALUES (${categoryId})
+    ON CONFLICT (category_id) DO UPDATE SET category_id = excluded.category_id
+    RETURNING last_user_id
   `)) as unknown as Array<{ last_user_id: string | null }>;
   const lastUserId = cursorRows[0]?.last_user_id ?? null;
 
@@ -110,15 +110,15 @@ export async function autoAssign(
   let chosen: string;
   if (cfg.strategy === 'round_robin') {
     chosen = pickRoundRobin(ordered, lastUserId);
+    // Advance the cursor ONLY for round-robin — writing a least-load winner here would
+    // skew rotation if the strategy is later switched back to RR (P3).
+    await tx
+      .update(assignCursors)
+      .set({ lastUserId: chosen })
+      .where(eq(assignCursors.categoryId, categoryId));
   } else {
-    chosen = await pickLeastLoad(tx, candidates.map((c) => c.userId));
+    chosen = await pickLeastLoad(tx, candidates.map((c) => c.userId), projectId);
   }
-
-  // Advance the cursor (meaningful for RR; harmless bookkeeping for least-load).
-  await tx
-    .update(assignCursors)
-    .set({ lastUserId: chosen })
-    .where(eq(assignCursors.categoryId, categoryId));
 
   await tx
     .update(tickets)
@@ -156,16 +156,23 @@ function pickRoundRobin(ordered: RosterRow[], lastUserId: string | null): string
 }
 
 /** Fewest open tickets; tie → longest idle (max assigned_at asc, nulls first) → id. */
-async function pickLeastLoad(tx: DbTx, candidateIds: string[]): Promise<string> {
+async function pickLeastLoad(
+  tx: DbTx,
+  candidateIds: string[],
+  projectId: number,
+): Promise<string> {
   const ids = sql.join(
     candidateIds.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
+  // Scope load + idle to THIS project (D5) — explicit, future-proof against id reuse.
   const rows = (await tx.execute(sql`
     SELECT u.id AS id,
       (SELECT count(*) FROM tickets t
-         WHERE t.assignee_id = u.id AND t.status IN ${OPEN_STATUSES})::int AS load,
-      (SELECT max(t.assigned_at) FROM tickets t WHERE t.assignee_id = u.id) AS last_assigned
+         WHERE t.assignee_id = u.id AND t.project_id = ${projectId}
+           AND t.status IN ${OPEN_STATUSES})::int AS load,
+      (SELECT max(t.assigned_at) FROM tickets t
+         WHERE t.assignee_id = u.id AND t.project_id = ${projectId}) AS last_assigned
     FROM users u
     WHERE u.id IN (${ids})
   `)) as unknown as Array<{ id: string; load: number; last_assigned: string | null }>;
