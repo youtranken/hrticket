@@ -84,6 +84,7 @@ export class RoleCapabilitiesService {
       const before = await this.cellValue(tx, role, capability);
       await this.upsert(tx, role, capability, allowed);
       await writeAudit(tx, {
+        projectId: actor.projectId,
         actorId: actor.id,
         actorLabel: actor.email,
         action: 'role_capability.changed',
@@ -107,6 +108,7 @@ export class RoleCapabilitiesService {
         }
       }
       await writeAudit(tx, {
+        projectId: actor.projectId,
         actorId: actor.id,
         actorLabel: actor.email,
         action: 'role_capability.reset',

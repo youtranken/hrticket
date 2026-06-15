@@ -6,9 +6,17 @@ import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
 import { AuditService } from './audit.service';
 
+// A parseable date/datetime bound. Without this guard a value like '2026-99-99' or
+// 'foo' reaches Postgres `::timestamptz` (list) or `new Date()` (view-log) and raises
+// an unhandled 500 instead of a clean 400. Accepts both 'YYYY-MM-DD' and full ISO.
+const dateBound = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'INVALID_DATE')
+  .optional();
+
 const auditQuery = z.object({
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: dateBound,
+  to: dateBound,
   actorId: z.string().uuid().optional(),
   action: z.string().optional(),
   objectType: z.string().optional(),
@@ -21,8 +29,8 @@ const auditQuery = z.object({
 const viewLogQuery = z.object({
   ticketId: z.string().uuid().optional(),
   actorId: z.string().uuid().optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: dateBound,
+  to: dateBound,
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
