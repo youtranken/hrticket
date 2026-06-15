@@ -46,10 +46,21 @@ const csvStrings = z
     return out.length ? out : undefined;
   });
 
+/** True only for a real calendar day — guards against regex-valid non-dates like
+ *  '2026-99-99' or '2026-02-30' that would otherwise reach Postgres `::date` and
+ *  raise an unhandled 500. Shared by the report/export DTOs. */
+export function isRealCalendarDay(s: string): boolean {
+  const [y, m, d] = s.split('-').map(Number);
+  if (y === undefined || m === undefined || d === undefined) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 /** A VN calendar day 'YYYY-MM-DD'; the service turns it into a tz-aware bound. */
 const vnDay = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isRealCalendarDay, 'INVALID_DATE')
   .optional();
 
 export const ticketListQuerySchema = z.object({

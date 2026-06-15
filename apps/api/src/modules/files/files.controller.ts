@@ -106,8 +106,14 @@ export class FilesController {
       (stream as { destroy?: () => void }).destroy?.();
     });
     stream.on('error', () => {
-      if (!res.headersSent) res.status(500);
-      res.end();
+      if (res.headersSent) {
+        // Content-Length is already on the wire; a clean res.end() here would make
+        // the truncated body look complete to the client. Abort the socket instead
+        // so the client sees a broken transfer, not silent corruption.
+        res.destroy();
+        return;
+      }
+      res.status(500).end();
     });
     stream.pipe(res);
   }

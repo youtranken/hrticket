@@ -19,7 +19,9 @@ import { AdminJunkRulesService } from './admin-junkrules.service';
 
 const addSchema = z.object({
   kind: z.enum(['keyword', 'sender']),
-  pattern: z.string().min(1).max(200),
+  // .trim() BEFORE .min(1): whitespace-only "   " passes a bare .min(1) but the
+  // service trims it to '' → an empty rule that matches indiscriminately.
+  pattern: z.string().trim().min(1).max(200),
 });
 
 /** Junk-rule administration (Story 7.3, FR102). Admin → own project; SSA → X-Project. */

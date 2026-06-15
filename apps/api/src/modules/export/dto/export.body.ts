@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { TICKET_STATUSES, type TicketListQuery } from '../../tickets/dto/ticket-list.query';
+import {
+  TICKET_STATUSES,
+  isRealCalendarDay,
+  type TicketListQuery,
+} from '../../tickets/dto/ticket-list.query';
+
+/** VN calendar day 'YYYY-MM-DD', rejecting regex-valid non-dates (→ 422 not 500). */
+const vnDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealCalendarDay, 'INVALID_DATE');
 
 /**
  * Filter for the ticket export. Unlike `ticketListQuerySchema` (which parses raw
@@ -18,8 +25,8 @@ const exportFilterSchema = z.object({
   tagId: z.array(z.number().int()).optional(),
   assigneeId: z.array(z.string()).optional(),
   projectId: z.number().int().optional(),
-  createdFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  createdTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdFrom: vnDay.optional(),
+  createdTo: vnDay.optional(),
 });
 
 /** Export tickets: the typed worklist filter (10.1) + the output format. */
@@ -40,7 +47,7 @@ export const exportReportSchema = z.object({
   format: z.enum(['xlsx', 'csv']).default('xlsx'),
   lang: z.enum(['vi', 'en']).default('vi'),
   kind: z.enum(['by-time', 'by-category', 'by-staff']),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  from: vnDay.optional(),
+  to: vnDay.optional(),
 });
 export type ExportReportBody = z.infer<typeof exportReportSchema>;

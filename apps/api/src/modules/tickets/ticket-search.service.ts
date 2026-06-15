@@ -83,6 +83,10 @@ export class TicketSearchService {
       ELSE 'assignee' END)`;
     const codeFirst = sql`(CASE WHEN ${codeMatch} THEN 0 ELSE 1 END)`;
     const rank = sql`ts_rank(tickets.search_tsv, ${tsq})`;
+    // NOTE: headline runs over f_unaccent(subject) so the unaccented tsquery actually
+    // highlights (accent-insensitive match, IT-SEARCH-001). Trade-off: the snippet text
+    // is diacritic-stripped ("nghi phep"). A diacritic-preserving highlight needs
+    // unaccent→original position mapping — deferred (see phaseC-code-review.md, #6).
     const headline = sql<string>`ts_headline('simple', f_unaccent(${tickets.subject}), ${tsq}, 'StartSel=<b>,StopSel=</b>,MaxFragments=1')`;
 
     return withActor(actor, async (tx) => {

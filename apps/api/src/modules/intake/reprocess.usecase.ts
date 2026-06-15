@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
 import { inboxMessages } from '../../infra/db/schema';
@@ -39,6 +40,15 @@ export async function reprocessInboxMessage(
     .where(eq(inboxMessages.id, inboxMessageId))
     .for('update');
   if (!row) throw new Error('inbox message not found');
+
+  // Concurrency guard (idempotency): a held mail is consumed exactly once. Both
+  // createTicketFromMail and appendMessageToTicket flip status to 'processed', so a
+  // second concurrent "Xử lý lại" — which passed the caller's non-locking status
+  // check — would otherwise create a duplicate ticket + auto-ack. Re-checked here
+  // UNDER the FOR UPDATE lock, where the freshly-committed status is visible.
+  if (row.status === 'processed') {
+    throw new ConflictException('INBOX_ALREADY_PROCESSED');
+  }
 
   const parsed = await parseMail(row.raw);
   const autoReply = isAutoSubmitted(parsed.headers);

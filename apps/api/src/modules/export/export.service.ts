@@ -145,7 +145,14 @@ export class ExportService {
 
   /** Serialize a table to a CSV Buffer with a UTF-8 BOM (Excel-VN keeps diacritics). */
   toCsv(table: ExportTable): Buffer {
-    const esc = (s: string) => (/[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+    const esc = (s: string) => {
+      // Neutralize spreadsheet formula injection: Excel/Sheets execute a cell that
+      // starts with = + - @ (or a leading TAB/CR). Subject/email/name/tags are
+      // attacker-controlled (a ticket arrives by email), so prefix such a value with
+      // a single quote to force it to stay literal text, then apply CSV quoting.
+      const safe = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+      return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+    };
     const lines = [table.headers, ...table.rows].map((row) => row.map(esc).join(','));
     const body = lines.join('\r\n');
     return Buffer.concat([Buffer.from('﻿', 'utf8'), Buffer.from(body, 'utf8')]);
