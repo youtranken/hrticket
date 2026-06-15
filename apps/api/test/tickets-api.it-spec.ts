@@ -8,8 +8,12 @@ import { startHarness } from './setup.it';
 import { AppModule } from '../src/app.module';
 import { makeUser } from './factories/user.factory';
 import { TicketsReadService } from '../src/modules/tickets/tickets-read.service';
+import { ticketListQuerySchema } from '../src/modules/tickets/dto/ticket-list.query';
 import type { SessionUser } from '../src/modules/auth/session.service';
 import { tickets, categories, userGroupMembership } from '../src/infra/db/schema';
+
+/** Default, fully-parsed list query (what `GET /api/tickets?` yields). */
+const LIST_Q = ticketListQuerySchema.parse({});
 
 const HRIS = 1;
 const CNB = 2;
@@ -87,9 +91,9 @@ describe('IT-API-001: ticket list + detail (RLS)', () => {
 
   it('list visibility differs by scope (member < admin < ssa)', async () => {
     if (!ready) return;
-    const member = await read.list(memberU);
-    const admin = await read.list(adminU);
-    const ssa = await read.list(ssaU);
+    const member = await read.list(memberU, LIST_Q);
+    const admin = await read.list(adminU, LIST_Q);
+    const ssa = await read.list(ssaU, LIST_Q);
     expect(member.total).toBe(1); // only the Other-group hris ticket
     expect(admin.total).toBe(2); // whole hris project
     expect(ssa.total).toBe(3); // both projects

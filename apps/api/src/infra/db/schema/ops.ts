@@ -125,3 +125,22 @@ export const snoozeReminderLog = pgTable(
   },
   (t) => [unique('uq_snooze_reminder').on(t.ticketId, t.dateVn)],
 );
+
+/** Mail-bomb grouped-alert dedup per (project, sender, window): the FIRST mail that
+ *  crosses the threshold in a sliding window claims a row (INSERT … ON CONFLICT DO
+ *  NOTHING) and sends exactly one Admin alert; later mails in the same window find the
+ *  row and stay silent (Story 7.2, FR101). System-internal like the other *_log /
+ *  mail_bomb_counters tables — no RLS (systemActor writes it at intake time). */
+export const mailBombAlertLog = pgTable(
+  'mail_bomb_alert_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id),
+    sender: text('sender').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique('uq_mailbomb_alert').on(t.projectId, t.sender, t.windowStart)],
+);

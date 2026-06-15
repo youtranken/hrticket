@@ -9,6 +9,9 @@ import { MonitorModule } from './modules/monitor/monitor.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { JunkModule } from './modules/junk/junk.module';
+import { ReportingModule } from './modules/reporting/reporting.module';
+import { ExportModule } from './modules/export/export.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
@@ -22,6 +25,9 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     UsersModule,
     AdminModule,
     NotificationsModule,
+    JunkModule,
+    ReportingModule,
+    ExportModule,
   ],
   controllers: [AppController],
 })

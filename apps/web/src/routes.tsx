@@ -10,7 +10,13 @@ import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { CategoriesPage } from './features/admin/CategoriesPage';
 import { ReminderConfigPage } from './features/admin/ReminderConfigPage';
+import { MailProtectionPage } from './features/admin/MailProtectionPage';
+import { AttachmentConfigPage } from './features/admin/AttachmentConfigPage';
+import { JunkPage } from './features/junk/JunkPage';
 import { InboxPage, MyTicketsPage, PoolPage } from './features/inbox/InboxPage';
+import { PendingPage } from './features/pending/PendingPage';
+import { SearchResultsPage } from './features/search/SearchResultsPage';
+import { ReportsPage } from './features/reports/ReportsPage';
 import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
 import { Placeholder, ForbiddenPage } from './components/Placeholder';
@@ -41,12 +47,13 @@ function ProtectedApp() {
         <Route path="tickets/:id" element={<TicketDetailPage />} />
         <Route path="my-tickets" element={<MyTicketsPage />} />
         <Route path="pool" element={<PoolPage />} />
-        <Route path="pending" element={<Placeholder titleKey="menu.pending" />} />
+        <Route path="pending" element={<PendingPage />} />
+        <Route path="search" element={<SearchResultsPage />} />
         <Route
           path="reports"
           element={
             <RequireRole roles={['team_lead', 'admin', 'ssa']} me={me}>
-              <Placeholder titleKey="menu.reports" />
+              <ReportsPage />
             </RequireRole>
           }
         />
@@ -62,7 +69,7 @@ function ProtectedApp() {
           path="junk"
           element={
             <RequireRole roles={admin} me={me}>
-              <Placeholder titleKey="menu.junk" />
+              <JunkPage />
             </RequireRole>
           }
         />
@@ -79,6 +86,22 @@ function ProtectedApp() {
           element={
             <RequireRole roles={admin} me={me}>
               <ReminderConfigPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/mail-protection"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <MailProtectionPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/attachments"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <AttachmentConfigPage />
             </RequireRole>
           }
         />

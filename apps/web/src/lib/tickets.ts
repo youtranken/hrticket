@@ -25,7 +25,24 @@ export interface TicketListItem {
   snoozeDue: boolean;
 }
 
-export type TicketView = 'all' | 'pool' | 'mine';
+export type TicketView = 'all' | 'pool' | 'mine' | 'pending';
+export type TicketSort = 'worklist' | 'created' | 'status' | 'snooze';
+export type SortDir = 'asc' | 'desc';
+
+/** Filter bar state (Story 10.1, FR79). Mirrors the BE Zod `ticketListQuerySchema`;
+ *  Phase-C keeps `packages/shared` frozen, so the type lives here too. */
+export interface TicketFilters {
+  view?: TicketView;
+  sort?: TicketSort;
+  dir?: SortDir;
+  status?: string[];
+  categoryId?: number[];
+  tagId?: number[];
+  assigneeId?: string[];
+  projectId?: number;
+  createdFrom?: string; // 'YYYY-MM-DD' (VN day)
+  createdTo?: string;
+}
 
 export interface TicketListResult {
   items: TicketListItem[];
@@ -35,10 +52,79 @@ export interface TicketListResult {
   overdueTotal: number;
 }
 
-export function useTickets(page: number, pageSize: number, view: TicketView = 'all') {
+/** Build the query string for `GET /api/tickets`; arrays go as repeated params. */
+export function ticketListQueryString(page: number, pageSize: number, f: TicketFilters): string {
+  const p = new URLSearchParams();
+  p.set('page', String(page));
+  p.set('pageSize', String(pageSize));
+  if (f.view) p.set('view', f.view);
+  if (f.sort) p.set('sort', f.sort);
+  if (f.dir) p.set('dir', f.dir);
+  for (const s of f.status ?? []) p.append('status', s);
+  for (const c of f.categoryId ?? []) p.append('categoryId', String(c));
+  for (const t of f.tagId ?? []) p.append('tagId', String(t));
+  for (const a of f.assigneeId ?? []) p.append('assigneeId', a);
+  if (f.projectId !== undefined) p.set('projectId', String(f.projectId));
+  if (f.createdFrom) p.set('createdFrom', f.createdFrom);
+  if (f.createdTo) p.set('createdTo', f.createdTo);
+  return p.toString();
+}
+
+export function useTickets(page: number, pageSize: number, filters: TicketFilters = {}) {
   return useQuery<TicketListResult>({
-    queryKey: ['tickets', page, pageSize, view],
-    queryFn: () => api(`/tickets?page=${page}&pageSize=${pageSize}&view=${view}`),
+    queryKey: ['tickets', page, pageSize, filters],
+    queryFn: () => api(`/tickets?${ticketListQueryString(page, pageSize, filters)}`),
+  });
+}
+
+export interface FilterOptions {
+  categories: { id: number; nameVi: string; nameEn: string }[];
+  assignees: { id: string; name: string }[];
+  tags: { id: number; name: string; color: string | null }[];
+}
+
+/** RLS-scoped options for the filter dropdowns (categories/assignees/tags). */
+export function useFilterOptions() {
+  return useQuery<FilterOptions>({
+    queryKey: ['ticket-filter-options'],
+    queryFn: () => api('/tickets/filter-options'),
+  });
+}
+
+// ── Full-text search (Story 10.2, FR81) ─────────────────────────────────────
+
+export type SearchMatchType = 'code' | 'subject' | 'body' | 'requester' | 'assignee';
+
+export interface SearchResultItem {
+  id: string;
+  ticketCode: string;
+  projectKey: string;
+  subject: string;
+  requesterEmail: string;
+  status: string;
+  category: { vi: string; en: string } | null;
+  assignee: { id: string; name: string } | null;
+  createdAt: string;
+  matchType: SearchMatchType;
+  /** ts_headline snippet with matched terms wrapped in <b> (may be null). */
+  headline: string | null;
+}
+
+export interface SearchResult {
+  items: SearchResultItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Vietnamese FTS + code + people search. `enabled` lets the dropdown debounce. */
+export function useTicketSearch(q: string, page = 1, pageSize = 20, enabled = true) {
+  const trimmed = q.trim();
+  return useQuery<SearchResult>({
+    queryKey: ['ticket-search', trimmed, page, pageSize],
+    queryFn: () =>
+      api(`/tickets/search?q=${encodeURIComponent(trimmed)}&page=${page}&pageSize=${pageSize}`),
+    enabled: enabled && trimmed.length > 0,
   });
 }
 
@@ -78,6 +164,8 @@ export interface TicketDetail {
     snoozeUntil: string | null;
     reopenCount: number;
     reopenLocked: boolean;
+    isJunk?: boolean;
+    isSpamThread?: boolean;
     isOverdue: boolean;
     overdueDays: number;
     snoozeDue: boolean;

@@ -2,25 +2,41 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
-import { TicketsReadService, type TicketView } from './tickets-read.service';
+import { TicketsReadService } from './tickets-read.service';
+import { TicketSearchService } from './ticket-search.service';
+import { ticketListQuerySchema } from './dto/ticket-list.query';
+import { ticketSearchQuerySchema } from './dto/ticket-search.query';
 
 @Controller('api/tickets')
 @UseGuards(SessionGuard)
 export class TicketsController {
-  constructor(private readonly read: TicketsReadService) {}
+  constructor(
+    private readonly read: TicketsReadService,
+    private readonly searchSvc: TicketSearchService,
+  ) {}
 
-  /** Paginated, RLS-filtered list (newest first). */
+  /** Paginated, RLS-filtered worklist (Story 10.1). Default order = shared
+   *  worklist spec (FR106); full filter bar (FR79) + Pending tab (FR80). Every
+   *  filter rides on top of RLS, which stays the safety net. */
   @Get()
-  async list(
-    @CurrentUser() user: SessionUser,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-    @Query('view') view?: string,
-  ) {
-    const p = Math.max(1, Number(page) || 1);
-    const ps = Math.min(100, Math.max(1, Number(pageSize) || 20));
-    const v: TicketView = view === 'pool' || view === 'mine' ? view : 'all';
-    return this.read.list(user, p, ps, v);
+  async list(@CurrentUser() user: SessionUser, @Query() query: Record<string, unknown>) {
+    const q = ticketListQuerySchema.parse(query);
+    return this.read.list(user, q);
+  }
+
+  /** RLS-scoped options for the filter bar (Story 10.1) — categories/assignees/
+   *  tags drawn from the caller's visible tickets. MUST precede `:id`. */
+  @Get('filter-options')
+  async filterOptions(@CurrentUser() user: SessionUser) {
+    return this.read.filterOptions(user);
+  }
+
+  /** Vietnamese full-text + code + people search (Story 10.2, FR81). Diacritic-
+   *  insensitive; visibility = ticket-join RLS. MUST precede `:id`. */
+  @Get('search')
+  async search(@CurrentUser() user: SessionUser, @Query() query: Record<string, unknown>) {
+    const q = ticketSearchQuerySchema.parse(query);
+    return this.searchSvc.search(user, q.q, q.page, q.pageSize);
   }
 
   /** Full ticket detail (conversation + participants + tags + attachments + links). */

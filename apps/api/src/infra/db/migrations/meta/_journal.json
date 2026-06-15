@@ -57,6 +57,13 @@
       "when": 1781430637904,
       "tag": "0007_abnormal_romulus",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781450221692,
+      "tag": "0008_fast_iron_lad",
+      "breakpoints": true
     }
   ]
 }

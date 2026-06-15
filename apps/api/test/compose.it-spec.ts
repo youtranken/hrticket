@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { ItHarness } from './setup.it';
 import { startHarness } from './setup.it';
 import { NotesService } from '../src/modules/tickets/notes.service';

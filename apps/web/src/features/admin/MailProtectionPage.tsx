@@ -1,0 +1,381 @@
+import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import {
+  Card,
+  Tabs,
+  Table,
+  Button,
+  Input,
+  InputNumber,
+  Collapse,
+  Empty,
+  Select,
+  Space,
+  Tag,
+  Form,
+  Typography,
+  App as AntApp,
+} from 'antd';
+import {
+  useBlocklist,
+  useAddBlock,
+  useRemoveBlock,
+  type BlocklistEntry,
+} from '../../lib/blocklist';
+import {
+  useSuppressed,
+  useMailBombConfig,
+  useSaveMailBombConfig,
+  useReprocess,
+  useIgnoreSuppressed,
+  type SuppressedGroup,
+  type SuppressedItem,
+} from '../../lib/suppressed';
+import {
+  useJunkRules,
+  useAddJunkRule,
+  useRemoveJunkRule,
+  type JunkRule,
+} from '../../lib/junkRules';
+
+const { Text } = Typography;
+
+/**
+ * Admin "Bảo vệ hộp thư" (Story 7.1+). One page hosting the mail-protection config:
+ * the sender blocklist now; the mail-bomb threshold (7.2) and junk rules (7.3) add
+ * their own tabs here later.
+ */
+export function MailProtectionPage() {
+  const { t } = useTranslation();
+  return (
+    <Card title={t('spam.title')}>
+      <Tabs
+        items={[
+          { key: 'blocklist', label: t('spam.blocklist.tab'), children: <BlocklistTab /> },
+          { key: 'held', label: t('spam.held.tab'), children: <HeldMailTab /> },
+          { key: 'junkRules', label: t('spam.junkRules.tab'), children: <JunkRulesTab /> },
+        ]}
+      />
+    </Card>
+  );
+}
+
+function BlocklistTab() {
+  const { t } = useTranslation();
+  const { message, modal } = AntApp.useApp();
+  const { data: rows = [], isLoading } = useBlocklist();
+  const add = useAddBlock();
+  const remove = useRemoveBlock();
+  const [form] = Form.useForm<{ email: string; reason?: string }>();
+
+  const onAdd = (v: { email: string; reason?: string }) => {
+    add.mutate(v, {
+      onSuccess: () => {
+        message.success(t('spam.blocklist.added'));
+        form.resetFields();
+      },
+      onError: (e) => message.error(e.message),
+    });
+  };
+
+  const onRemove = (row: BlocklistEntry) => {
+    modal.confirm({
+      title: t('spam.blocklist.confirmRemove', { email: row.email }),
+      okButtonProps: { danger: true },
+      onOk: () =>
+        remove
+          .mutateAsync(row.id)
+          .then(() => message.success(t('spam.blocklist.removed')))
+          .catch((e: Error) => message.error(e.message)),
+    });
+  };
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Text type="secondary">{t('spam.blocklist.hint')}</Text>
+      <Form form={form} layout="inline" onFinish={onAdd}>
+        <Form.Item
+          name="email"
+          rules={[
+            { required: true, message: t('spam.blocklist.emailRequired') },
+            { type: 'email', message: t('spam.blocklist.emailInvalid') },
+          ]}
+        >
+          <Input placeholder={t('spam.blocklist.emailPlaceholder')} style={{ width: 260 }} />
+        </Form.Item>
+        <Form.Item name="reason">
+          <Input placeholder={t('spam.blocklist.reasonPlaceholder')} style={{ width: 260 }} />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={add.isPending}>
+          {t('spam.blocklist.addButton')}
+        </Button>
+      </Form>
+
+      <Table<BlocklistEntry>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={rows}
+        pagination={false}
+        columns={[
+          { title: t('spam.blocklist.colEmail'), dataIndex: 'email', width: 260 },
+          {
+            title: t('spam.blocklist.colReason'),
+            dataIndex: 'reason',
+            render: (r: string | null) => r ?? '—',
+          },
+          {
+            title: t('spam.blocklist.colBlockedCount'),
+            dataIndex: 'blockedCount',
+            width: 130,
+            render: (n: number) => <Tag color={n > 0 ? 'red' : 'default'}>{n}</Tag>,
+          },
+          {
+            title: t('spam.blocklist.colAddedBy'),
+            dataIndex: 'addedByEmail',
+            render: (e: string | null) => e ?? '—',
+          },
+          {
+            title: t('spam.blocklist.colDate'),
+            dataIndex: 'createdAt',
+            width: 170,
+            render: (d: string) => new Date(d).toLocaleString(),
+          },
+          {
+            title: '',
+            width: 100,
+            render: (_: unknown, row: BlocklistEntry) => (
+              <Button size="small" danger onClick={() => onRemove(row)}>
+                {t('spam.blocklist.unblock')}
+              </Button>
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+}
+
+/** Mail-bomb threshold config + the "held mail" (suppressed) review: grouped by
+ *  sender, each releasable ("Xử lý lại"), blockable, or ignorable (Story 7.2). */
+function HeldMailTab() {
+  const { t } = useTranslation();
+  const { message, modal } = AntApp.useApp();
+  const { data: groups = [], isLoading } = useSuppressed();
+  const reprocess = useReprocess();
+  const ignore = useIgnoreSuppressed();
+  const addBlock = useAddBlock();
+
+  const onReprocess = (item: SuppressedItem) => {
+    reprocess.mutate(item.id, {
+      onSuccess: (res) => message.success(t(`spam.held.outcome.${res.outcome}`, { code: res.ticketCode ?? '' })),
+      onError: (e) => message.error(e.message),
+    });
+  };
+
+  const onIgnore = (item: SuppressedItem) => {
+    ignore.mutate(item.id, {
+      onSuccess: () => message.success(t('spam.held.ignored')),
+      onError: (e) => message.error(e.message),
+    });
+  };
+
+  const onBlock = (group: SuppressedGroup) => {
+    modal.confirm({
+      title: t('spam.held.confirmBlock', { sender: group.sender }),
+      onOk: () =>
+        addBlock
+          .mutateAsync({ email: group.sender, reason: t('spam.held.blockReason') })
+          .then(() => message.success(t('spam.blocklist.added')))
+          .catch((e: Error) => message.error(e.message)),
+    });
+  };
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <ThresholdConfig />
+      <Text type="secondary">{t('spam.held.hint')}</Text>
+      {groups.length === 0 ? (
+        <Empty description={t('spam.held.empty')} />
+      ) : (
+        <Collapse
+          items={groups.map((g) => ({
+            key: g.sender,
+            label: (
+              <Space>
+                <Text strong>{g.sender}</Text>
+                <Tag color="orange">{t('spam.held.count', { n: g.count })}</Tag>
+              </Space>
+            ),
+            extra: (
+              <Button
+                size="small"
+                danger
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onBlock(g);
+                }}
+              >
+                {t('spam.held.blockSender')}
+              </Button>
+            ),
+            children: (
+              <Table<SuppressedItem>
+                rowKey="id"
+                loading={isLoading}
+                dataSource={g.items}
+                pagination={false}
+                size="small"
+                columns={[
+                  { title: t('spam.held.colSubject'), dataIndex: 'subject' },
+                  {
+                    title: t('spam.held.colReceived'),
+                    dataIndex: 'receivedAt',
+                    width: 180,
+                    render: (d: string) => new Date(d).toLocaleString(),
+                  },
+                  {
+                    title: '',
+                    width: 220,
+                    render: (_: unknown, item: SuppressedItem) => (
+                      <Space>
+                        <Button size="small" type="primary" onClick={() => onReprocess(item)}>
+                          {t('spam.held.reprocess')}
+                        </Button>
+                        <Button size="small" onClick={() => onIgnore(item)}>
+                          {t('spam.held.ignore')}
+                        </Button>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            ),
+          }))}
+        />
+      )}
+    </Space>
+  );
+}
+
+function ThresholdConfig() {
+  const { t } = useTranslation();
+  const { message } = AntApp.useApp();
+  const { data: cfg } = useMailBombConfig();
+  const save = useSaveMailBombConfig();
+  const [form] = Form.useForm<{ mailBombPerHour: number }>();
+
+  useEffect(() => {
+    if (cfg) form.setFieldsValue(cfg);
+  }, [cfg, form]);
+
+  return (
+    <Card size="small" title={t('spam.held.thresholdTitle')}>
+      <Form
+        form={form}
+        layout="inline"
+        onFinish={(v) =>
+          save.mutate(v, {
+            onSuccess: () => message.success(t('spam.held.thresholdSaved')),
+            onError: (e) => message.error(e.message),
+          })
+        }
+      >
+        <Form.Item
+          name="mailBombPerHour"
+          label={t('spam.held.thresholdLabel')}
+          rules={[{ required: true }]}
+        >
+          <InputNumber min={1} max={1000} style={{ width: 120 }} addonAfter={t('spam.held.perHour')} />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={save.isPending}>
+          {t('common.save')}
+        </Button>
+      </Form>
+    </Card>
+  );
+}
+
+/** Junk rules CRUD (Story 7.3): keyword (subject+body, accent-insensitive) or sender
+ *  glob (noreply@*, *@marketing.x.com). Matching new-ticket mail goes to the Junk tab. */
+function JunkRulesTab() {
+  const { t } = useTranslation();
+  const { message, modal } = AntApp.useApp();
+  const { data: rows = [], isLoading } = useJunkRules();
+  const add = useAddJunkRule();
+  const remove = useRemoveJunkRule();
+  const [form] = Form.useForm<{ kind: 'keyword' | 'sender'; pattern: string }>();
+
+  const onAdd = (v: { kind: 'keyword' | 'sender'; pattern: string }) => {
+    add.mutate(v, {
+      onSuccess: () => {
+        message.success(t('spam.junkRules.added'));
+        form.resetFields();
+      },
+      onError: (e) => message.error(e.message),
+    });
+  };
+
+  const onRemove = (row: JunkRule) => {
+    modal.confirm({
+      title: t('spam.junkRules.confirmRemove', { pattern: row.pattern }),
+      okButtonProps: { danger: true },
+      onOk: () =>
+        remove
+          .mutateAsync(row.id)
+          .then(() => message.success(t('spam.junkRules.removed')))
+          .catch((e: Error) => message.error(e.message)),
+    });
+  };
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Text type="secondary">{t('spam.junkRules.hint')}</Text>
+      <Form form={form} layout="inline" initialValues={{ kind: 'keyword' }} onFinish={onAdd}>
+        <Form.Item name="kind">
+          <Select
+            style={{ width: 140 }}
+            options={[
+              { value: 'keyword', label: t('spam.junkRules.kindKeyword') },
+              { value: 'sender', label: t('spam.junkRules.kindSender') },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="pattern" rules={[{ required: true, message: t('spam.junkRules.patternRequired') }]}>
+          <Input placeholder={t('spam.junkRules.patternPlaceholder')} style={{ width: 300 }} />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={add.isPending}>
+          {t('spam.junkRules.addButton')}
+        </Button>
+      </Form>
+
+      <Table<JunkRule>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={rows}
+        pagination={false}
+        columns={[
+          {
+            title: t('spam.junkRules.colKind'),
+            dataIndex: 'kind',
+            width: 130,
+            render: (k: string) => (
+              <Tag color={k === 'keyword' ? 'blue' : 'purple'}>
+                {k === 'keyword' ? t('spam.junkRules.kindKeyword') : t('spam.junkRules.kindSender')}
+              </Tag>
+            ),
+          },
+          { title: t('spam.junkRules.colPattern'), dataIndex: 'pattern' },
+          {
+            title: '',
+            width: 100,
+            render: (_: unknown, row: JunkRule) => (
+              <Button size="small" danger onClick={() => onRemove(row)}>
+                {t('common.delete')}
+              </Button>
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+}

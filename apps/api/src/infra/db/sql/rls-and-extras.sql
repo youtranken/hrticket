@@ -33,6 +33,18 @@ ALTER TABLE ticket_messages
   ) STORED;
 CREATE INDEX IF NOT EXISTS idx_messages_search ON ticket_messages USING gin (search_tsv);
 
+-- Subject FTS (Story 10.2): the worklist search hits subject (tickets) + body
+-- (ticket_messages). Same simple + f_unaccent recipe as the body tsv above, so
+-- "nghỉ phép" ↔ "nghi phep" matches symmetrically. Not in the Drizzle snapshot
+-- (like the body tsv) — drizzle diffs schema.ts, not the live DB, so it's left be.
+ALTER TABLE tickets
+  ADD COLUMN IF NOT EXISTS search_tsv tsvector
+  GENERATED ALWAYS AS (
+    to_tsvector('simple',
+      f_unaccent(coalesce(subject, '')))
+  ) STORED;
+CREATE INDEX IF NOT EXISTS idx_tickets_search ON tickets USING gin (search_tsv);
+
 -- ── Partitioned audit log (NFR12/FR69) — created here, not in Drizzle ────────
 CREATE TABLE IF NOT EXISTS audit_log (
   id          bigserial   NOT NULL,

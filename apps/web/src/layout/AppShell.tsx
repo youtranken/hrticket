@@ -7,6 +7,7 @@ import { setActiveProject } from '../lib/activeProject';
 import { menuForRole } from './menu';
 import { AvailabilityMenu } from '../features/profile/AvailabilityMenu';
 import { NotificationBell } from '../features/notifications/NotificationBell';
+import { GlobalSearch } from '../features/search/GlobalSearch';
 import { setLanguage } from '../i18n';
 import i18n from '../i18n';
 
@@ -54,6 +55,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Sider>
       <Layout>
         <Header style={{ background: '#fff', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+          {/* Global ticket search (Story 10.2) — pushed left so the right cluster stays put. */}
+          <div style={{ marginRight: 'auto' }}>
+            <GlobalSearch />
+          </div>
           {me.projects.length > 1 && (
             <Select
               size="small"

@@ -1,14 +1,29 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Card, Descriptions, Tag, Space, Typography, Button, List, Alert, Spin, App as AntApp } from 'antd';
+import {
+  Card,
+  Descriptions,
+  Tag,
+  Space,
+  Typography,
+  Button,
+  Dropdown,
+  Checkbox,
+  List,
+  Alert,
+  Spin,
+  App as AntApp,
+} from 'antd';
 import { useMe } from '../../lib/auth';
 import { useTicket, useApproveParticipant, displayCode } from '../../lib/tickets';
+import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { ComposeBox } from './ComposeBox';
 import { AssignControls } from './AssignControls';
 import { LifecycleControls } from './LifecycleControls';
 import { TagEditor } from './TagEditor';
+import { FileCard } from '../../components/FileCard';
 import { REOPEN_WARN_THRESHOLD } from '@hris/shared';
 import i18n from '../../i18n';
 
@@ -16,11 +31,6 @@ const { Title, Text } = Typography;
 
 function vnTime(iso: string): string {
   return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
-}
-function humanSize(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function TicketDetailPage() {
@@ -59,9 +69,17 @@ export function TicketDetailPage() {
             <StatusTag status={ticket.status} />
             {ticket.reopenCount > 0 && <Tag color="volcano">{t('lifecycle.reopened')}</Tag>}
             {ticket.reopenLocked && <Tag color="red">🔒 {t('lifecycle.lockReopen')}</Tag>}
+            {ticket.isJunk && <Tag color="default">🗑 {t('spam.mark.junkBadge')}</Tag>}
+            {ticket.isSpamThread && <Tag color="gold">🔇 {t('spam.mark.spamBadge')}</Tag>}
             {ticket.isOverdue && (
               <Tag color="error">{t('lifecycle.overdueDays', { count: ticket.overdueDays })}</Tag>
             )}
+            <SpamActionsMenu
+              ticketId={ticket.id}
+              requesterEmail={ticket.requesterEmail}
+              isSpamThread={!!ticket.isSpamThread}
+              isJunk={!!ticket.isJunk}
+            />
           </Space>
           <Descriptions size="small" column={2} style={{ marginTop: 8 }}>
             <Descriptions.Item label={t('ticket.requester')}>{ticket.requesterEmail}</Descriptions.Item>
@@ -128,12 +146,9 @@ export function TicketDetailPage() {
 
       {attachments.length > 0 && (
         <Card size="small" title={t('ticket.attachments')}>
-          <Space wrap>
+          <Space wrap size="middle">
             {attachments.map((a) => (
-              <Tag key={a.id} color={a.status === 'stored' ? 'blue' : 'red'}>
-                {a.status === 'stored' ? '📎' : '⚠'} {a.fileName} ({humanSize(a.size)})
-                {a.status !== 'stored' && ` — ${t('ticket.blocked')}`}
-              </Tag>
+              <FileCard key={a.id} attachment={a} />
             ))}
           </Space>
         </Card>
@@ -178,5 +193,89 @@ export function TicketDetailPage() {
         <ComposeBox ticketId={id} status={ticket.status} />
       )}
     </Space>
+  );
+}
+
+/**
+ * The "⋮" menu for the two manual spam actions (Story 7.4): "Đánh dấu Rác" (close +
+ * isolate, with an optional "block sender" checkbox) and "Đánh dấu Spam thread" (toggle
+ * silent-follow). Distinct icons + descriptions so the two can't be confused (AC4).
+ * Permission is enforced server-side (403); the menu is shown to everyone and the
+ * action reports the error if disallowed.
+ */
+function SpamActionsMenu({
+  ticketId,
+  requesterEmail,
+  isSpamThread,
+  isJunk,
+}: {
+  ticketId: string;
+  requesterEmail: string;
+  isSpamThread: boolean;
+  isJunk: boolean;
+}) {
+  const { t } = useTranslation();
+  const { message, modal } = AntApp.useApp();
+  const markJunk = useMarkJunk();
+  const toggleSpam = useToggleSpamThread();
+
+  const onMarkJunk = () => {
+    let block = false;
+    modal.confirm({
+      title: t('spam.mark.junkTitle'),
+      icon: null,
+      content: (
+        <Space direction="vertical">
+          <Text>{t('spam.mark.junkConfirm', { email: requesterEmail })}</Text>
+          <Checkbox onChange={(e) => (block = e.target.checked)}>
+            {t('spam.mark.blockToo')}
+          </Checkbox>
+        </Space>
+      ),
+      okButtonProps: { danger: true },
+      onOk: () =>
+        markJunk
+          .mutateAsync({ id: ticketId, blockSender: block })
+          .then((r) =>
+            message.success(r.blocked ? t('spam.mark.junkedBlocked') : t('spam.mark.junked')),
+          )
+          .catch((e: Error) => message.error(e.message)),
+    });
+  };
+
+  const onToggleSpam = () => {
+    const next = !isSpamThread;
+    toggleSpam.mutate(
+      { id: ticketId, on: next },
+      {
+        onSuccess: () => message.success(next ? t('spam.mark.spamOn') : t('spam.mark.spamOff')),
+        onError: (e) => message.error(e.message),
+      },
+    );
+  };
+
+  return (
+    <Dropdown
+      trigger={['click']}
+      menu={{
+        items: [
+          {
+            key: 'junk',
+            label: t('spam.mark.junkAction'),
+            disabled: isJunk,
+            onClick: onMarkJunk,
+          },
+          {
+            key: 'spam',
+            label: isSpamThread ? t('spam.mark.spamActionOff') : t('spam.mark.spamActionOn'),
+            onClick: onToggleSpam,
+          },
+        ],
+      }}
+    >
+      <Button size="small" aria-label={t('spam.mark.menuLabel')}>
+        ⋮
+      </Button>
+    </Dropdown>
   );
 }

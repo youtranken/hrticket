@@ -14,6 +14,13 @@ import type { SessionUser } from '../src/modules/auth/session.service';
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n', 'latin1');
 const EXE = Buffer.concat([Buffer.from('MZ', 'latin1'), Buffer.alloc(64, 0x90)]);
 
+/** Drain a file stream (serve now returns a stream factory, not a Buffer — 8.1). */
+async function drain(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const c of stream) chunks.push(c as Buffer);
+  return Buffer.concat(chunks);
+}
+
 /**
  * IT-UPLOAD-001..003 + IT-RENDER-002 (serve) — Stories 3.6/3.7. Two-layer upload
  * gate (magic bytes + soft cap) and signed-URL file serving. Needs Docker; self-skips.
@@ -80,7 +87,7 @@ describe('IT-UPLOAD/FILES: upload gates + signed serve', () => {
 
     const served = await files.serve(ssa, res.id, signFileToken(res.id, ssa.id));
     expect(served.fileName).toBe('payslip.pdf');
-    expect(served.buffer.equals(PDF)).toBe(true);
+    expect((await drain(served.open())).equals(PDF)).toBe(true);
   });
 
   it('IT-UPLOAD-002: exe rejected; .pdf name with exe bytes rejected (magic beats extension)', async () => {

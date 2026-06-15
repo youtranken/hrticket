@@ -1,7 +1,7 @@
 import { TicketListView } from './TicketListView';
 
 export function InboxPage() {
-  return <TicketListView view="all" titleKey="menu.inbox" />;
+  return <TicketListView view="all" titleKey="menu.inbox" filterable />;
 }
 
 export function MyTicketsPage() {

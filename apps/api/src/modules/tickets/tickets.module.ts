@@ -4,6 +4,7 @@ import { ParticipantsController } from './participants.controller';
 import { ParticipantsService } from './participants.service';
 import { TicketsController } from './tickets.controller';
 import { TicketsReadService } from './tickets-read.service';
+import { TicketSearchService } from './ticket-search.service';
 import { ComposeController } from './compose.controller';
 import { ReplyService } from './reply.service';
 import { NotesService } from './notes.service';
@@ -36,6 +37,7 @@ import { ReopenLockService } from './reopen-lock.service';
   providers: [
     ParticipantsService,
     TicketsReadService,
+    TicketSearchService,
     ReplyService,
     NotesService,
     DraftsService,

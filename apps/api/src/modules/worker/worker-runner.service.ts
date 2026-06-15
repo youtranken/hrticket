@@ -6,6 +6,7 @@ import { OutboxSender } from '../email-engine/outbox-sender.service';
 import { IntakeService } from '../intake/intake.service';
 import { repairAttachments } from '../intake/attachment-repair';
 import { ReminderService } from '../reminders/reminder.service';
+import { DiskMonitorService } from '../monitor/disk-monitor.service';
 import { startLoop } from './loop-runner';
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 60_000); // NFR3: 60s
@@ -14,6 +15,7 @@ const OUTBOX_INTERVAL_MS = Number(process.env.OUTBOX_INTERVAL_MS ?? 10_000);
 // the attachment-repair sweep only needs to run ~hourly, so it's gated by a counter.
 const SCHEDULER_INTERVAL_MS = Number(process.env.SCHEDULER_INTERVAL_MS ?? 60_000);
 const REPAIR_EVERY_TICKS = 60;
+const DISK_CHECK_EVERY_TICKS = 60; // disk monitor runs ~hourly (Story 8.4)
 
 /**
  * Owns the worker's THREE independent loops (Story 2.7): IMAP poll+intake, outbox
@@ -34,6 +36,7 @@ export class WorkerRunner {
     private readonly intake: IntakeService,
     private readonly outboxSender: OutboxSender,
     private readonly reminders: ReminderService,
+    private readonly diskMonitor: DiskMonitorService,
   ) {}
 
   start(): void {
@@ -88,6 +91,12 @@ export class WorkerRunner {
         this.logger.warn(`attachment repair: ${res.failed} failed, ${res.orphanFiles} orphan files`);
       }
     }
+
+    // Disk-space monitor ~hourly (Story 8.4) — alerts Admin/SSA below threshold.
+    if (this.schedulerTicks % DISK_CHECK_EVERY_TICKS === 0) {
+      await this.diskMonitor.checkDiskOnce();
+    }
+
     this.schedulerTicks += 1;
   }
 }

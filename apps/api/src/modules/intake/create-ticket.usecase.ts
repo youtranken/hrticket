@@ -5,7 +5,7 @@ import { writeAudit } from '../../infra/audit/audit';
 import { nextTicketCode } from '../tickets/ticket-code';
 import { ingestAttachments } from './attachments';
 import { enqueueAutoAck } from './auto-ack';
-import { classifyTicket } from '../routing/classify.service';
+import { classifyTicket, otherCategoryId } from '../routing/classify.service';
 import { applyAutoTags } from '../routing/auto-tag.service';
 import { autoAssign } from '../routing/auto-assign.service';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
@@ -22,6 +22,10 @@ export interface CreateTicketInput {
   externalId?: string;
   /** 2.4 sets this for auto-submitted mail. */
   isAutoReply?: boolean;
+  /** Story 7.3 (FR102/FR103): an auto-junk-rule match. When true the ticket is forced
+   *  to category "Khác" with is_junk=true, is NOT auto-assigned, and gets NO auto-ack
+   *  (it lands in the Junk tab). Default false → byte-identical to the normal flow. */
+  isJunk?: boolean;
 }
 
 export interface CreateTicketResult {
@@ -42,8 +46,13 @@ export async function createTicketFromMail(
   input: CreateTicketInput,
 ): Promise<CreateTicketResult> {
   const { projectId, mailbox, parsed } = input;
-  const classified = await classifyTicket(tx, projectId, parsed.subject, parsed.bodyText);
-  const categoryId = classified.categoryId;
+  const isJunk = input.isJunk ?? false;
+  // Junk-rule mail is unclassified by definition → forced to "Khác" (FR103); normal
+  // mail runs keyword classification (Story 4.1).
+  const classified = isJunk
+    ? null
+    : await classifyTicket(tx, projectId, parsed.subject, parsed.bodyText);
+  const categoryId = isJunk ? await otherCategoryId(tx, projectId) : classified!.categoryId;
   const ticketCode = await nextTicketCode(tx, projectId);
   const requesterEmail = parsed.from?.address ?? 'unknown@unknown';
   const createdAt = input.createdAt ?? new Date();
@@ -58,6 +67,7 @@ export async function createTicketFromMail(
       mailbox,
       categoryId,
       status: 'open',
+      isJunk,
       externalSource: input.externalSource ?? null,
       externalId: input.externalId ?? null,
       createdAt,
@@ -129,7 +139,10 @@ export async function createTicketFromMail(
 
   // Auto-assign (Story 4.2) in the SAME tx: round-robin / least-load over the
   // category roster, skipping away members. "Khác", no config, or all-away → pool.
-  await autoAssign(tx, { projectId, ticketId, ticketCode, categoryId });
+  // Junk (7.3) is NEVER auto-assigned — it waits in the Junk tab (FR103).
+  if (!isJunk) {
+    await autoAssign(tx, { projectId, ticketId, ticketCode, categoryId });
+  }
 
   await tx
     .update(inboxMessages)
@@ -147,13 +160,15 @@ export async function createTicketFromMail(
       requesterEmail,
       mailbox,
       categoryId,
-      classifyReason: classified.reason,
-      matchedKeywords: classified.matchedKeywords,
+      isJunk,
+      classifyReason: classified?.reason ?? null,
+      matchedKeywords: classified?.matchedKeywords ?? [],
     },
   });
 
   // Auto-ack the requester (FR10) — only for genuine NEW tickets. Auto-submitted
-  // mail never gets one (anti-loop layer 2, AC3); junk is a no-op hook until Epic 7.
+  // mail never gets one (anti-loop layer 2, AC3); junk (7.3) gets NO ack either —
+  // enqueueAutoAck's isJunk gate suppresses it (the ack is sent later on rescue).
   await enqueueAutoAck(tx, {
     projectId,
     ticketId,
@@ -164,7 +179,7 @@ export async function createTicketFromMail(
     subject: parsed.subject,
     inboundMessageId: parsed.messageId,
     isAutoReply: input.isAutoReply ?? false,
-    isJunk: false,
+    isJunk,
   });
 
   return { ticketId, ticketCode, messageId: message!.id };

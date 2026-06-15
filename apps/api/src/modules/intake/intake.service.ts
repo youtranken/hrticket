@@ -10,6 +10,9 @@ import { writeAudit } from '../../infra/audit/audit';
 import { createTicketFromMail } from './create-ticket.usecase';
 import { appendMessageToTicket } from './append-message.usecase';
 import { linkCrossPost } from './cross-post';
+import { isBlocked } from './blocklist';
+import { checkMailBomb } from './mail-bomb';
+import { matchJunkRule } from './junk-rules';
 
 /** Inbound dead-letter tuning (mirror of the outbox sender). */
 const MAX_INTAKE_ATTEMPTS = 5;
@@ -82,9 +85,9 @@ export class IntakeService {
         const parsed = await parseMail(row.raw);
         const autoReply = isAutoSubmitted(parsed.headers);
 
-        // FIXED pipeline — middle stages are no-op hooks until Epic 7.
-        // dedupe: already enforced by the (message_id, mailbox) unique at poll time.
-        // blocklist / mail-bomb / junk: pass-through.
+        // FIXED pipeline — dedupe is enforced by the (message_id, mailbox) unique at
+        // poll time; blocklist (Story 7.1) gates the create branch below; mail-bomb /
+        // junk are still pass-through hooks.
 
         const match = await findThread(tx, parsed, row.projectId);
 
@@ -133,12 +136,87 @@ export class IntakeService {
               (res.strangers.length ? ` (stranger: ${res.strangers.join(',')})` : ''),
           );
         } else {
+          // Blocklist (Story 7.1, FR100): a new-ticket mail from a blocked sender is
+          // dropped from the pipeline — NO ticket, NO auto-ack — but the inbox row is
+          // kept (status `blocked`) + audited so it's never a silent drop (NFR8). Only
+          // mail that matched no thread reaches here, so an existing participant's reply
+          // (handled in the `match` branch above) is never cut (AC3).
+          const fromAddr = parsed.from?.address;
+          if (fromAddr && (await isBlocked(tx, row.projectId, fromAddr))) {
+            await tx
+              .update(inboxMessages)
+              .set({ status: 'blocked' })
+              .where(eq(inboxMessages.id, row.id));
+            await writeAudit(tx, {
+              projectId: row.projectId,
+              actorLabel: 'system:intake',
+              action: 'inbox.blocked',
+              objectType: 'inbox_message',
+              objectId: row.id,
+              newValue: { from: fromAddr, messageId: row.messageId, subject: parsed.subject },
+            });
+            this.logger.log(`mail ${row.id} → blocked (sender ${fromAddr} on blocklist)`);
+            return true;
+          }
+
+          // Mail-bomb (Story 7.2, FR101): count this new-ticket mail in the sender's
+          // sliding 1h window; once over the per-project threshold, suppress it — kept
+          // (status `suppressed`) + releasable + the first crosser fires one grouped
+          // Admin alert. Never a silent drop (NFR8). Same new-ticket-only scope as
+          // blocklist: a thread reply (handled above) is never counted/suppressed.
+          if (fromAddr) {
+            const bomb = await checkMailBomb(tx, {
+              projectId: row.projectId,
+              sender: fromAddr,
+              mailbox: row.mailbox,
+            });
+            if (bomb.suppressed) {
+              await tx
+                .update(inboxMessages)
+                .set({ status: 'suppressed' })
+                .where(eq(inboxMessages.id, row.id));
+              await writeAudit(tx, {
+                projectId: row.projectId,
+                actorLabel: 'system:intake',
+                action: 'inbox.suppressed',
+                objectType: 'inbox_message',
+                objectId: row.id,
+                newValue: { from: fromAddr, messageId: row.messageId, subject: parsed.subject },
+              });
+              this.logger.log(`mail ${row.id} → suppressed (mail-bomb, sender ${fromAddr})`);
+              return true;
+            }
+          }
+
+          // Junk rules (Story 7.3, FR102): a new-ticket mail matching a keyword/sender
+          // rule still becomes a ticket, but is_junk=true in "Khác" — no auto-assign,
+          // no auto-ack — so it lands in the Junk tab (rescuable), not the normal inbox.
+          const junk = fromAddr
+            ? await matchJunkRule(tx, row.projectId, {
+                subject: parsed.subject,
+                body: parsed.bodyText,
+                from: fromAddr,
+              })
+            : null;
+
           const res = await createTicketFromMail(tx, {
             projectId: row.projectId,
             mailbox: row.mailbox,
             inboxMessageId: row.id,
             parsed,
+            isJunk: !!junk,
           });
+          if (junk) {
+            await writeAudit(tx, {
+              projectId: row.projectId,
+              actorLabel: 'system:intake',
+              action: 'ticket.auto_junked',
+              objectType: 'ticket',
+              objectId: res.ticketId,
+              newValue: { ruleId: junk.ruleId, kind: junk.kind, pattern: junk.pattern },
+            });
+            this.logger.log(`mail ${row.id} → junk ticket ${res.ticketCode} (rule ${junk.ruleId})`);
+          }
           // Cross-post: link/tag if the same Message-ID already became a ticket elsewhere.
           await linkCrossPost(tx, {
             ticketId: res.ticketId,

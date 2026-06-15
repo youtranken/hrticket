@@ -78,6 +78,12 @@ export async function handleReplyTransition(
   // Auto-reply or stranger reply → append-only (already done by the caller).
   if (input.isAutoReply || !input.fromIsActiveParticipant) return { action: 'append_only' };
 
+  // Spam thread (Story 7.4, FR42) WINS over everything (party-mode M7): the reply is
+  // already appended; suppress ALL reactions — no pending-wake, no reopen, no bump, no
+  // notify, and no "contact HR" locked notice — for any status. The flag is cleared by
+  // un-marking, after which a later reply behaves normally.
+  if (t.isSpamThread) return { action: 'spam_silent' };
+
   // Wake a snoozed ticket on a participant reply (5.5 FR44): Pending → In Progress,
   // drop the snooze, restart the overdue clock, ping the assignee.
   if (t.status === 'pending') {
