@@ -61,16 +61,19 @@ export async function resolveImapConfig(projectKey: ProjectKey): Promise<Project
   const row = id ? await loadConnectionRow(id) : null;
   if (row && row.imapHost && row.imapUser) {
     const port = row.imapPort ?? 993;
+    let pass: string | undefined;
+    try {
+      pass = row.passwordEncrypted ? decryptSecret(row.passwordEncrypted) : undefined;
+    } catch {
+      // A corrupt blob or a rotated EMAIL_SECRET_KEY would otherwise throw on EVERY
+      // poll cycle and wedge the whole mail subsystem with no self-heal. Fall back to
+      // the bootstrap env config instead (same as "no row").
+      return imapConfigFor(projectKey);
+    }
     return {
       projectKey,
       mailbox: row.imapUser,
-      imap: {
-        host: row.imapHost,
-        port,
-        user: row.imapUser,
-        pass: row.passwordEncrypted ? decryptSecret(row.passwordEncrypted) : undefined,
-        secure: isSecurePort(port),
-      },
+      imap: { host: row.imapHost, port, user: row.imapUser, pass, secure: isSecurePort(port) },
     };
   }
   return imapConfigFor(projectKey);
@@ -81,14 +84,14 @@ export async function resolveSmtpConfig(projectKey: ProjectKey): Promise<SmtpSet
   const row = id ? await loadConnectionRow(id) : null;
   if (row && row.smtpHost && row.smtpUser) {
     const port = row.smtpPort ?? 465;
-    return {
-      host: row.smtpHost,
-      port,
-      user: row.smtpUser,
-      pass: row.passwordEncrypted ? decryptSecret(row.passwordEncrypted) : undefined,
-      secure: isSecurePort(port),
-      from: row.smtpUser,
-    };
+    let pass: string | undefined;
+    try {
+      pass = row.passwordEncrypted ? decryptSecret(row.passwordEncrypted) : undefined;
+    } catch {
+      // Corrupt blob / rotated key → fall back to env rather than crash every send.
+      return smtpConfigFor(projectKey);
+    }
+    return { host: row.smtpHost, port, user: row.smtpUser, pass, secure: isSecurePort(port), from: row.smtpUser };
   }
   return smtpConfigFor(projectKey);
 }

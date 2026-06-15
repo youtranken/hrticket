@@ -40,5 +40,6 @@ export function decryptSecret(blob: string): string {
 /** `****<last4>` — the only form of a secret ever sent back to a client. */
 export function maskSecret(plain: string | null | undefined): string | null {
   if (!plain) return null;
-  return `****${plain.slice(-4)}`;
+  // For a secret of 4 chars or fewer, `slice(-4)` would reveal the whole thing — mask fully.
+  return plain.length > 4 ? `****${plain.slice(-4)}` : '****';
 }

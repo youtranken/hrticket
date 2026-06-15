@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { eq } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
 import { users } from '../../infra/db/schema';
+import { writeAudit } from '../../infra/audit/audit';
 import { generateTempPassword, hashPassword } from '../../infra/crypto/password';
 import { SessionService } from './session.service';
 import type { SessionUser } from './session.service';
@@ -40,6 +41,17 @@ export class RescueService {
         .update(users)
         .set({ passwordHash: await hashPassword(temp), mustChangePassword: true })
         .where(eq(users.id, targetId));
+      // Privileged security mutation — must leave an audit trail (FR94 / invariant #8).
+      // Never record the password itself (#13).
+      await writeAudit(tx, {
+        projectId: target.projectId,
+        actorId: actor.id,
+        actorLabel: actor.email,
+        action: 'user.password_reset',
+        objectType: 'user',
+        objectId: targetId,
+        newValue: { mustChangePassword: true },
+      });
     });
     await this.sessions.revokeAllForUser(targetId);
     return temp; // shown once to the admin
@@ -50,6 +62,15 @@ export class RescueService {
     this.assertScope(actor, target);
     await withActor(systemActor, async (tx) => {
       await tx.update(users).set({ otpEnabled: false }).where(eq(users.id, targetId));
+      await writeAudit(tx, {
+        projectId: target.projectId,
+        actorId: actor.id,
+        actorLabel: actor.email,
+        action: 'user.otp_removed',
+        objectType: 'user',
+        objectId: targetId,
+        newValue: { otpEnabled: false },
+      });
     });
   }
 }
