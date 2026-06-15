@@ -69,6 +69,7 @@ export function TicketDetailPage() {
             <StatusTag status={ticket.status} />
             {ticket.reopenCount > 0 && <Tag color="volcano">{t('lifecycle.reopened')}</Tag>}
             {ticket.reopenLocked && <Tag color="red">🔒 {t('lifecycle.lockReopen')}</Tag>}
+            {ticket.categorySensitive && <Tag color="red">🛡 {t('ticket.sensitive')}</Tag>}
             {ticket.isJunk && <Tag color="default">🗑 {t('spam.mark.junkBadge')}</Tag>}
             {ticket.isSpamThread && <Tag color="gold">🔇 {t('spam.mark.spamBadge')}</Tag>}
             {ticket.isOverdue && (
@@ -80,6 +81,9 @@ export function TicketDetailPage() {
               isSpamThread={!!ticket.isSpamThread}
               isJunk={!!ticket.isJunk}
             />
+            {me && me.role !== 'member' && (
+              <Link to={`/audit?ticketId=${ticket.id}`}>{t('audit.ticketHistory')}</Link>
+            )}
           </Space>
           <Descriptions size="small" column={2} style={{ marginTop: 8 }}>
             <Descriptions.Item label={t('ticket.requester')}>{ticket.requesterEmail}</Descriptions.Item>

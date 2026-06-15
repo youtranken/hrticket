@@ -46,6 +46,11 @@ export class SessionService {
         .innerJoin(users, eq(users.id, sessions.userId))
         .where(eq(sessions.id, sessionId));
       if (!row || row.expiresAt <= new Date()) return null;
+      // A disabled account is locked out at EVERY access point (FR63/FR65): reject any
+      // still-live session too, not just new logins — defence in depth alongside the
+      // session revocation on disable (Story 9.2). Without this, a session minted before
+      // disable (or any path that skipped revoke) would keep working.
+      if (row.disabled) return null;
       const { expiresAt: _e, ...user } = row;
       return user;
     });

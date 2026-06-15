@@ -23,6 +23,7 @@ export function menuForRole(me: Me): MenuEntry[] {
   ];
   const admin: MenuEntry[] = [
     { key: 'categories', path: '/admin/categories', labelKey: 'menu.categories' },
+    { key: 'groups', path: '/admin/groups', labelKey: 'groups.nav' },
     { key: 'reminders', path: '/admin/reminders', labelKey: 'menu.reminders' },
     { key: 'mailProtection', path: '/admin/mail-protection', labelKey: 'spam.nav.mailProtection' },
     { key: 'attachmentConfig', path: '/admin/attachments', labelKey: 'files.nav.attachmentConfig' },

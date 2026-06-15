@@ -71,8 +71,17 @@ export function TicketListView({
     {
       title: t('ticket.category'),
       dataIndex: 'category',
-      width: 120,
-      render: (_, r) => (r.category ? r.category[lang] : '—'),
+      width: 140,
+      render: (_, r) => (
+        <span>
+          {r.category ? r.category[lang] : '—'}
+          {r.categorySensitive && (
+            <Tag color="red" style={{ marginLeft: 4 }} title={t('ticket.sensitive')}>
+              🛡
+            </Tag>
+          )}
+        </span>
+      ),
     },
     {
       title: t('ticket.assignee'),

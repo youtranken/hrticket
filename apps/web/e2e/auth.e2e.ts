@@ -74,7 +74,7 @@ test('1.8 #1: admin sidebar shows Settings but not SSA-only Roles', async ({ pag
   await login(page, 'admin@dev.local');
   await expect(page).toHaveURL(/\/inbox/);
   const sider = page.locator('.ant-layout-sider');
-  await expect(sider.getByText('Cấu hình')).toBeVisible(); // Settings
+  await expect(sider.getByText('Cấu hình', { exact: true })).toBeVisible(); // Settings (not "Cấu hình nhắc/đính kèm")
   await expect(sider.getByText('Quyền vai trò')).toHaveCount(0); // Roles (ssa only)
 });
 
@@ -89,8 +89,9 @@ test('1.8 #3: SSA switches project via the header switcher', async ({ page }) =>
   await login(page, 'ssa@dev.local');
   await expect(page).toHaveURL(/\/inbox/);
 
-  // SSA-only switcher present (members never see it).
-  const select = page.locator('.ant-layout-header .ant-select');
+  // SSA-only switcher present (members never see it). Scope by its aria-label so the
+  // header's global search AutoComplete (Epic 10) doesn't make the locator ambiguous.
+  const select = page.locator('.ant-layout-header .ant-select[aria-label="Dự án"]');
   await expect(select).toBeVisible();
 
   await select.click();

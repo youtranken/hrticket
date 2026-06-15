@@ -10,6 +10,25 @@ export interface AdminUser {
   projectId: number | null;
   awayFrom?: string | null;
   awayTo?: string | null;
+  lastLoginAt?: string | null;
+  groups?: { categoryId: number; nameVi: string }[];
+}
+
+export type AssignableRole = 'admin' | 'team_lead' | 'member';
+
+export function createUser(input: {
+  email: string;
+  name: string;
+  role: AssignableRole;
+  categoryIds?: number[];
+}): Promise<{ id: string; tempPassword: string }> {
+  return api('/admin/users', { method: 'POST', body: JSON.stringify(input) });
+}
+export function setUserRole(id: string, role: AssignableRole): Promise<{ ok: true }> {
+  return api(`/admin/users/${id}/role`, { method: 'PATCH', body: JSON.stringify({ role }) });
+}
+export function setUserDisabled(id: string, disabled: boolean): Promise<{ ok: true }> {
+  return api(`/admin/users/${id}/disabled`, { method: 'PATCH', body: JSON.stringify({ disabled }) });
 }
 
 export interface AutoAssignMember {

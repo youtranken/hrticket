@@ -23,6 +23,7 @@ export interface TicketListItem {
   overdueDays: number;
   snoozeUntil: string | null;
   snoozeDue: boolean;
+  categorySensitive?: boolean;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine' | 'pending';
@@ -159,6 +160,7 @@ export interface TicketDetail {
     status: string;
     category: { vi: string; en: string } | null;
     categoryId: number | null;
+    categorySensitive?: boolean;
     assignee: TicketAssignee | null;
     createdAt: string;
     snoozeUntil: string | null;

@@ -9,6 +9,9 @@ import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
 import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { CategoriesPage } from './features/admin/CategoriesPage';
+import { GroupsPage } from './features/admin/GroupsPage';
+import { RolesPage } from './features/admin/RolesPage';
+import { AuditLogPage } from './features/admin/AuditLogPage';
 import { ReminderConfigPage } from './features/admin/ReminderConfigPage';
 import { MailProtectionPage } from './features/admin/MailProtectionPage';
 import { AttachmentConfigPage } from './features/admin/AttachmentConfigPage';
@@ -61,7 +64,7 @@ function ProtectedApp() {
           path="audit"
           element={
             <RequireRole roles={['team_lead', 'admin', 'ssa']} me={me}>
-              <Placeholder titleKey="menu.audit" />
+              <AuditLogPage />
             </RequireRole>
           }
         />
@@ -78,6 +81,14 @@ function ProtectedApp() {
           element={
             <RequireRole roles={admin} me={me}>
               <CategoriesPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/groups"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <GroupsPage />
             </RequireRole>
           }
         />
@@ -125,7 +136,7 @@ function ProtectedApp() {
           path="admin/roles"
           element={
             <RequireRole roles={['ssa']} me={me}>
-              <Placeholder titleKey="menu.roles" />
+              <RolesPage />
             </RequireRole>
           }
         />

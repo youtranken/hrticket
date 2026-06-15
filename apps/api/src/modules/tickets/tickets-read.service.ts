@@ -72,6 +72,8 @@ export interface TicketListItem {
   overdueDays: number;
   snoozeUntil: string | null;
   snoozeDue: boolean;
+  /** Sensitive category (FR60/9.3) → FE shows the 🛡 badge. */
+  categorySensitive: boolean;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine' | 'pending';
@@ -152,6 +154,7 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categorySensitive: categories.isSensitive,
           assigneeId: assignee.id,
           assigneeName: assignee.name,
           assigneeAwayFrom: assignee.awayFrom,
@@ -214,6 +217,7 @@ export class TicketsReadService {
         overdueDays: r.overdueDays,
         snoozeUntil: r.snoozeUntil,
         snoozeDue: r.snoozeDue,
+        categorySensitive: r.categorySensitive ?? false,
       }));
 
       return { items, total, page, pageSize, overdueTotal };
@@ -503,6 +507,7 @@ export class TicketsReadService {
           status: t.status,
           category: t.categoryVi ? { vi: t.categoryVi, en: t.categoryEn! } : null,
           categoryId: t.categoryId,
+          categorySensitive: t.categorySensitive,
           assignee: t.assigneeId
             ? {
                 id: t.assigneeId,

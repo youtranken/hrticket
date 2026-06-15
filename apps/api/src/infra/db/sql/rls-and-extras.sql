@@ -95,9 +95,18 @@ CREATE POLICY tickets_system ON tickets
   USING (app_is_system())
   WITH CHECK (app_is_system());
 
--- Project isolation + group visibility, with the "hold work-in-progress" carve-out
--- (FR59: an assignee always sees their own ticket), the junk grant for Admin, and
--- sensitive-group need-to-know handled by membership.
+-- Project isolation + group visibility, with the BOUNDED "hold work-in-progress"
+-- carve-out (FR59) and the junk grant for Admin; sensitive-group need-to-know is
+-- handled by membership.
+--
+-- Keep-work-in-progress (Story 9.3 AC1/AC2): an assignee ALWAYS sees a ticket assigned
+-- to them while it is still OPEN work — even after they're removed from its group or it
+-- is re-categorised out of their groups. The carve-out EXPIRES the moment the ticket is
+-- closed (status = 'closed') or reassigned to someone else (assignee_id changes): a
+-- closed ticket whose group the user no longer belongs to becomes invisible again.
+-- (Without the `status <> 'closed'` bound, a removed-from-group ex-assignee would keep
+-- seeing every ticket they ever closed — a need-to-know leak. FR59 only protects work
+-- still in flight.)
 DROP POLICY IF EXISTS tickets_user ON tickets;
 CREATE POLICY tickets_user ON tickets
   USING (
@@ -108,9 +117,9 @@ CREATE POLICY tickets_user ON tickets
       OR (
         project_id = app_project_id()
         AND (
-          app_role() = 'admin'                       -- admin sees whole project
-          OR assignee_id = app_actor_id()            -- always see my own (FR59 carve-out)
-          OR category_id = ANY (app_groups())        -- member/TL see their groups
+          app_role() = 'admin'                                       -- admin sees whole project
+          OR (assignee_id = app_actor_id() AND status <> 'closed')   -- keep work-in-progress (FR59), bounded
+          OR category_id = ANY (app_groups())                        -- member/TL see their groups
         )
       )
     )
@@ -158,3 +167,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO app;
+
+-- ── Audit log is APPEND-ONLY (FR68/NFR12) ────────────────────────────────────
+-- The blanket GRANT above handed the app role UPDATE/DELETE on every table; take
+-- those back on audit_log so the running app can only INSERT + SELECT. Even a
+-- compromised app path (or a buggy query) cannot rewrite or erase history; there is
+-- also no UPDATE/DELETE endpoint. Revoke on the parent AND every partition (each is a
+-- real table with its own privileges from "ON ALL TABLES"). Story 9.5 verifies this.
+REVOKE UPDATE, DELETE ON audit_log FROM app;
+REVOKE UPDATE, DELETE ON audit_log_2026 FROM app;
+REVOKE UPDATE, DELETE ON audit_log_2027 FROM app;

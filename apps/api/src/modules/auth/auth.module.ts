@@ -7,6 +7,7 @@ import { LockoutService } from './lockout.service';
 import { OtpService } from './otp.service';
 import { PasswordResetService } from './password-reset.service';
 import { RescueService } from './rescue.service';
+import { AdminUsersService } from './admin-users.service';
 import { MeService } from './me.service';
 import { ProjectContextService } from './project-context.service';
 import { SessionGuard } from './session.guard';
@@ -21,6 +22,7 @@ import { Mailer } from '../../infra/mail/mailer';
     OtpService,
     PasswordResetService,
     RescueService,
+    AdminUsersService,
     MeService,
     ProjectContextService,
     SessionGuard,

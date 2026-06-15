@@ -12,11 +12,13 @@ import { AttachmentConfigController } from './attachment-config.controller';
 import { AttachmentConfigService } from './attachment-config.service';
 import { AdminJunkRulesController } from './admin-junkrules.controller';
 import { AdminJunkRulesService } from './admin-junkrules.service';
+import { AdminGroupsController } from './admin-groups.controller';
+import { AdminGroupsService } from './admin-groups.service';
 
 /** Admin configuration surface: categories/keywords/auto-assign/tags (4.6) +
  *  reminder config / email templates / test-send (6.4) + blocklist (7.1) +
  *  mail-bomb threshold & held-mail review (7.2) + junk rules (7.3) +
- *  attachment policy (8.4). */
+ *  attachment policy (8.4) + category-group membership (9.1). */
 @Module({
   imports: [AuthModule], // SessionGuard + ProjectContextService
   controllers: [
@@ -26,6 +28,7 @@ import { AdminJunkRulesService } from './admin-junkrules.service';
     AdminMailBombController,
     AttachmentConfigController,
     AdminJunkRulesController,
+    AdminGroupsController,
   ],
   providers: [
     AdminConfigService,
@@ -34,6 +37,7 @@ import { AdminJunkRulesService } from './admin-junkrules.service';
     AdminMailBombService,
     AttachmentConfigService,
     AdminJunkRulesService,
+    AdminGroupsService,
   ],
 })
 export class AdminModule {}

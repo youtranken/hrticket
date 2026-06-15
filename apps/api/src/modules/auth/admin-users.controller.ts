@@ -1,48 +1,94 @@
-import { Controller, Get, Param, Post, UseGuards, ForbiddenException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
-import { withActor, systemActor } from '../../infra/db/with-actor';
-import { users } from '../../infra/db/schema';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { z } from 'zod';
 import { SessionGuard } from './session.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { SessionUser } from './session.service';
 import { RescueService } from './rescue.service';
+import { AdminUsersService } from './admin-users.service';
+import { ProjectContextService } from './project-context.service';
 
-/** Minimal user admin (Story 1.7). Full create/disable/assign lands in Story 9.2. */
+const assignableRole = z.enum(['admin', 'team_lead', 'member']);
+const createUser = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  role: assignableRole,
+  categoryIds: z.array(z.number().int().positive()).optional(),
+});
+const setRole = z.object({ role: assignableRole });
+const setDisabled = z.object({ disabled: z.boolean() });
+
+/** Full user admin (Story 9.2, FR89). Admin → own project; SSA → X-Project / all. */
 @Controller('api/admin/users')
 @UseGuards(SessionGuard)
 export class AdminUsersController {
-  constructor(private readonly rescue: RescueService) {}
+  constructor(
+    private readonly rescue: RescueService,
+    private readonly usersSvc: AdminUsersService,
+    private readonly projectCtx: ProjectContextService,
+  ) {}
 
   private assertAdmin(actor: SessionUser): void {
-    if (actor.role !== 'admin' && actor.role !== 'ssa') {
-      throw new ForbiddenException();
-    }
+    if (actor.role !== 'admin' && actor.role !== 'ssa') throw new ForbiddenException();
+  }
+
+  private async project(actor: SessionUser, xProject?: string): Promise<number> {
+    this.assertAdmin(actor);
+    const p = await this.projectCtx.resolveEffective(actor, xProject);
+    return p.id;
   }
 
   @Get()
-  async list(@CurrentUser() actor: SessionUser) {
+  async list(@CurrentUser() actor: SessionUser, @Headers('x-project') xp?: string) {
     this.assertAdmin(actor);
-    return withActor(systemActor, async (tx) => {
-      const rows = await tx
-        .select({
-          id: users.id,
-          email: users.email,
-          name: users.name,
-          role: users.role,
-          disabled: users.disabled,
-          projectId: users.projectId,
-          awayFrom: users.awayFrom,
-          awayTo: users.awayTo,
-        })
-        .from(users)
-        .where(
-          actor.role === 'ssa'
-            ? // SSA sees all
-              and()
-            : eq(users.projectId, actor.projectId!),
-        );
-      return rows;
-    });
+    // SSA sees every user across projects; Admin is scoped to their own project.
+    if (actor.role === 'ssa') return this.usersSvc.list(actor.projectId ?? 0, 'all');
+    return this.usersSvc.list(await this.project(actor, xp), 'project');
+  }
+
+  @Post()
+  async create(
+    @CurrentUser() actor: SessionUser,
+    @Body() body: unknown,
+    @Headers('x-project') xp?: string,
+  ) {
+    const parsed = createUser.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.usersSvc.createUser(actor, await this.project(actor, xp), parsed.data);
+  }
+
+  @Patch(':id/role')
+  async setRole(
+    @CurrentUser() actor: SessionUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('x-project') xp?: string,
+  ) {
+    const parsed = setRole.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.usersSvc.setRole(actor, await this.project(actor, xp), id, parsed.data.role);
+  }
+
+  @Patch(':id/disabled')
+  async setDisabled(
+    @CurrentUser() actor: SessionUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('x-project') xp?: string,
+  ) {
+    const parsed = setDisabled.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.usersSvc.setDisabled(actor, await this.project(actor, xp), id, parsed.data.disabled);
   }
 
   @Post(':id/reset-password')
