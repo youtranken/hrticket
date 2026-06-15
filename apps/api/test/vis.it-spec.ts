@@ -1,4 +1,4 @@
-import { eq, count } from 'drizzle-orm';
+import { eq, count, sql } from 'drizzle-orm';
 import type { ItHarness } from './setup.it';
 import { startHarness } from './setup.it';
 import { makeUser } from './factories/user.factory';
@@ -14,6 +14,8 @@ import {
 } from '../src/infra/db/schema';
 import { TicketsReadService } from '../src/modules/tickets/tickets-read.service';
 import { TicketSearchService } from '../src/modules/tickets/ticket-search.service';
+import { ReplyService } from '../src/modules/tickets/reply.service';
+import { AuditService } from '../src/modules/audit/audit.service';
 import { SessionService } from '../src/modules/auth/session.service';
 import { ticketListQuerySchema } from '../src/modules/tickets/dto/ticket-list.query';
 import type { SessionUser } from '../src/modules/auth/session.service';
@@ -33,6 +35,8 @@ describe('IT-VIS: advanced visibility', () => {
   let ready = false;
   const read = new TicketsReadService();
   const searchSvc = new TicketSearchService();
+  const reply = new ReplyService();
+  const auditSvc = new AuditService();
   const sessions = new SessionService();
   const HRIS = 1;
   const CNB = 2;
@@ -200,29 +204,84 @@ describe('IT-VIS: advanced visibility', () => {
       })
       .returning({ id: attachments.id });
 
-    // Control: the in-group member CAN reach it through every path.
+    // READERS registry — every ticket-data read path that takes an actor. A new reader
+    // MUST be appended here or the FR65 sweep silently won't cover it. Each entry proves
+    // ticket X is INVISIBLE to a blocked actor (404 / empty).
+    const READERS: Array<{ name: string; assertBlocked: (a: SessionUser) => Promise<void> }> = [
+      { name: 'detail', assertBlocked: async (a) => {
+        await expect(read.getDetail(a, X)).rejects.toMatchObject({ status: 404 });
+      } },
+      { name: 'list', assertBlocked: async (a) => {
+        expect((await read.list(a, Q)).items.some((i) => i.id === X)).toBe(false);
+      } },
+      { name: 'export', assertBlocked: async (a) => {
+        expect((await read.listForExport(a, Q, 1000)).length).toBe(0);
+      } },
+      { name: 'search:subject', assertBlocked: async (a) => {
+        expect((await searchSvc.search(a, TOKEN)).items.some((i) => i.id === X)).toBe(false);
+      } },
+      { name: 'search:body', assertBlocked: async (a) => {
+        expect((await searchSvc.search(a, 'secret')).items.some((i) => i.id === X)).toBe(false);
+      } },
+      { name: 'rls', assertBlocked: async (a) => {
+        expect(await rlsCount(a, X)).toBe(0);
+      } },
+      { name: 'file:mint', assertBlocked: async (a) => {
+        expect(await fileVisible(a, att!.id)).toBe(false);
+      } },
+      { name: 'reply:defaults', assertBlocked: async (a) => {
+        await expect(reply.getDefaults(a, X)).rejects.toMatchObject({ status: 404 });
+      } },
+    ];
+
+    // Control: the in-group member CAN reach X through every reader.
     expect((await read.getDetail(session(inGroup.id), X)).ticket.id).toBe(X);
     expect((await read.list(session(inGroup.id), Q)).items.some((i) => i.id === X)).toBe(true);
     expect((await searchSvc.search(session(inGroup.id), TOKEN)).items.some((i) => i.id === X)).toBe(true);
     expect(await fileVisible(session(inGroup.id), att!.id)).toBe(true);
+    expect((await reply.getDefaults(session(inGroup.id), X)).isSensitive).toBe(true);
 
-    // RLS-boundary profiles: every read path must come back empty/404.
+    // RLS-boundary profiles: every READER must come back empty/404.
     const blocked: Array<[string, SessionUser]> = [
       ['out-of-group', session(outGroup.id)],
       ['other-project', session(foreign.id, CNB)],
       ['none-granted', session(none.id)],
     ];
     for (const [label, actor] of blocked) {
-      console.log(`[IT-VIS-002] sweeping profile: ${label}`);
-      await expect(read.getDetail(actor, X)).rejects.toMatchObject({ status: 404 });
-      expect((await read.list(actor, Q)).items.some((i) => i.id === X)).toBe(false);
-      const exportRows = await read.listForExport(actor, Q, 1000);
-      expect(exportRows.length).toBe(0);
-      expect((await searchSvc.search(actor, TOKEN)).items.some((i) => i.id === X)).toBe(false);
-      expect((await searchSvc.search(actor, 'secret')).items.some((i) => i.id === X)).toBe(false);
-      expect(await rlsCount(actor, X)).toBe(0);
-      expect(await fileVisible(actor, att!.id)).toBe(false);
+      for (const reader of READERS) {
+        console.log(`[IT-VIS-002] ${label} × ${reader.name}`);
+        await reader.assertBlocked(actor);
+      }
     }
+
+    // Audit + sensitive view-log run as systemActor (RLS BYPASS) — scope is enforced
+    // ONLY in the WHERE, so they get a dedicated sweep. Seed a log row for X, then prove
+    // an out-of-group Team Lead (Leave, not Payroll) never sees it, a Member is refused,
+    // and the in-group Lead DOES see it (the scope isn't just returning empty for all).
+    await harness!.db.execute(sql`
+      INSERT INTO audit_log (project_id, actor_id, actor_label, action, object_type, object_id)
+      VALUES (${HRIS}, ${inGroup.id}, ${'in@x.com'}, ${'ticket.replied'}, ${'ticket'}, ${X})
+    `);
+    await harness!.db
+      .insert(viewLog)
+      .values({ actorId: inGroup.id, ticketId: X, attachmentId: att!.id, action: 'file_download' });
+    const auditQ = { page: 1, pageSize: 100 };
+    const tlOut = session(outGroup.id, HRIS, 'team_lead'); // Lead of the Leave group only
+    expect((await auditSvc.list(tlOut, HRIS, auditQ)).items.some((r) => r.objectId === X)).toBe(false);
+    expect(
+      (await auditSvc.viewLogList(tlOut, HRIS, auditQ)).items.some(
+        (r) => (r as { ticketId: string }).ticketId === X,
+      ),
+    ).toBe(false);
+    await expect(auditSvc.list(session(none.id), HRIS, auditQ)).rejects.toMatchObject({ status: 403 });
+    await expect(auditSvc.viewLogList(session(none.id), HRIS, auditQ)).rejects.toMatchObject({ status: 403 });
+    const tlIn = session(inGroup.id, HRIS, 'team_lead'); // Lead of Payroll → DOES see X
+    expect((await auditSvc.list(tlIn, HRIS, auditQ)).items.some((r) => r.objectId === X)).toBe(true);
+    expect(
+      (await auditSvc.viewLogList(tlIn, HRIS, auditQ)).items.some(
+        (r) => (r as { ticketId: string }).ticketId === X,
+      ),
+    ).toBe(true);
 
     // disabled profile: blocked at the SESSION layer even though RLS would grant (Payroll member).
     expect(await rlsCount(session(disabled.id), X)).toBe(1); // RLS alone would leak…
