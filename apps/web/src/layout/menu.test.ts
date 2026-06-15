@@ -10,6 +10,7 @@ const base: Omit<Me, 'role'> = {
   groups: [],
   capabilities: [],
   mustChangePassword: false,
+  language: 'vi',
   availability: { awayFrom: null, awayTo: null },
 };
 

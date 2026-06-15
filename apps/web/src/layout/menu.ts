@@ -27,6 +27,7 @@ export function menuForRole(me: Me): MenuEntry[] {
     { key: 'reminders', path: '/admin/reminders', labelKey: 'menu.reminders' },
     { key: 'mailProtection', path: '/admin/mail-protection', labelKey: 'spam.nav.mailProtection' },
     { key: 'attachmentConfig', path: '/admin/attachments', labelKey: 'files.nav.attachmentConfig' },
+    { key: 'emailConnection', path: '/admin/email-connection', labelKey: 'conn.nav' },
     { key: 'junk', path: '/junk', labelKey: 'menu.junk' },
     { key: 'users', path: '/admin/users', labelKey: 'menu.users' },
     { key: 'settings', path: '/admin/settings', labelKey: 'menu.settings' },

@@ -4,7 +4,7 @@ import { withActor, systemActor } from '../../infra/db/with-actor';
 import { inboxMessages, imapCursor } from '../../infra/db/schema';
 import type { ProjectKey } from '../../infra/db/schema';
 import { sha256 } from '../../infra/crypto/password';
-import { imapConfigFor } from '../../infra/mail/mail-config';
+import { resolveImapConfig } from '../../infra/mail/connection-resolver';
 import { fetchNew, type FetchResult, type ImapFetcher } from '../../infra/mail/imap-client';
 
 export interface PollProject {
@@ -35,7 +35,9 @@ export class PollerService {
 
   /** `fetcher` is injectable for tests (the IT harness drives a GreenMail client). */
   async pollMailbox(project: PollProject, fetcher: ImapFetcher = fetchNew): Promise<PollOutcome> {
-    const cfg = imapConfigFor(project.key);
+    // DB-over-env (Story 11.1): read the live connection each cycle so an SSA edit
+    // applies next poll without a restart.
+    const cfg = await resolveImapConfig(project.key);
 
     const cursor = await withActor(systemActor, async (tx) => {
       const [existing] = await tx

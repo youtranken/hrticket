@@ -17,6 +17,8 @@ export interface Me {
   groups: number[];
   capabilities: string[];
   mustChangePassword: boolean;
+  /** Per-account UI language (Story 11.2) — applied on login from any machine. */
+  language: string;
   availability: { awayFrom: string | null; awayTo: string | null };
 }
 
@@ -66,6 +68,11 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
 export async function toggleOtp(enabled: boolean, password: string): Promise<void> {
   await api('/me/otp', { method: 'PATCH', body: JSON.stringify({ enabled, password }) });
+}
+
+/** Persist the UI language to the account so it follows the user across machines. */
+export async function setServerLanguage(language: 'vi' | 'en'): Promise<void> {
+  await api('/me/language', { method: 'PATCH', body: JSON.stringify({ language }) });
 }
 
 export async function logout(): Promise<void> {

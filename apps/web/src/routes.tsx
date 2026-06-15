@@ -15,6 +15,8 @@ import { AuditLogPage } from './features/admin/AuditLogPage';
 import { ReminderConfigPage } from './features/admin/ReminderConfigPage';
 import { MailProtectionPage } from './features/admin/MailProtectionPage';
 import { AttachmentConfigPage } from './features/admin/AttachmentConfigPage';
+import { EmailConnectionPage } from './features/admin/EmailConnectionPage';
+import { SettingsHubPage } from './features/admin/SettingsHubPage';
 import { JunkPage } from './features/junk/JunkPage';
 import { InboxPage, MyTicketsPage, PoolPage } from './features/inbox/InboxPage';
 import { PendingPage } from './features/pending/PendingPage';
@@ -22,7 +24,7 @@ import { SearchResultsPage } from './features/search/SearchResultsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
-import { Placeholder, ForbiddenPage } from './components/Placeholder';
+import { ForbiddenPage } from './components/Placeholder';
 
 type Role = Me['role'];
 
@@ -117,6 +119,14 @@ function ProtectedApp() {
           }
         />
         <Route
+          path="admin/email-connection"
+          element={
+            <RequireRole roles={admin} me={me}>
+              <EmailConnectionPage />
+            </RequireRole>
+          }
+        />
+        <Route
           path="admin/users"
           element={
             <RequireRole roles={admin} me={me}>
@@ -128,7 +138,7 @@ function ProtectedApp() {
           path="admin/settings"
           element={
             <RequireRole roles={admin} me={me}>
-              <Placeholder titleKey="menu.settings" />
+              <SettingsHubPage />
             </RequireRole>
           }
         />

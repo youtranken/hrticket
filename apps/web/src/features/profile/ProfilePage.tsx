@@ -36,13 +36,13 @@ export function ProfilePage() {
         <Title level={4}>{t('menu.profile')}</Title>
         <Descriptions column={1} bordered size="small">
           <Descriptions.Item label={t('common.email')}>{me.user.email}</Descriptions.Item>
-          <Descriptions.Item label="Tên">{me.user.name}</Descriptions.Item>
-          <Descriptions.Item label="Vai trò">{me.role}</Descriptions.Item>
+          <Descriptions.Item label={t('common.name')}>{me.user.name}</Descriptions.Item>
+          <Descriptions.Item label={t('common.role')}>{me.role}</Descriptions.Item>
         </Descriptions>
 
-        <Divider>Bảo mật</Divider>
+        <Divider>{t('profile.security')}</Divider>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          OTP 2FA:
+          {t('profile.otp2fa')}
           <Switch
             onChange={(v) => {
               setNextEnabled(v);

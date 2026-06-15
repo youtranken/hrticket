@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { Transporter } from 'nodemailer';
+import { resolveSmtpConfig } from './connection-resolver';
 
 export interface MailMessage {
   to: string;
@@ -10,33 +11,38 @@ export interface MailMessage {
 
 /**
  * Transactional mailer — sends DIRECTLY via SMTP (not via the outbox): OTP,
- * password reset, test-send, worker alerts (CLAUDE.md invariant #4). Connection
- * config comes from env now; Story 11.1 moves it to DB (email_connections) with
- * DB-over-env precedence.
+ * password reset, test-send, worker alerts (CLAUDE.md invariant #4). Reads the
+ * live SMTP connection from DB (email_connections) with DB-over-env precedence
+ * (Story 11.1, party-mode J5) so it never stays pinned to a stale env after
+ * go-live. Uses the `hris` system mailbox as the transactional sender.
  */
 @Injectable()
 export class Mailer {
   private readonly logger = new Logger(Mailer.name);
-  private transporter: Transporter | null = null;
+  private cached: { fp: string; t: Transporter } | null = null;
 
-  private getTransport(): Transporter {
-    if (!this.transporter) {
-      this.transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HRIS_HOST ?? 'localhost',
-        port: Number(process.env.SMTP_HRIS_PORT ?? 1025),
-        secure: false,
-        auth: process.env.SMTP_HRIS_USER
-          ? { user: process.env.SMTP_HRIS_USER, pass: process.env.SMTP_HRIS_PASSWORD }
-          : undefined,
-        connectionTimeout: 10000,
-      });
+  private async getTransport(): Promise<{ transporter: Transporter; from: string }> {
+    const cfg = await resolveSmtpConfig('hris');
+    const fp = `${cfg.host}:${cfg.port}:${cfg.user ?? ''}:${cfg.secure}`;
+    if (!this.cached || this.cached.fp !== fp) {
+      if (this.cached) this.cached.t.close();
+      this.cached = {
+        fp,
+        t: nodemailer.createTransport({
+          host: cfg.host,
+          port: cfg.port,
+          secure: cfg.secure,
+          auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+          connectionTimeout: 10000,
+        }),
+      };
     }
-    return this.transporter;
+    return { transporter: this.cached.t, from: cfg.from };
   }
 
   async send(msg: MailMessage): Promise<void> {
-    const from = process.env.SMTP_HRIS_USER ?? 'noreply@pmh.com.vn';
-    await this.getTransport().sendMail({ from, ...msg });
+    const { transporter, from } = await this.getTransport();
+    await transporter.sendMail({ from, ...msg });
     this.logger.log(`mail sent to ${msg.to}`);
   }
 }

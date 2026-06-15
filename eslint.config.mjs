@@ -1,6 +1,7 @@
 // @ts-check
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import i18next from 'eslint-plugin-i18next';
 
 export default tseslint.config(
   {
@@ -52,11 +53,19 @@ export default tseslint.config(
       ],
     },
   },
-  // i18n: no hard-coded user-facing strings in React JSX (enforced from Epic 11; rule scaffolded here).
+  // i18n (Story 11.2): no hard-coded user-facing text in React JSX. `jsx-text-only`
+  // mode flags rendered text nodes (e.g. `<Button>Lưu</Button>`) while leaving props,
+  // object keys, classNames, and aria-labels alone — so adding a literal label is a
+  // lint error, but the machinery strings stay quiet.
   {
     files: ['apps/web/src/**/*.tsx'],
+    ignores: ['apps/web/src/**/*.{test,spec}.tsx'],
+    plugins: { i18next },
     rules: {
-      // Placeholder for eslint-plugin-react no-literal-strings (added in Story 11.2).
+      // `words.exclude` lets through decorative, language-neutral glyph-only nodes
+      // (e.g. a dropdown caret ▾ or a ⋮ overflow trigger) — any node containing a
+      // letter still needs a t() key.
+      'i18next/no-literal-string': ['error', { mode: 'jsx-text-only', words: { exclude: ['^\\W*$'] } }],
     },
   },
 );

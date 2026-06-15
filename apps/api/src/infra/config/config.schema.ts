@@ -12,6 +12,9 @@ const envSchema = z.object({
   HMAC_SIGNING_KEY: z.string().min(16),
   ATTACHMENT_ENCRYPTION_KEY: z.string().min(16),
   ATTACHMENT_STORAGE_ROOT: z.string().default('./attachments'),
+  // Story 11.1 — AES key for the at-rest email App Password. Optional: when unset,
+  // the secret module falls back to ATTACHMENT_ENCRYPTION_KEY (always present).
+  EMAIL_SECRET_KEY: z.string().min(16).optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

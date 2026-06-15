@@ -14,6 +14,8 @@ import { AdminJunkRulesController } from './admin-junkrules.controller';
 import { AdminJunkRulesService } from './admin-junkrules.service';
 import { AdminGroupsController } from './admin-groups.controller';
 import { AdminGroupsService } from './admin-groups.service';
+import { EmailConnectionController } from './email-connection.controller';
+import { EmailConnectionService } from './email-connection.service';
 
 /** Admin configuration surface: categories/keywords/auto-assign/tags (4.6) +
  *  reminder config / email templates / test-send (6.4) + blocklist (7.1) +
@@ -29,6 +31,7 @@ import { AdminGroupsService } from './admin-groups.service';
     AttachmentConfigController,
     AdminJunkRulesController,
     AdminGroupsController,
+    EmailConnectionController,
   ],
   providers: [
     AdminConfigService,
@@ -38,6 +41,7 @@ import { AdminGroupsService } from './admin-groups.service';
     AttachmentConfigService,
     AdminJunkRulesService,
     AdminGroupsService,
+    EmailConnectionService,
   ],
 })
 export class AdminModule {}

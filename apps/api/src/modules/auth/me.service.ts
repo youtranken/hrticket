@@ -14,6 +14,8 @@ export interface MePayload {
   groups: number[];
   capabilities: string[];
   mustChangePassword: boolean;
+  /** Per-account UI language (Story 11.2) — applied on login from any machine. */
+  language: string;
   availability: { awayFrom: string | null; awayTo: string | null };
 }
 
@@ -42,7 +44,7 @@ export class MeService {
         .where(and(eq(roleCapabilities.role, u.role), eq(roleCapabilities.allowed, true)));
 
       const [av] = await tx
-        .select({ awayFrom: users.awayFrom, awayTo: users.awayTo })
+        .select({ awayFrom: users.awayFrom, awayTo: users.awayTo, language: users.language })
         .from(users)
         .where(eq(users.id, u.id));
 
@@ -55,8 +57,16 @@ export class MeService {
         groups: groupRows.map((g) => g.categoryId),
         capabilities: capRows.map((c) => c.capability),
         mustChangePassword: u.mustChangePassword,
+        language: av?.language ?? 'vi',
         availability: { awayFrom: av?.awayFrom ?? null, awayTo: av?.awayTo ?? null },
       };
     });
+  }
+
+  /** Persist the user's UI language preference (Story 11.2 AC3). */
+  async setLanguage(userId: string, language: 'vi' | 'en'): Promise<void> {
+    await withActor(systemActor, (tx) =>
+      tx.update(users).set({ language }).where(eq(users.id, userId)),
+    );
   }
 }

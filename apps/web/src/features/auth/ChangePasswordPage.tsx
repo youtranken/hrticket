@@ -17,7 +17,7 @@ export function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
     <div style={{ display: 'grid', placeItems: 'center', minHeight: forced ? '100vh' : undefined }}>
       <Card style={{ width: 380 }}>
         <Title level={4}>{t('common.password')}</Title>
-        {forced && <Paragraph type="warning">Bạn cần đổi mật khẩu trước khi tiếp tục.</Paragraph>}
+        {forced && <Paragraph type="warning">{t('auth.mustChangePassword')}</Paragraph>}
         <Form
           layout="vertical"
           onFinish={async (v: { currentPassword: string; newPassword: string }) => {

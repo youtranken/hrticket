@@ -1,8 +1,9 @@
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Layout, Menu, Dropdown, Segmented, Button, Tag, Select, App as AntApp } from 'antd';
-import { useMe, logout } from '../lib/auth';
+import { useMe, logout, setServerLanguage } from '../lib/auth';
 import { setActiveProject } from '../lib/activeProject';
 import { menuForRole } from './menu';
 import { AvailabilityMenu } from '../features/profile/AvailabilityMenu';
@@ -20,7 +21,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const { message } = AntApp.useApp();
   const { data: me } = useMe();
+
+  // Apply the account's saved language on login from any machine (Story 11.2 AC3).
+  useEffect(() => {
+    if (me?.language && me.language !== i18n.language) {
+      setLanguage(me.language as 'vi' | 'en');
+    }
+  }, [me?.language]);
+
   if (!me) return null;
+
+  const onChangeLanguage = (v: 'vi' | 'en') => {
+    setLanguage(v); // immediate, no reload (i18next)
+    void setServerLanguage(v).catch(() => undefined); // persist to the account
+  };
 
   const items = menuForRole(me).map((m) => ({ key: m.path, label: t(m.labelKey) }));
 
@@ -44,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider breakpoint="lg" collapsedWidth="0">
-        <div style={{ color: '#fff', padding: 16, fontWeight: 600 }}>HRIS Ticket</div>
+        <div style={{ color: '#fff', padding: 16, fontWeight: 600 }}>{t('app.brandShort')}</div>
         <Menu
           theme="dark"
           mode="inline"
@@ -79,7 +93,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               { label: 'VI', value: 'vi' },
               { label: 'EN', value: 'en' },
             ]}
-            onChange={(v) => setLanguage(v as 'vi' | 'en')}
+            onChange={(v) => onChangeLanguage(v as 'vi' | 'en')}
           />
           <Dropdown
             menu={{

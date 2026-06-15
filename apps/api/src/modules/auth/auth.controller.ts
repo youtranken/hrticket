@@ -24,6 +24,7 @@ import type { SessionUser } from './session.service';
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
 const otpVerifySchema = z.object({ preAuthToken: z.string().min(1), code: z.string().length(6) });
 const otpToggleSchema = z.object({ enabled: z.boolean(), password: z.string().min(1) });
+const languageSchema = z.object({ language: z.enum(['vi', 'en']) });
 const forgotSchema = z.object({ email: z.string().email() });
 const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8) });
 const changePasswordSchema = z.object({
@@ -127,6 +128,15 @@ export class MeController {
     if (!ok) throw new UnauthorizedException('Mật khẩu không đúng');
     await this.otp.setEnabled(user.id, parsed.data.enabled);
     return { otpEnabled: parsed.data.enabled };
+  }
+
+  @Patch('me/language')
+  @UseGuards(SessionGuard)
+  async setLanguage(@CurrentUser() user: SessionUser, @Body() body: unknown) {
+    const parsed = languageSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    await this.me.setLanguage(user.id, parsed.data.language);
+    return { language: parsed.data.language };
   }
 
   @Post('me/change-password')

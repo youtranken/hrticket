@@ -5,7 +5,8 @@ import { withActor, systemActor } from '../../infra/db/with-actor';
 import { outbox, ticketMessages, attachments, projects, users } from '../../infra/db/schema';
 import { emitNotification } from '../notifications/emit';
 import type { ProjectKey } from '../../infra/db/schema';
-import { smtpConfigFor } from '../../infra/mail/smtp-config';
+import { resolveSmtpConfig } from '../../infra/mail/connection-resolver';
+import type { SmtpSettings } from '../../infra/mail/smtp-config';
 import { readFile } from '../../infra/storage/fs-storage';
 import { writeAudit } from '../../infra/audit/audit';
 import { Mailer } from '../../infra/mail/mailer';
@@ -52,26 +53,29 @@ export interface OutboxRunResult {
 @Injectable()
 export class OutboxSender {
   private readonly logger = new Logger(OutboxSender.name);
-  private readonly transports = new Map<ProjectKey, Transporter>();
+  // Cache a live transport per project, keyed by a config fingerprint so a hot
+  // config swap (Story 11.1 AC2) rebuilds it next send and the stale one is closed.
+  private readonly transports = new Map<ProjectKey, { fp: string; t: Transporter }>();
 
   constructor(private readonly mailer: Mailer) {}
 
-  private transportFor(key: ProjectKey): Transporter {
-    let t = this.transports.get(key);
-    if (!t) {
-      const cfg = smtpConfigFor(key);
-      t = nodemailer.createTransport({
-        host: cfg.host,
-        port: cfg.port,
-        secure: cfg.secure,
-        auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
-        connectionTimeout: SMTP_TIMEOUT_MS,
-        greetingTimeout: SMTP_TIMEOUT_MS,
-        socketTimeout: SMTP_TIMEOUT_MS,
-      });
-      this.transports.set(key, t);
-    }
-    return t;
+  private async transportFor(key: ProjectKey): Promise<{ transporter: Transporter; cfg: SmtpSettings }> {
+    const cfg = await resolveSmtpConfig(key);
+    const fp = `${cfg.host}:${cfg.port}:${cfg.user ?? ''}:${cfg.secure}`;
+    const cached = this.transports.get(key);
+    if (cached && cached.fp === fp) return { transporter: cached.t, cfg };
+    if (cached) cached.t.close(); // config changed — drop the old connection pool
+    const t = nodemailer.createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.secure,
+      auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+      connectionTimeout: SMTP_TIMEOUT_MS,
+      greetingTimeout: SMTP_TIMEOUT_MS,
+      socketTimeout: SMTP_TIMEOUT_MS,
+    });
+    this.transports.set(key, { fp, t });
+    return { transporter: t, cfg };
   }
 
   /** One pass over the queue. Returns counts (tests assert on these). */
@@ -170,7 +174,7 @@ export class OutboxSender {
 
   /** Actual SMTP send — NO database transaction is open here (AC3). */
   private async send(row: ClaimedRow): Promise<void> {
-    const cfg = smtpConfigFor(row.projectKey);
+    const { transporter, cfg } = await this.transportFor(row.projectKey);
     const threading = row.headers
       ? (JSON.parse(row.headers) as {
           inReplyTo?: string | null;
@@ -180,7 +184,7 @@ export class OutboxSender {
       : {};
     const files = await this.loadAttachments(row);
 
-    await this.transportFor(row.projectKey).sendMail({
+    await transporter.sendMail({
       from: cfg.from,
       to: row.toAddrs,
       cc: row.ccAddrs ?? undefined,

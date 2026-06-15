@@ -179,10 +179,14 @@ export function TicketDetailPage() {
         >
           <Space direction="vertical" size={2} style={{ width: '100%' }}>
             {/* Notes have no recipients; emails show From/To/CC (BCC outbound only, FR8). */}
-            {!m.isInternal && m.toAddrs?.length ? <Text type="secondary">To: {m.toAddrs.join(', ')}</Text> : null}
-            {!m.isInternal && m.ccAddrs?.length ? <Text type="secondary">Cc: {m.ccAddrs.join(', ')}</Text> : null}
+            {!m.isInternal && m.toAddrs?.length ? (
+              <Text type="secondary">{t('ticket.field.to', { v: m.toAddrs.join(', ') })}</Text>
+            ) : null}
+            {!m.isInternal && m.ccAddrs?.length ? (
+              <Text type="secondary">{t('ticket.field.cc', { v: m.ccAddrs.join(', ') })}</Text>
+            ) : null}
             {m.direction === 'outbound' && !m.isInternal && m.bccAddrs?.length ? (
-              <Text type="secondary">Bcc: {m.bccAddrs.join(', ')}</Text>
+              <Text type="secondary">{t('ticket.field.bcc', { v: m.bccAddrs.join(', ') })}</Text>
             ) : null}
             <div style={{ marginTop: 8 }}>
               <SafeMessageBody html={m.bodyHtmlSafe} text={m.bodyText} />
