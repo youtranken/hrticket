@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,11 +15,19 @@ import {
   Spin,
   App as AntApp,
 } from 'antd';
+import {
+  ArrowLeftOutlined,
+  LockOutlined,
+  SafetyCertificateOutlined,
+  DeleteOutlined,
+  StopOutlined,
+  MoreOutlined,
+} from '@ant-design/icons';
 import { useMe } from '../../lib/auth';
 import { useTicket, useApproveParticipant, displayCode } from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
-import { SafeMessageBody } from '../../components/SafeMessageBody';
+import { MessageBubble } from './MessageBubble';
 import { ComposeBox } from './ComposeBox';
 import { AssignControls } from './AssignControls';
 import { LifecycleControls } from './LifecycleControls';
@@ -44,6 +53,14 @@ export function TicketDetailPage() {
   const ssa = me?.role === 'ssa';
   const lang = i18n.language === 'en' ? 'en' : 'vi';
 
+  // Long threads (chat convention): jump to the newest message on load so the user isn't
+  // stranded at the top. Short tickets stay put so the request + info stay in view.
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const msgCount = data?.messages.length ?? 0;
+  useEffect(() => {
+    if (msgCount > 4) bottomRef.current?.scrollIntoView({ block: 'end' });
+  }, [msgCount]);
+
   if (isLoading) return <Spin style={{ margin: 80 }} />;
   if (isError || !data) return <Alert type="error" message={t('ticket.notFound')} showIcon />;
 
@@ -58,7 +75,14 @@ export function TicketDetailPage() {
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <a onClick={() => navigate('/inbox')}>← {t('menu.inbox')}</a>
+      <Button
+        type="link"
+        icon={<ArrowLeftOutlined />}
+        style={{ paddingLeft: 0, alignSelf: 'flex-start' }}
+        onClick={() => navigate('/inbox')}
+      >
+        {t('menu.inbox')}
+      </Button>
 
       <Card>
         <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -68,10 +92,26 @@ export function TicketDetailPage() {
             </Title>
             <StatusTag status={ticket.status} />
             {ticket.reopenCount > 0 && <Tag color="volcano">{t('lifecycle.reopened')}</Tag>}
-            {ticket.reopenLocked && <Tag color="red">🔒 {t('lifecycle.lockReopen')}</Tag>}
-            {ticket.categorySensitive && <Tag color="red">🛡 {t('ticket.sensitive')}</Tag>}
-            {ticket.isJunk && <Tag color="default">🗑 {t('spam.mark.junkBadge')}</Tag>}
-            {ticket.isSpamThread && <Tag color="gold">🔇 {t('spam.mark.spamBadge')}</Tag>}
+            {ticket.reopenLocked && (
+              <Tag color="red" icon={<LockOutlined />}>
+                {t('lifecycle.lockReopen')}
+              </Tag>
+            )}
+            {ticket.categorySensitive && (
+              <Tag color="red" icon={<SafetyCertificateOutlined />}>
+                {t('ticket.sensitive')}
+              </Tag>
+            )}
+            {ticket.isJunk && (
+              <Tag color="default" icon={<DeleteOutlined />}>
+                {t('spam.mark.junkBadge')}
+              </Tag>
+            )}
+            {ticket.isSpamThread && (
+              <Tag color="gold" icon={<StopOutlined />}>
+                {t('spam.mark.spamBadge')}
+              </Tag>
+            )}
             {ticket.isOverdue && (
               <Tag color="error">{t('lifecycle.overdueDays', { count: ticket.overdueDays })}</Tag>
             )}
@@ -95,8 +135,23 @@ export function TicketDetailPage() {
               <TagEditor ticketId={ticket.id} tags={tags} />
             </Descriptions.Item>
           </Descriptions>
-          <AssignControls ticket={ticket} />
-          <LifecycleControls ticket={ticket} />
+          {/* Unified action toolbar (v1 redesign) — claim/assign/category + status/lock
+              grouped into one bar instead of two loose rows. */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+              alignItems: 'center',
+              padding: '10px 12px',
+              background: '#F7F8FB',
+              border: '1px solid #EAEDF3',
+              borderRadius: 10,
+            }}
+          >
+            <AssignControls ticket={ticket} />
+            <LifecycleControls ticket={ticket} />
+          </div>
           {links.length > 0 && (
             <Space wrap>
               <Text type="secondary">{t('ticket.crossPost')}:</Text>
@@ -158,47 +213,17 @@ export function TicketDetailPage() {
         </Card>
       )}
 
-      {messages.map((m) => (
-        <Card
-          key={m.id}
-          size="small"
-          type="inner"
-          style={m.isInternal ? { background: '#fffbe6' } : undefined}
-          title={
-            <Space>
-              {m.isInternal ? (
-                <Tag color="purple">{t('ticket.internal')}</Tag>
-              ) : (
-                <Tag color={m.direction === 'inbound' ? 'green' : 'blue'}>{t(`ticket.${m.direction}`)}</Tag>
-              )}
-              <Text strong>{m.fromAddr}</Text>
-              {m.isAutoReply && <Tag>{t('ticket.autoReply')}</Tag>}
-              <Text type="secondary">{vnTime(m.createdAt)}</Text>
-            </Space>
-          }
-        >
-          <Space direction="vertical" size={2} style={{ width: '100%' }}>
-            {/* Notes have no recipients; emails show From/To/CC (BCC outbound only, FR8). */}
-            {!m.isInternal && m.toAddrs?.length ? (
-              <Text type="secondary">{t('ticket.field.to', { v: m.toAddrs.join(', ') })}</Text>
-            ) : null}
-            {!m.isInternal && m.ccAddrs?.length ? (
-              <Text type="secondary">{t('ticket.field.cc', { v: m.ccAddrs.join(', ') })}</Text>
-            ) : null}
-            {m.direction === 'outbound' && !m.isInternal && m.bccAddrs?.length ? (
-              <Text type="secondary">{t('ticket.field.bcc', { v: m.bccAddrs.join(', ') })}</Text>
-            ) : null}
-            <div style={{ marginTop: 8 }}>
-              <SafeMessageBody html={m.bodyHtmlSafe} text={m.bodyText} />
-            </div>
-          </Space>
-        </Card>
-      ))}
+      <div>
+        {messages.map((m) => (
+          <MessageBubble key={m.id} m={m} />
+        ))}
+        <div ref={bottomRef} />
+      </div>
 
       {ticket.status === 'closed' ? (
         <Alert type="info" showIcon message={t('lifecycle.closedBanner')} />
       ) : (
-        <ComposeBox ticketId={id} status={ticket.status} />
+        <ComposeBox key={id} ticketId={id} status={ticket.status} />
       )}
     </Space>
   );
@@ -269,21 +294,21 @@ function SpamActionsMenu({
         items: [
           {
             key: 'junk',
+            icon: <DeleteOutlined />,
             label: t('spam.mark.junkAction'),
             disabled: isJunk,
             onClick: onMarkJunk,
           },
           {
             key: 'spam',
+            icon: <StopOutlined />,
             label: isSpamThread ? t('spam.mark.spamActionOff') : t('spam.mark.spamActionOn'),
             onClick: onToggleSpam,
           },
         ],
       }}
     >
-      <Button size="small" aria-label={t('spam.mark.menuLabel')}>
-        ⋮
-      </Button>
+      <Button size="small" icon={<MoreOutlined />} aria-label={t('spam.mark.menuLabel')} />
     </Dropdown>
   );
 }

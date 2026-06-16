@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Descriptions, Switch, Modal, Input, Typography, App as AntApp, Divider } from 'antd';
-import { useMe, toggleOtp } from '../../lib/auth';
+import { useMe, toggleOtp, setServerLanguage } from '../../lib/auth';
 import { ChangePasswordPage } from '../auth/ChangePasswordPage';
 import { setLanguage } from '../../i18n';
 import i18n from '../../i18n';
@@ -21,12 +21,12 @@ export function ProfilePage() {
   const confirmToggle = async () => {
     try {
       await toggleOtp(nextEnabled, pw);
-      message.success('OK');
+      message.success(t('common.saved'));
       setPwModal(false);
       setPw('');
       await refetch();
     } catch {
-      message.error('Mật khẩu không đúng');
+      message.error(t('profile.wrongPassword'));
     }
   };
 
@@ -56,7 +56,11 @@ export function ProfilePage() {
           checkedChildren="EN"
           unCheckedChildren="VI"
           defaultChecked={i18n.language === 'en'}
-          onChange={(v) => setLanguage(v ? 'en' : 'vi')}
+          onChange={(v) => {
+            const lng = v ? 'en' : 'vi';
+            setLanguage(lng); // immediate (i18next)
+            void setServerLanguage(lng).catch(() => undefined); // persist to the account so it survives reload
+          }}
         />
 
         <Divider>{t('common.password')}</Divider>
@@ -65,11 +69,11 @@ export function ProfilePage() {
 
       <Modal
         open={pwModal}
-        title="Xác nhận mật khẩu"
+        title={t('profile.confirmPassword')}
         onOk={confirmToggle}
         onCancel={() => setPwModal(false)}
       >
-        <Input.Password value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Mật khẩu" />
+        <Input.Password value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('common.password')} />
       </Modal>
     </div>
   );

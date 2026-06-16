@@ -50,10 +50,11 @@ export function useNotifications() {
 
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, number>({
+  return useMutation<unknown, Error, number, { prev?: NotifState }>({
     mutationFn: (id) => api(`/notifications/${id}/read`, { method: 'PATCH' }),
     onMutate: (id) => {
       // Optimistic: flip readAt + drop the unread count locally so the badge reacts now.
+      const prev = qc.getQueryData<NotifState>(KEY);
       qc.setQueryData<NotifState>(KEY, (s) =>
         s
           ? {
@@ -63,18 +64,29 @@ export function useMarkNotificationRead() {
             }
           : s,
       );
+      return { prev };
+    },
+    // The 304 watermark means a failed optimistic flip would otherwise become permanent
+    // (the poll won't re-send an unchanged row) — restore the snapshot on error.
+    onError: (_e, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData<NotifState>(KEY, ctx.prev);
     },
   });
 }
 
 export function useMarkAllNotificationsRead() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, void>({
+  return useMutation<unknown, Error, void, { prev?: NotifState }>({
     mutationFn: () => api('/notifications/read-all', { method: 'POST' }),
     onMutate: () => {
+      const prev = qc.getQueryData<NotifState>(KEY);
       qc.setQueryData<NotifState>(KEY, (s) =>
         s ? { ...s, items: s.items.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })), unreadCount: 0 } : s,
       );
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData<NotifState>(KEY, ctx.prev);
     },
   });
 }

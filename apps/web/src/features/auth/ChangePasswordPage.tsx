@@ -24,17 +24,17 @@ export function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
             try {
               await changePassword(v.currentPassword, v.newPassword);
               await qc.invalidateQueries({ queryKey: ['me'] });
-              message.success('OK');
+              message.success(t('common.saved'));
               navigate('/');
             } catch {
-              message.error('Mật khẩu hiện tại không đúng');
+              message.error(t('auth.wrongCurrentPassword'));
             }
           }}
         >
-          <Form.Item name="currentPassword" label="Mật khẩu hiện tại" rules={[{ required: true }]}>
+          <Form.Item name="currentPassword" label={t('auth.currentPassword')} rules={[{ required: true }]}>
             <Input.Password />
           </Form.Item>
-          <Form.Item name="newPassword" label="Mật khẩu mới" rules={[{ required: true, min: 8 }]}>
+          <Form.Item name="newPassword" label={t('auth.newPassword')} rules={[{ required: true, min: 8 }]}>
             <Input.Password />
           </Form.Item>
           <Button type="primary" htmlType="submit" block>
