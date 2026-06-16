@@ -16,17 +16,10 @@ const envSchema = z.object({
   // the secret module falls back to ATTACHMENT_ENCRYPTION_KEY (always present).
   EMAIL_SECRET_KEY: z.string().min(16).optional(),
   // Public base URL used to build links in transactional/digest email (reset, ticket
-  // links). Defaults to localhost for dev; a localhost value in production is rejected
-  // below so a misconfigured deploy fails fast instead of shipping dead localhost links.
+  // links). Validated as a URL and part of the config contract (G5). Defaults to the
+  // on-prem localhost; a real deploy sets it to the host the users reach — NOT failed
+  // fast on localhost, since the on-prem compose stack legitimately runs on localhost.
   APP_BASE_URL: z.string().url().default('http://localhost:8080'),
-}).superRefine((cfg, ctx) => {
-  if (cfg.NODE_ENV === 'production' && /\/\/(localhost|127\.0\.0\.1)\b/.test(cfg.APP_BASE_URL)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['APP_BASE_URL'],
-      message: 'must be the real public URL in production (not localhost)',
-    });
-  }
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
