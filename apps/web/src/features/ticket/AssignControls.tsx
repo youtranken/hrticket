@@ -21,7 +21,7 @@ const { Text } = Typography;
  *  "Gán cho…" (manual assign + re-classify), and "Đổi category" (Story 4.4 + 4.5). */
 export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
   const { t } = useTranslation();
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const { data: me } = useMe();
   const lang = i18n.language === 'en' ? 'en' : 'vi';
   const claim = useClaim(ticket.id);
@@ -101,7 +101,7 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
           size="small"
           loading={claim.isPending}
           onClick={() =>
-            Modal.confirm({
+            modal.confirm({
               title: t('ticket.claimOverConfirm', { name: ticket.assignee!.name }),
               onOk: () =>
                 claim.mutateAsync({ over: true }).then(

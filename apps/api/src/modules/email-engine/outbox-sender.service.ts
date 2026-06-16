@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { and, asc, eq, inArray, lte, or, sql } from 'drizzle-orm';
-import { withActor, systemActor } from '../../infra/db/with-actor';
+import { withActor, systemActor, type DbTx } from '../../infra/db/with-actor';
 import { outbox, ticketMessages, attachments, projects, users } from '../../infra/db/schema';
 import { emitNotification } from '../notifications/emit';
 import type { ProjectKey } from '../../infra/db/schema';
@@ -131,11 +131,26 @@ export class OutboxSender {
         const attempts = c.attempts + 1;
         if (attempts >= MAX_ATTEMPTS) {
           // Backstop dead-letter: the normal throw-path dead-letter (markFailure)
-          // can't run when the worker is killed mid-send, so cap it here.
+          // can't run when the worker is killed mid-send, so cap it here. It MUST
+          // audit + alert exactly like markFailure — a stuck reply must never fail
+          // silently (AC2), and an outbox state change must leave an audit row (#8).
           await tx
             .update(outbox)
             .set({ status: 'failed', attempts, lockedAt: null })
             .where(eq(outbox.id, c.id));
+          const [meta] = await tx
+            .select({ projectId: outbox.projectId, toAddrs: outbox.toAddrs })
+            .from(outbox)
+            .where(eq(outbox.id, c.id));
+          if (meta) {
+            await this.deadLetter(tx, {
+              id: c.id,
+              projectId: meta.projectId,
+              toAddrs: meta.toAddrs,
+              attempts,
+              reason: 're-claimed repeatedly without settling (worker died mid-send)',
+            });
+          }
           this.logger.error(`outbox ${c.id} dead-lettered: re-claimed ${attempts}× without settling`);
         } else {
           await tx.update(outbox).set({ attempts }).where(eq(outbox.id, c.id));
@@ -269,27 +284,13 @@ export class OutboxSender {
               eq(outbox.lockedAt, row.lockedAt),
             ),
           );
-        await writeAudit(tx, {
+        return this.deadLetter(tx, {
+          id: row.id,
           projectId: row.projectId,
-          actorLabel: 'system:outbox',
-          action: 'outbox.dead_letter',
-          objectType: 'outbox',
-          objectId: row.id,
-          newValue: { attempts, reason, to: row.toAddrs },
+          toAddrs: row.toAddrs,
+          attempts,
+          reason,
         });
-        // Alert Admin/SSA in-app — a stuck reply must never fail silently (AC2).
-        const rows = await tx
-          .select({ id: users.id, email: users.email })
-          .from(users)
-          .where(and(inArray(users.role, ['admin', 'ssa']), eq(users.disabled, false)));
-        for (const a of rows) {
-          await emitNotification(tx, {
-            actorId: a.id,
-            type: 'outbox_failed',
-            payload: { outboxId: row.id, to: row.toAddrs, reason },
-          });
-        }
-        return rows;
       });
       // Direct SMTP heads-up (best-effort; the outbox itself just failed).
       if (admins.length > 0) {
@@ -325,5 +326,36 @@ export class OutboxSender {
     );
     this.logger.warn(`outbox ${row.id} retry ${attempts}/${MAX_ATTEMPTS} in ${delay}ms: ${reason}`);
     return 'retry';
+  }
+
+  /** Shared dead-letter side-effects so BOTH dead-letter paths (the throw-path in
+   *  markFailure AND the worker-death backstop in claim) audit + alert identically:
+   *  an `outbox.dead_letter` audit row + an in-app `outbox_failed` notification to
+   *  every active Admin/SSA. Returns those admins so the caller can optionally send a
+   *  direct-SMTP heads-up. Runs inside the caller's tx (AC2 — never silent). */
+  private async deadLetter(
+    tx: DbTx,
+    row: { id: string; projectId: number; toAddrs: string[]; attempts: number; reason: string },
+  ): Promise<Array<{ id: string; email: string }>> {
+    await writeAudit(tx, {
+      projectId: row.projectId,
+      actorLabel: 'system:outbox',
+      action: 'outbox.dead_letter',
+      objectType: 'outbox',
+      objectId: row.id,
+      newValue: { attempts: row.attempts, reason: row.reason, to: row.toAddrs },
+    });
+    const admins = await tx
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(and(inArray(users.role, ['admin', 'ssa']), eq(users.disabled, false)));
+    for (const a of admins) {
+      await emitNotification(tx, {
+        actorId: a.id,
+        type: 'outbox_failed',
+        payload: { outboxId: row.id, to: row.toAddrs, reason: row.reason },
+      });
+    }
+    return admins;
   }
 }

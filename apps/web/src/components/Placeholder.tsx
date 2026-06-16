@@ -6,7 +6,7 @@ export function Placeholder({ titleKey }: { titleKey: string }) {
   const { t } = useTranslation();
   return (
     <Card title={t(titleKey)}>
-      <Empty description="Sắp ra mắt" />
+      <Empty description={t('common.comingSoon')} />
     </Card>
   );
 }

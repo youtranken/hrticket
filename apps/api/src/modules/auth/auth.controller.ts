@@ -32,6 +32,11 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(8),
 });
 
+// Public base URL for links in transactional email. Read from config (validated at
+// boot, fail-fast on a localhost value in production) — NEVER the request Host header,
+// which an attacker can forge to poison the reset link (reset-link poisoning).
+const APP_BASE_URL = process.env.APP_BASE_URL ?? 'http://localhost:8080';
+
 function setSessionCookie(res: Response, sid: string): void {
   res.cookie(SESSION_COOKIE, sid, {
     httpOnly: true,
@@ -86,11 +91,10 @@ export class AuthController {
 
   /** Always 200 (no email enumeration). */
   @Post('forgot')
-  async forgot(@Body() body: unknown, @Req() req: AuthedRequest) {
+  async forgot(@Body() body: unknown) {
     const parsed = forgotSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
-    const base = `${req.protocol}://${req.get('host')}`;
-    await this.reset.request(parsed.data.email, base);
+    await this.reset.request(parsed.data.email, APP_BASE_URL);
     return { ok: true };
   }
 

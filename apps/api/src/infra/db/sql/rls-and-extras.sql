@@ -60,10 +60,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
   PRIMARY KEY (id, created_at)
 ) PARTITION BY RANGE (created_at);
 
-CREATE TABLE IF NOT EXISTS audit_log_2026 PARTITION OF audit_log
-  FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
-CREATE TABLE IF NOT EXISTS audit_log_2027 PARTITION OF audit_log
-  FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');
+-- Yearly RANGE partitions, AUTO-EXTENDED on every migrate from 2026 to now()+5 years,
+-- so a future INSERT can never fail for a missing partition. A gap would abort EVERY
+-- audited mutation in-tx and halt the system (audit is written in the SAME tx as the
+-- mutation it records). A DEFAULT catch-all backstops any row beyond the explicit years
+-- or a clock skew, so the system can never hard-halt on this again. Append-only
+-- (REVOKE UPDATE/DELETE) is re-applied to ALL partitions in the grants section below.
+DO $mkpart$
+DECLARE y int;
+BEGIN
+  FOR y IN 2026 .. (EXTRACT(YEAR FROM now())::int + 5) LOOP
+    EXECUTE format(
+      'CREATE TABLE IF NOT EXISTS audit_log_%s PARTITION OF audit_log FOR VALUES FROM (%L) TO (%L)',
+      y, (y || '-01-01'), ((y + 1) || '-01-01'));
+  END LOOP;
+END $mkpart$;
+CREATE TABLE IF NOT EXISTS audit_log_default PARTITION OF audit_log DEFAULT;
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log (created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_object ON audit_log (object_type, object_id);
 
@@ -175,5 +187,12 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT, UPDATE ON SEQUENC
 -- also no UPDATE/DELETE endpoint. Revoke on the parent AND every partition (each is a
 -- real table with its own privileges from "ON ALL TABLES"). Story 9.5 verifies this.
 REVOKE UPDATE, DELETE ON audit_log FROM app;
-REVOKE UPDATE, DELETE ON audit_log_2026 FROM app;
-REVOKE UPDATE, DELETE ON audit_log_2027 FROM app;
+-- Every partition (the auto-created years above + the DEFAULT) — resolved dynamically
+-- so a freshly auto-added partition is locked down on the SAME migrate that creates it.
+DO $revpart$
+DECLARE part regclass;
+BEGIN
+  FOR part IN SELECT inhrelid::regclass FROM pg_inherits WHERE inhparent = 'audit_log'::regclass LOOP
+    EXECUTE format('REVOKE UPDATE, DELETE ON %s FROM app', part);
+  END LOOP;
+END $revpart$;
