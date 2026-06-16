@@ -9,6 +9,7 @@ export enum ErrorCode {
   NOT_FOUND = 'NOT_FOUND',
   FORBIDDEN = 'FORBIDDEN',
   CONFLICT = 'CONFLICT',
+  INTERNAL = 'INTERNAL',
   // Data access gateway (invariant #1)
   MISSING_ACTOR = 'MISSING_ACTOR',
   // Ticket lifecycle (Epic 5)

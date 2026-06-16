@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { MonitorService } from './modules/monitor/monitor.service';
 import { loadConfig } from './infra/config/config.schema';
+import { AllExceptionsFilter } from './infra/http/all-exceptions.filter';
 
 /** HTTP entrypoint — listens. The worker uses a separate entry (worker.ts). */
 async function bootstrap(): Promise<void> {
@@ -14,6 +15,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(PinoLogger));
   app.use(cookieParser());
+  app.useGlobalFilters(new AllExceptionsFilter());
   // correct req.ip behind nginx
   (app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void }).set(
     'trust proxy',

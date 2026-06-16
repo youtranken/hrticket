@@ -86,12 +86,19 @@ export class AssignmentService {
 
       if (opts.over && t.assigneeId !== null) {
         // Claim-over (FR30) — an EXPLICIT take-from-holder, atomically pinned to the
-        // current holder so two over-claims can't both win.
+        // current holder so two over-claims can't both win. Mirror manual assign:
+        // only open→assigned, otherwise PRESERVE the status (never force an illegal
+        // pending/in_progress→assigned transition, which would also orphan snooze_until).
+        // Pin the status we read too, so a concurrent close/transition makes this a
+        // 0-row → 409 (closes the TOCTOU that could otherwise resurrect a closed ticket).
         const prev = t.assigneeId;
+        const nextStatus = t.status === 'open' ? 'assigned' : t.status;
         const won = await tx
           .update(tickets)
-          .set({ assigneeId: user.id, status: 'assigned', assignedAt: new Date() })
-          .where(and(eq(tickets.id, ticketId), eq(tickets.assigneeId, prev)))
+          .set({ assigneeId: user.id, status: nextStatus as 'assigned', assignedAt: new Date() })
+          .where(
+            and(eq(tickets.id, ticketId), eq(tickets.assigneeId, prev), eq(tickets.status, t.status as 'open')),
+          )
           .returning({ id: tickets.id });
         if (won.length === 0) throw new ConflictException('Ticket already claimed');
         await notify(tx, prev, 'ticket_reassigned', {

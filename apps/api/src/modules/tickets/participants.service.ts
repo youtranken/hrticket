@@ -5,6 +5,7 @@ import { tickets, participants } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
+import { assertCanActOnTicket } from './ticket.state-machine';
 
 @Injectable()
 export class ParticipantsService {
@@ -19,10 +20,18 @@ export class ParticipantsService {
     return withActor(actor, async (tx) => {
       // RLS-filtered: invisible ticket → looks absent → 404 (no existence leak).
       const [ticket] = await tx
-        .select({ id: tickets.id, projectId: tickets.projectId })
+        .select({
+          id: tickets.id,
+          projectId: tickets.projectId,
+          categoryId: tickets.categoryId,
+          assigneeId: tickets.assigneeId,
+        })
         .from(tickets)
         .where(eq(tickets.id, ticketId));
       if (!ticket) throw new NotFoundException('Ticket not found');
+      // Visibility (RLS) is not authority: only the assignee / TL-in-group / Admin / SSA
+      // may admit or reject a participant — not every member who can see the ticket.
+      assertCanActOnTicket(user, actor.kind === 'user' ? actor.groups : [], ticket);
 
       const [p] = await tx
         .select({ id: participants.id, email: participants.email })

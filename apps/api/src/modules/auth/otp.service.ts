@@ -1,5 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
 import { otpCodes, users } from '../../infra/db/schema';
 import { generateOtp, sha256 } from '../../infra/crypto/password';
@@ -8,9 +13,15 @@ import { Mailer } from '../../infra/mail/mailer';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
+// Account-level brute-force cap: total wrong OTP guesses (summed across ALL codes,
+// so re-issuing a fresh code can't reset it) allowed in a rolling window before every
+// verify is refused. Bounds guesses to ~LOCKOUT_FAILS per window over the 1e6 space.
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const LOCKOUT_FAILS = 10;
 
 @Injectable()
 export class OtpService {
+  private readonly logger = new Logger(OtpService.name);
   constructor(private readonly mailer: Mailer) {}
 
   /** Issue an OTP for a login that passed the password step. Returns a pre-auth token. */
@@ -23,11 +34,18 @@ export class OtpService {
         expiresAt: new Date(Date.now() + OTP_TTL_MS),
       });
     });
-    await this.mailer.send({
-      to: email,
-      subject: 'Mã đăng nhập (OTP)',
-      text: `Mã OTP của bạn là ${code}. Hết hạn sau 5 phút.`,
-    });
+    try {
+      await this.mailer.send({
+        to: email,
+        subject: 'Mã đăng nhập (OTP)',
+        text: `Mã OTP của bạn là ${code}. Hết hạn sau 5 phút.`,
+      });
+    } catch (e) {
+      // SMTP failure must not surface as a raw 500 after the password was accepted —
+      // return a clean, retryable error and never leak transport internals.
+      this.logger.error(`OTP send failed for ${userId}: ${(e as Error)?.message}`);
+      throw new ServiceUnavailableException('Không gửi được mã OTP, vui lòng thử lại sau');
+    }
     // pre-auth token binds the userId; only someone who passed the password gets it.
     return sign(`otp:${userId}:${Date.now()}`);
   }
@@ -39,6 +57,17 @@ export class OtpService {
     const userId = payload.split(':')[1]!;
 
     return withActor(systemActor, async (tx) => {
+      // Account lockout: sum wrong guesses across EVERY code in the window so issuing a
+      // fresh code can't reset the counter (the brute-force amplification path).
+      const since = new Date(Date.now() - LOCKOUT_WINDOW_MS);
+      const [agg] = await tx
+        .select({ fails: sql<number>`COALESCE(SUM(${otpCodes.attempts}), 0)::int` })
+        .from(otpCodes)
+        .where(and(eq(otpCodes.userId, userId), gt(otpCodes.createdAt, since)));
+      if ((agg?.fails ?? 0) >= LOCKOUT_FAILS) {
+        throw new UnauthorizedException('Mã OTP không hợp lệ hoặc đã hết hạn');
+      }
+
       const [row] = await tx
         .select()
         .from(otpCodes)

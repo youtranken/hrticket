@@ -111,14 +111,15 @@ export class ReplyService {
         .for('update');
       if (!t) throw new NotFoundException('Ticket not found');
 
-      // Reply & Close: the close half of the atomic op must be legal + permitted
-      // BEFORE we send, so we never end up with a sent mail on a ticket we couldn't
-      // close (or vice-versa). Both halves live in this one tx (AC1).
-      // Reply & Close (AC1): the close must be legal + permitted BEFORE we send, so we
-      // never leave a sent mail on a ticket we couldn't close. The ticket row is locked
-      // above, so the status is stable for the rest of the tx.
+      // Sending company email on a ticket is a privileged act: only the assignee /
+      // TL-in-group / Admin / SSA may reply — NOT every member who can see the ticket
+      // via RLS (M1). Gates the plain reply too, not just Reply & Close.
+      assertCanActOnTicket(user, groups, t);
+
+      // Reply & Close (AC1): the close must be legal BEFORE we send, so we never leave a
+      // sent mail on a ticket we couldn't close. The ticket row is locked above, so the
+      // status is stable for the rest of the tx.
       if (input.closeAfter) {
-        assertCanActOnTicket(user, groups, t);
         if (!canTransition(t.status as TicketStatus, 'closed').ok) {
           throw new ConflictException('INVALID_TRANSITION');
         }
@@ -200,6 +201,31 @@ export class ReplyService {
         objectId: ticketId,
         newValue: { messageId: res.messageId, to: input.to, cc: input.cc ?? [], bcc: input.bcc ?? [] },
       });
+
+      // Auto-claim on reply (#6): replying to an UNASSIGNED ticket takes it over so it
+      // leaves the group pool — a pool ticket with an outbound reply but no owner is the
+      // illogical state we're closing. Same tx; an open pool ticket also moves to
+      // 'assigned' (mirrors claim), unless we're about to close it below.
+      if (!t.assigneeId) {
+        await tx
+          .update(tickets)
+          .set({
+            assigneeId: user.id,
+            assignedAt: new Date(),
+            ...(t.status === 'open' && !input.closeAfter ? { status: 'assigned' as const } : {}),
+          })
+          .where(eq(tickets.id, ticketId));
+        await writeAudit(tx, {
+          projectId: t.projectId,
+          actorId: user.id,
+          actorLabel: user.email,
+          action: 'ticket.assigned',
+          objectType: 'ticket',
+          objectId: ticketId,
+          oldValue: { assigneeId: null },
+          newValue: { assigneeId: user.id, via: 'reply' },
+        });
+      }
 
       // Reply sent → drop this user's reply draft IN THE SAME TX, so a stale draft
       // can't reload after a successful send and tempt a duplicate reply (FR105).
