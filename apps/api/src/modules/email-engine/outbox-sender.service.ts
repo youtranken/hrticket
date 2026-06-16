@@ -5,7 +5,7 @@ import { withActor, systemActor } from '../../infra/db/with-actor';
 import { outbox, ticketMessages, attachments, projects, users } from '../../infra/db/schema';
 import { emitNotification } from '../notifications/emit';
 import type { ProjectKey } from '../../infra/db/schema';
-import { resolveSmtpConfig } from '../../infra/mail/connection-resolver';
+import { resolveSmtpConfig, requiresStartTls } from '../../infra/mail/connection-resolver';
 import type { SmtpSettings } from '../../infra/mail/smtp-config';
 import { readFile } from '../../infra/storage/fs-storage';
 import { writeAudit } from '../../infra/audit/audit';
@@ -69,6 +69,7 @@ export class OutboxSender {
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
+      requireTLS: !cfg.secure && requiresStartTls(cfg.port),
       auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
       connectionTimeout: SMTP_TIMEOUT_MS,
       greetingTimeout: SMTP_TIMEOUT_MS,

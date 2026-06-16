@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
 import { withActor, systemActor, type DbTx } from '../../infra/db/with-actor';
 import { users, userGroupMembership, categories } from '../../infra/db/schema';
 import type { Role } from '../../infra/db/schema';
@@ -128,6 +128,11 @@ export class AdminUsersService {
     return withActor(systemActor, async (tx) => {
       const target = await this.loadTarget(tx, targetId);
       this.assertScope(actor, projectId, target);
+      // A project must never be left without an active admin (only SSA reaches an
+      // admin target — assertScope blocks an Admin actor first).
+      if (disabled && target.role === 'admin') {
+        await this.assertNotLastAdmin(tx, target.projectId, targetId);
+      }
       await tx.update(users).set({ disabled }).where(eq(users.id, targetId));
       await this.audit(
         tx,
@@ -156,6 +161,10 @@ export class AdminUsersService {
     return withActor(systemActor, async (tx) => {
       const target = await this.loadTarget(tx, targetId);
       this.assertScope(actor, projectId, target);
+      // Demoting the last admin would orphan the project (only SSA reaches here).
+      if (target.role === 'admin' && role !== 'admin') {
+        await this.assertNotLastAdmin(tx, target.projectId, targetId);
+      }
       await tx.update(users).set({ role }).where(eq(users.id, targetId));
       await this.audit(tx, actor, projectId, 'user.role_changed', targetId, { role: target.role }, { role });
       return { ok: true as const };
@@ -187,6 +196,30 @@ export class AdminUsersService {
       return;
     }
     throw new ForbiddenException('Out of administrative scope');
+  }
+
+  /** Refuse an action that would leave `projectId` with zero active admins
+   *  (disable/demote of the last one). FR89 — a project can't be self-orphaned. */
+  private async assertNotLastAdmin(
+    tx: DbTx,
+    projectId: number | null,
+    excludeId: string,
+  ): Promise<void> {
+    if (projectId === null) return; // SSA is global, not a per-project admin
+    const others = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.projectId, projectId),
+          eq(users.role, 'admin'),
+          eq(users.disabled, false),
+          ne(users.id, excludeId),
+        ),
+      );
+    if (others.length === 0) {
+      throw new ConflictException('A project must keep at least one active admin');
+    }
   }
 
   private async loadTarget(tx: DbTx, id: string) {

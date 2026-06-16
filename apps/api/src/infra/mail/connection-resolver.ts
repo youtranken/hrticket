@@ -31,6 +31,15 @@ export function isSecurePort(port: number): boolean {
   return port === 993 || port === 465;
 }
 
+/** Submission port 587 speaks plaintext then upgrades via STARTTLS. Force the
+ *  upgrade (`requireTLS`) so an App Password can never transit in cleartext if a
+ *  provider omits STARTTLS — without this, `secure:false` on 587 would auth in the
+ *  clear. GreenMail/dev (port 1025/3025/random) is NOT 587, so it stays plaintext,
+ *  which the integration tests rely on. */
+export function requiresStartTls(port: number): boolean {
+  return port === 587;
+}
+
 export async function loadConnectionRow(projectId: number): Promise<EcRow | null> {
   return withActor(systemActor, async (tx) => {
     const [row] = await tx

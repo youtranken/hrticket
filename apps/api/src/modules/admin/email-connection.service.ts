@@ -8,7 +8,7 @@ import type { ProjectKey } from '../../infra/db/schema';
 import type { SessionUser } from '../auth/session.service';
 import { writeAudit } from '../../infra/audit/audit';
 import { encryptSecret, decryptSecret, maskSecret } from '../../infra/crypto/secret';
-import { isSecurePort } from '../../infra/mail/connection-resolver';
+import { isSecurePort, requiresStartTls } from '../../infra/mail/connection-resolver';
 import { imapConfigFor } from '../../infra/mail/mail-config';
 import { smtpConfigFor } from '../../infra/mail/smtp-config';
 
@@ -184,9 +184,25 @@ export class EmailConnectionService {
     input: ConnectionInput,
   ): Promise<TestResult> {
     const existing = await this.row(projectId);
-    const password =
-      input.password ??
-      (existing?.passwordEncrypted ? this.safeDecrypt(existing.passwordEncrypted) ?? undefined : undefined);
+    let password = input.password;
+    if (password === undefined && existing?.passwordEncrypted) {
+      const dec = this.safeDecrypt(existing.passwordEncrypted);
+      if (dec === null) {
+        // The stored App Password can't be decrypted (corrupt blob or a rotated
+        // EMAIL_SECRET_KEY). Fail LOUDLY here — silently retrying with an empty
+        // password would report a misleading "auth failed" and mask the real cause
+        // (tampering / key rotation). Persist the error state so AC4's alarm fires.
+        const leg: TestLeg = { ok: false, error: 'stored password could not be decrypted' };
+        await withActor(systemActor, (tx) =>
+          tx
+            .update(emailConnections)
+            .set({ status: 'error', lastCheckedAt: new Date() })
+            .where(eq(emailConnections.projectId, projectId)),
+        );
+        return { imap: leg, smtp: leg };
+      }
+      password = dec;
+    }
 
     const [imap, smtp] = await Promise.all([
       this.testImap(input.imapHost, input.imapPort, input.imapUser, password),
@@ -253,6 +269,7 @@ export class EmailConnectionService {
       host,
       port,
       secure: isSecurePort(port),
+      requireTLS: !isSecurePort(port) && requiresStartTls(port),
       auth: user ? { user, pass } : undefined,
       connectionTimeout: TEST_TIMEOUT_MS,
       greetingTimeout: TEST_TIMEOUT_MS,

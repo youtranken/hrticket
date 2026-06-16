@@ -89,8 +89,14 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
   interface Op {
     label: string;
     ssaOnly?: boolean;
+    /** Endpoint scoped by the ACTOR's own project (rescue), not X-Project: skip the
+     *  cross-project legs — member/lead → 403, admin/ssa on own project → allowed. */
+    actorScoped?: boolean;
     run: (actor: SessionUser, xp?: string) => Promise<unknown>;
   }
+
+  /** A throwaway member in HRIS to target with the per-user privileged ops. */
+  const newMember = () => makeUser(harness!.db, { projectId: 1, role: 'member', email: `tgt-${++seq}@x.com` });
 
   const OPS: Op[] = [
     {
@@ -145,6 +151,43 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
           xp,
         ),
     },
+    // ── privileged user mutations (the audit-gap class that finding #1 lived in) ──
+    {
+      label: 'users.setRole',
+      run: async (a, xp) => {
+        const u = (await newMember())!;
+        return users.setRole(a, u.id, { role: 'member' }, xp);
+      },
+    },
+    {
+      label: 'users.setDisabled',
+      run: async (a, xp) => {
+        const u = (await newMember())!;
+        return users.setDisabled(a, u.id, { disabled: true }, xp);
+      },
+    },
+    {
+      // reset-password is scoped by the actor's own project (rescue), not X-Project.
+      label: 'users.resetPassword',
+      actorScoped: true,
+      run: async (a) => {
+        const u = (await newMember())!;
+        return users.resetPassword(a, u.id);
+      },
+    },
+    {
+      label: 'users.removeOtp',
+      actorScoped: true,
+      run: async (a) => {
+        const u = (await newMember())!;
+        return users.removeOtp(a, u.id);
+      },
+    },
+    {
+      label: 'roleCaps.restoreDefaults',
+      ssaOnly: true,
+      run: (a) => roleCaps.reset(a),
+    },
   ];
 
   /** HTTP status of a controller call: 200 if it resolves, else the thrown code. */
@@ -159,8 +202,13 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
     }
   }
 
-  async function auditCount(): Promise<number> {
-    const r = await harness!.db.execute(sql`SELECT count(*)::int AS n FROM audit_log`);
+  /** Audit rows ATTRIBUTED to a specific actor — a global count(*) delta would pass
+   *  an op that writes zero rows as long as any unrelated row appeared (the very gap
+   *  that let finding #1's un-audited reset slip through). */
+  async function auditCount(actorId: string): Promise<number> {
+    const r = await harness!.db.execute(
+      sql`SELECT count(*)::int AS n FROM audit_log WHERE actor_id = ${actorId}`,
+    );
     return Number((r as unknown as Array<{ n: number }>)[0]!.n);
   }
 
@@ -194,6 +242,11 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
   const not403 = (label: string, got: number): void => {
     if (got === 403) throw new Error(`${label}: unexpected 403 (should be allowed)`);
   };
+  // Stronger than not403 for the OWN-project positive leg: a broken-but-not-403
+  // endpoint (e.g. a 500) must not masquerade as "allowed".
+  const is2xx = (label: string, got: number): void => {
+    if (got < 200 || got >= 300) throw new Error(`${label}: expected 2xx, got ${got}`);
+  };
 
   it('IT-CFGSWEEP-001: FR93 scope matrix holds on every config endpoint', async () => {
     if (!ready) return;
@@ -205,28 +258,33 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
       if (op.ssaOnly) {
         // SSA-only matrix: even an Admin is refused at the API (not just the menu).
         is403(`${op.label}: admin (ssa-only)`, await code(op.run(adminH)));
-        not403(`${op.label}: ssa`, await code(op.run(ssa)));
+        is2xx(`${op.label}: ssa`, await code(op.run(ssa)));
+      } else if (op.actorScoped) {
+        // Scoped by the actor's own project (rescue) — no X-Project leg.
+        is2xx(`${op.label}: admin home`, await code(op.run(adminH)));
+        is2xx(`${op.label}: ssa`, await code(op.run(ssa)));
       } else {
         // Admin → own project allowed; a cross-project header is refused (FR93).
-        not403(`${op.label}: admin home`, await code(op.run(adminH)));
+        is2xx(`${op.label}: admin home`, await code(op.run(adminH)));
         is403(`${op.label}: admin cross-project`, await code(op.run(adminH, 'cnb')));
-        // SSA → either project.
+        // SSA → either project. (Cross-project payload may not be 2xx-clean for ops
+        // that reference an HRIS-only id, so only assert "not refused" here.)
         not403(`${op.label}: ssa hris`, await code(op.run(ssa, 'hris')));
         not403(`${op.label}: ssa cnb`, await code(op.run(ssa, 'cnb')));
       }
     }
-    expect(OPS.length).toBeGreaterThanOrEqual(10);
+    expect(OPS.length).toBeGreaterThanOrEqual(15);
   });
 
   it('IT-CFGSWEEP-002: every successful config write emits an audit row (FR94)', async () => {
     if (!ready) return;
     for (const op of OPS) {
-      const before = await auditCount();
       const actor = op.ssaOnly ? ssa : adminH;
-      const xp = op.ssaOnly ? undefined : 'hris';
+      const xp = op.ssaOnly || op.actorScoped ? undefined : 'hris';
+      const before = await auditCount(actor.id);
       await op.run(actor, xp); // must succeed for an Admin/SSA on their own project
-      const after = await auditCount();
-      if (after <= before) throw new Error(`${op.label} wrote no audit row`);
+      const after = await auditCount(actor.id);
+      if (after <= before) throw new Error(`${op.label} wrote no audit row attributed to ${actor.role}`);
     }
     expect(true).toBe(true);
   });
