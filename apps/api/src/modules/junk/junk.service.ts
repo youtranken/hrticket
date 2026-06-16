@@ -227,6 +227,13 @@ export class JunkService {
       const from = t.status as TicketStatus;
       // The junk close must be a legal edge (Open/Assigned/In Progress → Closed with
       // reason 'junk'); a resolved/pending/closed ticket isn't junk-markable this way.
+      // canTransition('resolved','closed') is otherwise a LEGAL edge, so guard the
+      // from-state explicitly — relying on canTransition alone would let a resolved
+      // ticket be junk-marked, contradicting the rule above (L2).
+      const JUNKABLE_FROM: TicketStatus[] = ['open', 'assigned', 'in_progress'];
+      if (!JUNKABLE_FROM.includes(from)) {
+        throw new ForbiddenException('Ticket cannot be marked junk from this state');
+      }
       const verdict = canTransition(from, 'closed', { reason: 'junk' });
       if (!verdict.ok) throw new ForbiddenException('Ticket cannot be marked junk from this state');
 

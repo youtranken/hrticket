@@ -75,5 +75,10 @@ export async function enqueue(tx: DbTx, input: EnqueueInput): Promise<EnqueueRes
     .select({ id: outbox.id })
     .from(outbox)
     .where(eq(outbox.idempotencyKey, idempotencyKey));
-  return { outboxId: existing!.id, deduped: true };
+  // Under READ COMMITTED a concurrent enqueue of the SAME deterministic key can leave
+  // the conflicting (still-uncommitted) row invisible to this SELECT. Throw a clear
+  // error instead of dereferencing undefined (only deterministic-key callers, e.g.
+  // auto-ack in the serialized intake pipeline, can ever reach this branch).
+  if (!existing) throw new Error('outbox enqueue race: conflicting row not yet visible');
+  return { outboxId: existing.id, deduped: true };
 }

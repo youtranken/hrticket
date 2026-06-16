@@ -56,7 +56,10 @@ export class TicketSearchService {
 
     // Shared SQL fragments: the tsquery (unaccented, simple) and the per-row match.
     const tsq = sql`websearch_to_tsquery('simple', f_unaccent(${q}))`;
-    const unaccentedLike = sql`('%' || f_unaccent(lower(${q})) || '%')`;
+    // Escape LIKE metacharacters so a `%`/`_` in the query matches literally instead of
+    // acting as a wildcard that over-broadens the requester/assignee match (G1).
+    const qLike = q.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const unaccentedLike = sql`('%' || f_unaccent(lower(${qLike})) || '%')`;
 
     // A ticket matches if: code-number equals (when q looks like a code) OR subject
     // tsv matches OR any of its messages' body tsv matches OR requester/assignee
@@ -67,8 +70,8 @@ export class TicketSearchService {
         : sql`false`;
     const subjectMatch = sql`(tickets.search_tsv @@ ${tsq})`;
     const bodyMatch = sql`EXISTS (SELECT 1 FROM ticket_messages m WHERE m.ticket_id = ${tickets.id} AND m.search_tsv @@ ${tsq})`;
-    const requesterMatch = sql`(f_unaccent(lower(${tickets.requesterEmail})) LIKE ${unaccentedLike})`;
-    const assigneeMatch = sql`(${assignee.name} IS NOT NULL AND f_unaccent(lower(${assignee.name})) LIKE ${unaccentedLike})`;
+    const requesterMatch = sql`(f_unaccent(lower(${tickets.requesterEmail})) LIKE ${unaccentedLike} ESCAPE '\\')`;
+    const assigneeMatch = sql`(${assignee.name} IS NOT NULL AND f_unaccent(lower(${assignee.name})) LIKE ${unaccentedLike} ESCAPE '\\')`;
 
     const where = sql`(${codeMatch} OR ${subjectMatch} OR ${bodyMatch} OR ${requesterMatch} OR ${assigneeMatch})`;
 

@@ -13,9 +13,12 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { UploadService } from './upload.service';
 
-/** Absolute safety ceiling (anti-OOM). The real, configurable soft cap is enforced
- *  per project inside UploadService (AC3). */
-const HARD_LIMIT_BYTES = 200 * 1024 * 1024;
+/** Absolute safety ceiling (anti-OOM). Multer uses in-memory storage, so this bounds
+ *  the RAM a single upload can buffer before the per-project soft cap is checked (G2);
+ *  kept in step with nginx `client_max_body_size`. The real, configurable soft cap is
+ *  enforced per project inside UploadService (AC3). True large-file support would need
+ *  streaming-to-disk rather than a bigger buffer. */
+const HARD_LIMIT_BYTES = 100 * 1024 * 1024;
 
 @Controller('api/tickets/:id/attachments')
 @UseGuards(SessionGuard)

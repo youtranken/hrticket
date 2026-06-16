@@ -16,6 +16,7 @@ import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
 import { ExportService, ExportTooLargeError, type ExportFormat, type ExportTable } from './export.service';
 import { exportTicketsSchema, exportReportSchema, asTicketListQuery } from './dto/export.body';
+import { ErrorCode } from '@hris/shared';
 
 /**
  * Export endpoints (Story 10.4, FR84). Ticket export rides on the worklist's RLS
@@ -92,7 +93,7 @@ export class ExportController {
   private mapError(e: unknown): never {
     if (e instanceof ExportTooLargeError) {
       throw new HttpException(
-        { code: 'EXPORT_TOO_LARGE', message: 'reports.export.tooLarge', details: { limit: e.limit } },
+        { code: ErrorCode.EXPORT_TOO_LARGE, message: 'reports.export.tooLarge', details: { limit: e.limit } },
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }

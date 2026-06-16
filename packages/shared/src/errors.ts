@@ -16,6 +16,8 @@ export enum ErrorCode {
   INVALID_TRANSITION = 'INVALID_TRANSITION',
   PENDING_REQUIRES_SNOOZE = 'PENDING_REQUIRES_SNOOZE',
   SNOOZE_DATE_IN_PAST = 'SNOOZE_DATE_IN_PAST',
+  // Reporting / export (Epic 10)
+  EXPORT_TOO_LARGE = 'EXPORT_TOO_LARGE',
 }
 
 export interface AppErrorShape {
