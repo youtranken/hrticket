@@ -25,9 +25,18 @@ const EDITABLE_KEYS = Object.keys(PLACEHOLDERS);
 export interface ReminderConfigView {
   overdueDays: number;
   digestHour: number;
+  /** Đơn 12: minute component of the send time (default 08:30). */
+  digestMinute: number;
   digestEnabled: boolean;
   digestMaxN: number;
+  /** Đơn 12: pool tickets unclaimed >= this many days enter the admin digest. */
+  poolUnclaimedDays: number;
 }
+
+/** PUT payload — the đơn-12 fields are optional so older callers keep working;
+ *  absent values fall back to the defaults (08:30 / 2 days). */
+export type ReminderConfigInput = Omit<ReminderConfigView, 'digestMinute' | 'poolUnclaimedDays'> &
+  Partial<Pick<ReminderConfigView, 'digestMinute' | 'poolUnclaimedDays'>>;
 
 function unknownPlaceholders(text: string, allowed: string[]): string[] {
   const found = [...text.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]!);
@@ -45,25 +54,47 @@ export class AdminReminderService {
         .select({
           overdueDays: reminderConfig.overdueDays,
           digestHour: reminderConfig.digestHour,
+          digestMinute: reminderConfig.digestMinute,
           digestEnabled: reminderConfig.digestEnabled,
           digestMaxN: reminderConfig.digestMaxN,
+          poolUnclaimedDays: reminderConfig.poolUnclaimedDays,
         })
         .from(reminderConfig)
         .where(eq(reminderConfig.projectId, projectId));
-      return row ?? { overdueDays: 3, digestHour: 8, digestEnabled: true, digestMaxN: 20 };
+      return (
+        row ?? {
+          overdueDays: 3,
+          digestHour: 8,
+          digestMinute: 30,
+          digestEnabled: true,
+          digestMaxN: 20,
+          poolUnclaimedDays: 2,
+        }
+      );
     });
   }
 
   async putConfig(
     user: SessionUser,
     projectId: number,
-    input: ReminderConfigView,
+    input: ReminderConfigInput,
   ): Promise<ReminderConfigView> {
-    if (input.overdueDays < 1) throw new UnprocessableEntityException('overdueDays must be >= 1');
-    if (input.digestHour < 0 || input.digestHour > 23) {
+    const full: ReminderConfigView = {
+      ...input,
+      digestMinute: input.digestMinute ?? 30,
+      poolUnclaimedDays: input.poolUnclaimedDays ?? 2,
+    };
+    if (full.overdueDays < 1) throw new UnprocessableEntityException('overdueDays must be >= 1');
+    if (full.digestHour < 0 || full.digestHour > 23) {
       throw new UnprocessableEntityException('digestHour must be 0..23');
     }
-    if (input.digestMaxN < 1) throw new UnprocessableEntityException('digestMaxN must be >= 1');
+    if (full.digestMinute < 0 || full.digestMinute > 59) {
+      throw new UnprocessableEntityException('digestMinute must be 0..59');
+    }
+    if (full.digestMaxN < 1) throw new UnprocessableEntityException('digestMaxN must be >= 1');
+    if (full.poolUnclaimedDays < 0) {
+      throw new UnprocessableEntityException('poolUnclaimedDays must be >= 0');
+    }
     const actor = await actorForUser(user);
     return withActor(actor, async (tx) => {
       const [old] = await tx
@@ -72,8 +103,8 @@ export class AdminReminderService {
         .where(eq(reminderConfig.projectId, projectId));
       await tx
         .insert(reminderConfig)
-        .values({ projectId, ...input })
-        .onConflictDoUpdate({ target: reminderConfig.projectId, set: input });
+        .values({ projectId, ...full })
+        .onConflictDoUpdate({ target: reminderConfig.projectId, set: full });
       await writeAudit(tx, {
         projectId,
         actorId: user.id,
@@ -82,9 +113,9 @@ export class AdminReminderService {
         objectType: 'reminder_config',
         objectId: String(projectId),
         oldValue: old ?? null,
-        newValue: input,
+        newValue: full,
       });
-      return input;
+      return full;
     });
   }
 

@@ -1,0 +1,150 @@
+# Production stack — standalone (use ALONE, not as an override of docker-compose.yml):
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#
+# Differences vs the dev compose:
+#   - NO mailpit / greenmail (real mailbox via env below or the /admin/email-connection UI)
+#   - secrets + DB password come from .env (${VAR}); Postgres port is NOT exposed
+#   - a one-shot `migrate` service runs DB migrations to completion BEFORE api/worker
+#     start, every `up` — idempotent, so it only applies NEW migrations and never
+#     recreates existing tables (data lives in the pgdata volume)
+#   - worker polls every 60s (NFR3); api carries SMTP for OTP/reset
+#
+# First deploy only: after the stack is up, seed base data ONCE:
+#   docker compose -f docker-compose.prod.yml run --rm migrate node dist/infra/db/seed.js
+
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: hris
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: hris
+    # No host port mapping in prod — the DB is reachable only on the internal network.
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hris -d hris']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: apply Drizzle migrations + rls-and-extras.sql, then exit 0. Idempotent
+  # (drizzle skips already-applied migrations; the extras SQL is all IF NOT EXISTS /
+  # CREATE OR REPLACE / DROP-then-CREATE POLICY). api/worker wait for this to succeed.
+  migrate:
+    build: *api-build
+    command: ['node', 'dist/infra/db/migrate.js']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hris:${POSTGRES_PASSWORD}@postgres:5432/hris
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build: *api-build
+    command: ['node', 'dist/main.js']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hris:${POSTGRES_PASSWORD}@postgres:5432/hris
+      API_PORT: '3000'
+      APP_BASE_URL: ${APP_BASE_URL:?set APP_BASE_URL in .env}
+      WEB_ORIGIN: ${WEB_ORIGIN:?set WEB_ORIGIN in .env}
+      ATTACHMENT_STORAGE_ROOT: /data/attachments
+      # Transactional mail (OTP + password reset) is sent directly from the API.
+      # Set real SMTP here, OR configure it in /admin/email-connection (DB wins over env).
+      SMTP_HRIS_HOST: ${SMTP_HRIS_HOST:-}
+      SMTP_HRIS_PORT: ${SMTP_HRIS_PORT:-465}
+      SMTP_HRIS_SECURE: ${SMTP_HRIS_SECURE:-true}
+      SMTP_HRIS_USER: ${SMTP_HRIS_USER:-}
+      SMTP_HRIS_PASSWORD: ${SMTP_HRIS_PASSWORD:-}
+      SMTP_HRIS_FROM: ${SMTP_HRIS_FROM:-}
+    volumes:
+      - ${ATTACHMENT_HOST_DIR:-../attachments}:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    build: *api-build
+    command: ['node', 'dist/worker.js']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hris:${POSTGRES_PASSWORD}@postgres:5432/hris
+      POLL_INTERVAL_MS: '60000' # NFR3 — 60s in prod
+      ATTACHMENT_STORAGE_ROOT: /data/attachments
+      # Real mailbox per project. Prefer configuring these in /admin/email-connection
+      # (DB wins over env, hot-swappable); the env below is the bootstrap fallback.
+      # CẤM trỏ mailbox production trong môi trường test.
+      IMAP_HRIS_HOST: ${IMAP_HRIS_HOST:-}
+      IMAP_HRIS_PORT: ${IMAP_HRIS_PORT:-993}
+      IMAP_HRIS_USER: ${IMAP_HRIS_USER:-}
+      IMAP_HRIS_PASSWORD: ${IMAP_HRIS_PASSWORD:-}
+      IMAP_HRIS_SECURE: ${IMAP_HRIS_SECURE:-true}
+      SMTP_HRIS_HOST: ${SMTP_HRIS_HOST:-}
+      SMTP_HRIS_PORT: ${SMTP_HRIS_PORT:-465}
+      SMTP_HRIS_USER: ${SMTP_HRIS_USER:-}
+      SMTP_HRIS_PASSWORD: ${SMTP_HRIS_PASSWORD:-}
+      SMTP_HRIS_SECURE: ${SMTP_HRIS_SECURE:-true}
+      SMTP_HRIS_FROM: ${SMTP_HRIS_FROM:-}
+      IMAP_CNB_HOST: ${IMAP_CNB_HOST:-}
+      IMAP_CNB_PORT: ${IMAP_CNB_PORT:-993}
+      IMAP_CNB_USER: ${IMAP_CNB_USER:-}
+      IMAP_CNB_PASSWORD: ${IMAP_CNB_PASSWORD:-}
+      IMAP_CNB_SECURE: ${IMAP_CNB_SECURE:-true}
+      SMTP_CNB_HOST: ${SMTP_CNB_HOST:-}
+      SMTP_CNB_PORT: ${SMTP_CNB_PORT:-465}
+      SMTP_CNB_USER: ${SMTP_CNB_USER:-}
+      SMTP_CNB_PASSWORD: ${SMTP_CNB_PASSWORD:-}
+      SMTP_CNB_SECURE: ${SMTP_CNB_SECURE:-true}
+      SMTP_CNB_FROM: ${SMTP_CNB_FROM:-}
+    volumes:
+      - ${ATTACHMENT_HOST_DIR:-../attachments}:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'node', 'dist/cli/worker-healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: always
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    # nginx terminates TLS here (wildcard *.pmh.com.vn cert) and proxies /api → api.
+    ports:
+      - '8080:80'
+      - '8443:443'
+    volumes:
+      - ./apps/web/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../pmh.com.vn/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ../pmh.com.vn/private.key:/etc/nginx/certs/private.key:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

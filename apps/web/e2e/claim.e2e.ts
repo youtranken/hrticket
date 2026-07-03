@@ -17,12 +17,13 @@ const CLAIM = /Nhận$|Claim$/;
 // default 30s test cap, so give each test a generous budget.
 test.describe.configure({ timeout: 120_000 });
 
-async function injectLeaveMail(subject: string, messageId: string): Promise<void> {
-  const t = nodemailer.createTransport({ host: 'localhost', port: 3025, secure: false, tls: { rejectUnauthorized: false } });
+async function injectLeaveMail(subject: string, messageId: string, sender: string): Promise<void> {
+  const t = nodemailer.createTransport({ host: 'localhost', port: Number(process.env.E2E_SMTP_PORT ?? 3025), secure: false, tls: { rejectUnauthorized: false } });
   // Subject is ASCII on purpose: classify is accent-insensitive (f_unaccent), so
   // "nghi phep" still routes to Leave, while an ASCII subject survives the MIME
   // round-trip unchanged so getByText matches (diacritics get NFC/NFD-normalised).
-  await t.sendMail({ from: 'requester@company.com', to: 'hris@test.local', subject, text: 'Hoi ve nghi phep.', messageId });
+  // Sender is unique per run so the mail-bomb throttle (20/h/sender) never trips.
+  await t.sendMail({ from: sender, to: 'hris@test.local', subject, text: 'Hoi ve nghi phep.', messageId });
   t.close();
 }
 
@@ -38,8 +39,10 @@ async function login(page: Page, email: string): Promise<void> {
 async function poolTicket(page: Page, tag: string): Promise<string> {
   const stamp = `${Date.now()}-${tag}`;
   const subject = `E2E nghi phep ${stamp}`;
-  await injectLeaveMail(subject, `<e2e-claim-${stamp}@company.com>`);
-  await page.goto('/pool');
+  await injectLeaveMail(subject, `<e2e-claim-${stamp}@company.com>`, `req-${stamp}@company.com`);
+  // Newest-first so the just-pooled ticket is on page 1 even as the shared dev stack
+  // accumulates pool tickets across runs (pool sinks in the default worklist order).
+  await page.goto('/pool?sort=created&dir=desc');
   await expect(async () => {
     await page.reload();
     await expect(page.getByText(subject)).toBeVisible({ timeout: 2000 });
@@ -60,26 +63,26 @@ test('Epic 4.4: a member claims a pooled ticket; it moves to My tickets', async 
   await expect(page.getByText(subject)).toBeVisible({ timeout: 10_000 });
 });
 
-test('Epic 4.5: an admin assigns a pooled ticket via "Gán cho…"', async ({ page }) => {
+test('Epic 4.5: an admin assigns a pooled ticket via "Giao cho…"', async ({ page }) => {
   await login(page, 'admin@dev.local');
   const subject = await poolTicket(page, 'assign');
 
   await page.getByText(subject).click();
   await page.waitForURL('**/tickets/**');
-  await page.getByRole('button', { name: /Gán cho|Assign to/ }).click();
+  await page.getByRole('button', { name: /Giao cho|Assign to/ }).click();
 
   // Pick a group member (the dev Team Lead) and confirm.
   await page.locator('.ant-modal .ant-select-selector').click();
   await page.getByText(/Dev Team Lead/).click();
   await page.getByRole('button', { name: /^OK$/ }).click();
-  await expect(page.getByText(/Đã gán người xử lý|Assignee set/)).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Đã giao người xử lý|Assignee set/)).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Dev Team Lead').first()).toBeVisible();
 });
 
 test('Epic 4.4 AC1: two users racing to claim → exactly one winner', async ({ browser }) => {
   const stamp = `${Date.now()}-race`;
   const subject = `E2E nghi phep ${stamp}`;
-  await injectLeaveMail(subject, `<e2e-claim-${stamp}@company.com>`);
+  await injectLeaveMail(subject, `<e2e-claim-${stamp}@company.com>`, `req-${stamp}@company.com`);
 
   const ctxs = await Promise.all([browser.newContext(), browser.newContext()]);
   const [p1, p2] = await Promise.all(ctxs.map((c) => c.newPage()));
@@ -87,7 +90,7 @@ test('Epic 4.4 AC1: two users racing to claim → exactly one winner', async ({ 
   await login(p2, 'lead@dev.local');
 
   const waitInPool = async (p: Page) => {
-    await p.goto('/pool');
+    await p.goto('/pool?sort=created&dir=desc');
     await expect(async () => {
       await p.reload();
       await expect(p.getByText(subject)).toBeVisible({ timeout: 2000 });

@@ -21,10 +21,10 @@ export function ResetPage() {
           onFinish={async (v: { password: string }) => {
             try {
               await resetPassword(token, v.password);
-              message.success('OK');
+              message.success(t('auth.passwordResetDone'));
               navigate('/login');
             } catch {
-              message.error('Liên kết không còn hiệu lực');
+              message.error(t('auth.resetLinkInvalid'));
             }
           }}
         >

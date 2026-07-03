@@ -33,6 +33,8 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
   const [pickUser, setPickUser] = useState<string | undefined>();
   const [pickCategory, setPickCategory] = useState<number | undefined>();
   const [categoryChoices, setCategoryChoices] = useState<CategoryOption[] | null>(null);
+  // Claim from "Khác" (đơn 5): a member in several groups must pick the destination.
+  const [claimChoices, setClaimChoices] = useState<{ options: CategoryOption[]; over: boolean } | null>(null);
 
   const users = useAssignableUsers(ticket.id, assignOpen);
   const cats = useAssignCategories(ticket.id, catOpen);
@@ -40,8 +42,23 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
   const inGroup = ticket.categoryId !== null && (me?.groups ?? []).includes(ticket.categoryId);
   const isAdmin = me?.role === 'admin' || me?.role === 'ssa';
   const canAssign = isAdmin || (me?.role === 'team_lead' && inGroup);
-  const canClaim = isAdmin || inGroup; // member/TL in group, or admin/ssa
+  // Claim ("Nhận"/"Nhận thay") — đơn 5 v2: Admin/SSA pick up anywhere in the project;
+  // Member and TL claim by GROUP MEMBERSHIP plus the shared "Khác" pool (where the
+  // server forces a member to pick a real category). BE enforces (assertCanClaim → 403).
+  const canClaim = isAdmin || inGroup || !!ticket.categoryIsSystem;
   const mine = ticket.assignee?.id === me?.user.id;
+  // Claim-over rank rule (FR30): a plain Member may take over a peer (Member), but not
+  // a ticket held by a Team Lead / Admin / SSA — outranking an assignment is a
+  // coordinator action. TL/Admin/SSA may take over anyone. BE enforces this too
+  // (assertCanClaimOver) — this only hides the dead button. Unknown holder role
+  // (older payload) → allow the click; the server is the gate.
+  const holderRole = ticket.assignee?.role;
+  const canClaimOver =
+    me?.role !== 'member' || holderRole === undefined || holderRole === 'member';
+  // (Re)assignment is only valid on a NON-TERMINAL ticket — closed/resolved are out.
+  // Pending (snoozed) is reassignable (CR-4): the handover keeps the status and the
+  // follow-up date, exactly like claim-over. Mirrors the server guard.
+  const active = ['open', 'assigned', 'in_progress', 'pending'].includes(ticket.status);
 
   const submitAssign = (categoryId?: number) => {
     if (!pickUser) return;
@@ -85,7 +102,10 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
             claim.mutate(
               {},
               {
-                onSuccess: () => message.success(t('ticket.claimed')),
+                onSuccess: (res) => {
+                  if ('needsCategory' in res) setClaimChoices({ options: res.options, over: false });
+                  else message.success(t('ticket.claimed'));
+                },
                 onError: () => message.warning(t('ticket.claimLost')),
               },
             )
@@ -95,8 +115,9 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
         </Button>
       )}
 
-      {/* Assigned to someone else → claim-over (FR30). */}
-      {ticket.assignee && !mine && canClaim && (
+      {/* Assigned to someone else → claim-over (FR30). A Member can't pull a ticket
+          from a Team Lead / Admin (canClaimOver) — only peer or coordinator take-over. */}
+      {ticket.assignee && !mine && canClaim && canClaimOver && active && (
         <Button
           size="small"
           loading={claim.isPending}
@@ -105,7 +126,10 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
               title: t('ticket.claimOverConfirm', { name: ticket.assignee!.name }),
               onOk: () =>
                 claim.mutateAsync({ over: true }).then(
-                  () => message.success(t('ticket.claimed')),
+                  (res) => {
+                    if ('needsCategory' in res) setClaimChoices({ options: res.options, over: true });
+                    else message.success(t('ticket.claimed'));
+                  },
                   () => message.warning(t('ticket.claimLost')),
                 ),
             })
@@ -115,12 +139,43 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
         </Button>
       )}
 
-      {canAssign && (
+      {/* Claim from "Khác" (đơn 5): the member must pick which group receives it. */}
+      <Modal
+        open={!!claimChoices}
+        title={t('ticket.pickCategory')}
+        footer={null}
+        onCancel={() => setClaimChoices(null)}
+      >
+        <Select
+          style={{ width: '100%' }}
+          placeholder={t('ticket.pickCategory')}
+          onChange={(v: number) => {
+            const over = claimChoices?.over ?? false;
+            setClaimChoices(null);
+            claim.mutate(
+              { over, categoryId: v },
+              {
+                onSuccess: (res) => {
+                  if (!('needsCategory' in res)) message.success(t('ticket.claimed'));
+                },
+                onError: () => message.warning(t('ticket.claimLost')),
+              },
+            );
+          }}
+          options={(claimChoices?.options ?? []).map((c) => ({
+            value: c.id,
+            label: lang === 'en' ? c.nameEn : c.nameVi,
+          }))}
+        />
+      </Modal>
+
+      {canAssign && active && (
         <Button size="small" onClick={() => setAssignOpen(true)}>
           {t('ticket.assignTo')}
         </Button>
       )}
-      {canAssign && (
+      {/* Đổi nhóm là thao tác điều phối → chỉ Admin/SSA (không cho Team Lead). */}
+      {isAdmin && active && (
         <Button size="small" onClick={() => setCatOpen(true)}>
           {t('ticket.changeCategory')}
         </Button>

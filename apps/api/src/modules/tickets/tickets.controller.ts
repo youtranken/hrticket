@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Query, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
@@ -19,9 +19,13 @@ export class TicketsController {
    *  worklist spec (FR106); full filter bar (FR79) + Pending tab (FR80). Every
    *  filter rides on top of RLS, which stays the safety net. */
   @Get()
-  async list(@CurrentUser() user: SessionUser, @Query() query: Record<string, unknown>) {
+  async list(
+    @CurrentUser() user: SessionUser,
+    @Query() query: Record<string, unknown>,
+    @Headers('x-project') xp?: string,
+  ) {
     const q = ticketListQuerySchema.parse(query);
-    return this.read.list(user, q);
+    return this.read.list(user, q, xp);
   }
 
   /** RLS-scoped options for the filter bar (Story 10.1) — categories/assignees/
@@ -29,6 +33,13 @@ export class TicketsController {
   @Get('filter-options')
   async filterOptions(@CurrentUser() user: SessionUser) {
     return this.read.filterOptions(user);
+  }
+
+  /** Per-view counts for the tab-bar badges (mine / pool / pending) — always-visible
+   *  "folder counts" so the user sees what's waiting from any tab. MUST precede `:id`. */
+  @Get('counts')
+  async counts(@CurrentUser() user: SessionUser, @Headers('x-project') xp?: string) {
+    return this.read.counts(user, xp);
   }
 
   /** Vietnamese full-text + code + people search (Story 10.2, FR81). Diacritic-

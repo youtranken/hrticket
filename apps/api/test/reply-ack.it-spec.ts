@@ -18,8 +18,8 @@ import { sendOutboundMail } from '../src/modules/tickets/send-mail.usecase';
 import { Mailer } from '../src/infra/mail/mailer';
 import { withActor, systemActor } from '../src/infra/db/with-actor';
 import { tickets, ticketMessages, participants, inboxMessages, imapCursor, outbox } from '../src/infra/db/schema';
-import { users } from '../src/infra/db/schema';
 import type { SessionUser } from '../src/modules/auth/session.service';
+import { makeUser } from './factories/user.factory';
 
 /**
  * IT-REPLY-001..002 + IT-ACK-001..003 — Stories 3.2/3.3. The F2 backbone: an
@@ -30,7 +30,7 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
   let harness: ItHarness | undefined;
   let gm: GreenMail | undefined;
   let ready = false;
-  let ssa: SessionUser;
+  let agent: SessionUser; // a processing user (member) — the one who actually replies
   const HRIS = { id: 1, key: 'hris' as const };
   const HRIS_BOX = 'hris@test.local';
   const poller = new PollerService();
@@ -44,15 +44,15 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
       gm = await startGreenMail();
       useGreenMailForHris(gm, HRIS_BOX);
       useGreenMailSmtpForHris(gm, HRIS_BOX);
-      const [u] = await harness.db
-        .select()
-        .from(users)
-        .where(eq(users.email, 'ssa@pmh.com.vn'));
-      ssa = {
-        id: u!.id,
-        email: u!.email,
-        name: u!.name,
-        role: 'ssa',
+      // A real processing user. Admin/SSA can't reply (administrative); the replies
+      // below run as a Member who owns the ticket (assignee path), which is the real
+      // F2 backbone actor. We assign the ingested ticket to this agent before replying.
+      const u = (await makeUser(harness.db, { projectId: 1, email: 'agent-reply@x.com' }))!;
+      agent = {
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: 'member',
         projectId: 1,
         disabled: false,
         mustChangePassword: false,
@@ -109,12 +109,36 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
     const toAnn = await fetchMailbox(gm!, 'ann@x.com');
     const ack = toAnn.find((m) => m.from?.address === HRIS_BOX);
     expect(ack).toBeDefined();
-    expect(ack!.subject).toContain(`[${t.ticketCode}]`);
+    // Gmail-threadable subject: `Re: <original>`, code in the BODY only — a changed
+    // subject (the old `[#code]` marker) split the requester's Gmail conversation.
+    expect(ack!.subject).toMatch(/^Re: Leave request/);
+    expect(ack!.subject).not.toContain('[#');
     expect(ack!.bodyText).toContain(t.ticketCode);
 
     // CC (bob) must NOT receive the auto-ack.
     const toBob = await fetchMailbox(gm!, 'bob@x.com');
     expect(toBob.some((m) => m.from?.address === HRIS_BOX)).toBe(false);
+  });
+
+  it('IT-ACK-004 (đơn 15): our mailbox only in CC → ticket still created, NO auto-ack', async () => {
+    if (!ready) return;
+    // The requester addressed someone ELSE and merely copied HR — we track it
+    // silently; acking would answer on the To'd party's behalf.
+    const t = await ingest({
+      from: 'dave@x.com',
+      to: 'boss@x.com',
+      cc: HRIS_BOX,
+      subject: 'FYI leave dispute',
+      text: 'copying HR for visibility',
+      messageId: '<ack-cc-1@x.com>',
+    });
+    expect(t).toBeDefined();
+    expect(t.subject).toBe('FYI leave dispute'); // the ticket EXISTS…
+    await sender().runOnce();
+    const toDave = await fetchMailbox(gm!, 'dave@x.com');
+    expect(toDave.some((m) => m.from?.address === HRIS_BOX)).toBe(false); // …but stays silent
+    // Nothing was even enqueued (gate is before the outbox, not a failed send).
+    expect(await harness!.db.select().from(outbox)).toHaveLength(0);
   });
 
   it('IT-ACK-002: append does not ack; auto-submitted mail neither acks nor starts a thread', async () => {
@@ -211,8 +235,10 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
       text: 'question',
       messageId: '<rep-1-orig@x.com>',
     });
+    // The agent owns the ticket (assignee) → may reply (admin/ssa can't process).
+    await harness!.db.update(tickets).set({ assigneeId: agent.id }).where(eq(tickets.id, t.id));
 
-    const sent = await reply.reply(ssa, t.id, {
+    const sent = await reply.reply(agent, t.id, {
       to: ['dan@x.com'],
       cc: ['eve@x.com'],
       body: 'Here is our answer.',
@@ -223,10 +249,14 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
     await sender().runOnce();
 
     const toDan = await fetchMailbox(gm!, 'dan@x.com');
-    // Match by our outbound Message-ID — the auto-ack also carries the [#code] marker.
+    // Match by our outbound Message-ID (the auto-ack shares the mailbox From).
     const replyMail = toDan.find((m) => m.messageId === outMsgId);
     expect(replyMail).toBeDefined();
-    expect(replyMail!.subject).toContain(`[${t.ticketCode}]`);
+    // `Re: <subject>` keeps the whole exchange ONE Gmail conversation; the ticket
+    // code rides in the body footer instead of the subject.
+    expect(replyMail!.subject).toMatch(/^Re: /);
+    expect(replyMail!.subject).not.toContain('[#');
+    expect(replyMail!.bodyText).toContain(t.ticketCode);
     expect(replyMail!.from?.address).toBe(HRIS_BOX);
     expect(replyMail!.to.map((a) => a.address)).toContain('dan@x.com');
     expect(replyMail!.cc.map((a) => a.address)).toContain('eve@x.com');
@@ -263,9 +293,10 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
       text: 'q',
       messageId: '<rep-2-orig@x.com>',
     });
+    await harness!.db.update(tickets).set({ assigneeId: agent.id }).where(eq(tickets.id, t.id));
 
     // Adding stranger gun@z.com without confirmation → blocked with the list.
-    const blocked = await reply.reply(ssa, t.id, {
+    const blocked = await reply.reply(agent, t.id, {
       to: ['fay@x.com'],
       cc: ['gun@z.com'],
       body: 'looping in a colleague',
@@ -273,7 +304,7 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
     expect(blocked).toEqual({ needsConfirm: true, newRecipients: ['gun@z.com'] });
 
     // Confirmed → sends and admits gun@z.com as an active participant + audit.
-    const ok = await reply.reply(ssa, t.id, {
+    const ok = await reply.reply(agent, t.id, {
       to: ['fay@x.com'],
       cc: ['gun@z.com'],
       body: 'looping in a colleague',

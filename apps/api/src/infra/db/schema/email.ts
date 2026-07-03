@@ -95,6 +95,24 @@ export const blocklist = pgTable(
   (t) => [unique('uq_blocklist').on(t.projectId, t.email)],
 );
 
+/** Allowlisted senders: their mail ALWAYS opens a ticket even when it carries
+ *  list/bulk/auto-submitted headers (e.g. HR announcements sent via a Google Group).
+ *  Exact-address, per-project — the symmetric twin of the blocklist. */
+export const allowlist = pgTable(
+  'allowlist',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id),
+    email: text('email').notNull(),
+    reason: text('reason'),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [unique('uq_allowlist').on(t.projectId, t.email)],
+);
+
 /** Auto-junk rules per project (FR102). */
 export const junkRules = pgTable('junk_rules', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

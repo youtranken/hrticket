@@ -8,7 +8,7 @@ import { execSync } from 'node:child_process';
 export default function globalSetup(): void {
   try {
     execSync(
-      'docker compose exec -T postgres psql -U hris -d hris -c "TRUNCATE login_attempts"',
+      `${process.env.E2E_COMPOSE ?? 'docker compose'} exec -T postgres psql -U hris -d hris -c "TRUNCATE login_attempts"`,
       { cwd: '../..', stdio: 'ignore' },
     );
   } catch {

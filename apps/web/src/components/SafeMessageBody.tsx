@@ -4,8 +4,10 @@ import { Button, Typography } from 'antd';
 
 const { Paragraph, Text } = Typography;
 
-/** Boundary markers for a quoted reply chain (collapsed behind "•••"). */
-const HTML_QUOTE = /<blockquote|class="gmail_quote"|class='gmail_quote'/i;
+/** Boundary markers for a quoted reply chain (collapsed behind "•••"). Must match at a
+ *  TAG START — matching the bare `class="gmail_quote"` attribute sliced the HTML mid-tag,
+ *  leaking `class="gmail_quote">` as visible text above the expanded quote. */
+const HTML_QUOTE = /<blockquote|<div[^>]*\bclass=["'][^"']*gmail_quote/i;
 const TEXT_QUOTE = /^(>|-----\s*Original Message|On .+wrote:\s*$|________________)/m;
 
 interface Props {

@@ -1,4 +1,4 @@
-import { Controller, ForbiddenException, Get, Headers, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Headers, Query, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
@@ -7,9 +7,11 @@ import { ReportingService } from './reporting.service';
 import { reportQuerySchema } from './dto/report.query';
 
 /**
- * Report dashboard endpoints (Story 10.3, FR83). Team Lead / Admin / SSA only —
- * a Member gets a hard 403 (FR83), with RLS underneath as defense-in-depth. SSA
- * picks the project via the `X-Project` header (compare = two calls from the FE).
+ * Report dashboard endpoints (Story 10.3, FR83 + đơn 13). Every role may call:
+ * Admin sees the project, TL their groups (RLS), and a MEMBER is pinned to a
+ * self-report — the service forces `assignee_id = self` for members, ignoring
+ * any `assigneeId` they send. SSA picks the project via the `X-Project` header
+ * (compare = two calls from the FE).
  */
 @Controller('api/reports')
 @UseGuards(SessionGuard)
@@ -19,11 +21,19 @@ export class ReportingController {
     private readonly projectCtx: ProjectContextService,
   ) {}
 
-  /** Resolve the project after gating Members out (role guard, not just RLS). */
   private async project(user: SessionUser, xProject?: string): Promise<number> {
-    if (user.role === 'member') throw new ForbiddenException();
     const p = await this.projectCtx.resolveEffective(user, xProject);
     return p.id;
+  }
+
+  @Get('summary')
+  async summary(
+    @CurrentUser() user: SessionUser,
+    @Query() query: Record<string, unknown>,
+    @Headers('x-project') xp?: string,
+  ) {
+    const q = reportQuerySchema.parse(query);
+    return this.svc.summary(user, await this.project(user, xp), q);
   }
 
   @Get('by-time')
@@ -33,7 +43,7 @@ export class ReportingController {
     @Headers('x-project') xp?: string,
   ) {
     const q = reportQuerySchema.parse(query);
-    return this.svc.byTime(user, await this.project(user, xp), q.from, q.to);
+    return this.svc.byTime(user, await this.project(user, xp), q);
   }
 
   @Get('by-category')
@@ -43,7 +53,7 @@ export class ReportingController {
     @Headers('x-project') xp?: string,
   ) {
     const q = reportQuerySchema.parse(query);
-    return this.svc.byCategory(user, await this.project(user, xp), q.from, q.to);
+    return this.svc.byCategory(user, await this.project(user, xp), q);
   }
 
   @Get('by-staff')
@@ -53,6 +63,6 @@ export class ReportingController {
     @Headers('x-project') xp?: string,
   ) {
     const q = reportQuerySchema.parse(query);
-    return this.svc.byStaff(user, await this.project(user, xp), q.from, q.to);
+    return this.svc.byStaff(user, await this.project(user, xp), q);
   }
 }

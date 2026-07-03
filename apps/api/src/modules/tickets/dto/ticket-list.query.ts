@@ -36,13 +36,19 @@ const csvNumbers = z
     return nums.length ? nums : undefined;
   });
 
-const csvStrings = z
+/** Keeps ONLY well-formed UUIDs. assigneeId feeds a `uuid` column,
+ *  so a non-UUID token (e.g. ?assigneeId=foo) would reach Postgres as `= 'foo'::uuid` and
+ *  raise `invalid input syntax for type uuid` → unhandled 500. Dropping malformed tokens
+ *  (like the `status` filter drops unknown states) keeps it a 200 empty/!filtered result;
+ *  RLS stays the real guard, so no leak. */
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const csvUuids = z
   .union([z.string(), z.array(z.string())])
   .optional()
   .transform((v) => {
     if (v === undefined) return undefined;
     const parts = (Array.isArray(v) ? v : [v]).flatMap((s) => s.split(','));
-    const out = parts.map((s) => s.trim()).filter((s) => s.length > 0);
+    const out = parts.map((s) => s.trim()).filter((s) => UUID_RE.test(s));
     return out.length ? out : undefined;
   });
 
@@ -68,8 +74,13 @@ export const ticketListQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   /** Worklist tabs: all | pool | mine | pending (Story 10.1 adds `pending`). */
   view: z.enum(['all', 'pool', 'mine', 'pending']).default('all'),
-  /** Default = shared worklist order (FR106); `manual` enables column sorts. */
-  sort: z.enum(['worklist', 'created', 'status', 'snooze']).default('worklist'),
+  /** Default = the status·freshness·urgency BAND order (new on top, closed at the
+   *  bottom — the inbox-like worklist users expect). `worklist` is the priority order
+   *  shared with the digest (FR106), still selectable explicitly; `created`/`status`/
+   *  `snooze`/`category`/`assignee` are the manual column sorts. */
+  sort: z
+    .enum(['band', 'worklist', 'created', 'status', 'snooze', 'category', 'assignee'])
+    .default('band'),
   dir: z.enum(['asc', 'desc']).default('desc'),
   status: z
     .union([z.string(), z.array(z.string())])
@@ -86,7 +97,7 @@ export const ticketListQuerySchema = z.object({
     }),
   categoryId: csvNumbers,
   tagId: csvNumbers,
-  assigneeId: csvStrings,
+  assigneeId: csvUuids,
   /** SSA-only; ignored for project-scoped roles (RLS already pins the project). */
   projectId: z.coerce.number().int().optional(),
   createdFrom: vnDay,

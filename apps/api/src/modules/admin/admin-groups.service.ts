@@ -5,7 +5,13 @@ import {
 } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { withActor, systemActor, type DbTx } from '../../infra/db/with-actor';
-import { categories, userGroupMembership, users } from '../../infra/db/schema';
+import {
+  categories,
+  userGroupMembership,
+  users,
+  autoAssignConfig,
+  autoAssignMembers,
+} from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 
@@ -135,6 +141,10 @@ export class AdminGroupsService {
               inArray(userGroupMembership.userId, removed),
             ),
           );
+        // Keep the auto-assign rotation a subset of the group: anyone removed from the
+        // group must also leave its rotation, else they'd keep being auto-assigned
+        // tickets they can no longer see.
+        await this.pruneRoster(tx, categoryId, removed);
       }
       for (const u of added) {
         await tx.insert(userGroupMembership).values({ userId: u, categoryId }).onConflictDoNothing();
@@ -217,6 +227,10 @@ export class AdminGroupsService {
               inArray(userGroupMembership.categoryId, removed),
             ),
           );
+        // Drop this user from the auto-assign rotation of every group they just left.
+        for (const categoryId of removed) {
+          await this.pruneRoster(tx, categoryId, [userId]);
+        }
       }
       for (const c of added) {
         await tx.insert(userGroupMembership).values({ userId, categoryId: c }).onConflictDoNothing();
@@ -236,6 +250,21 @@ export class AdminGroupsService {
   }
 
   // ── helpers ─────────────────────────────────────────────────────────────────
+  /** Remove the given users from a category's auto-assign rotation (keeps the rotation
+   *  a subset of the group when membership shrinks). No-op when the category has no
+   *  auto-assign config. */
+  private async pruneRoster(tx: DbTx, categoryId: number, userIds: string[]): Promise<void> {
+    if (userIds.length === 0) return;
+    const [cfg] = await tx
+      .select({ id: autoAssignConfig.id })
+      .from(autoAssignConfig)
+      .where(eq(autoAssignConfig.categoryId, categoryId));
+    if (!cfg) return;
+    await tx
+      .delete(autoAssignMembers)
+      .where(and(eq(autoAssignMembers.configId, cfg.id), inArray(autoAssignMembers.userId, userIds)));
+  }
+
   private async loadCategory(tx: DbTx, projectId: number, id: number) {
     const [cat] = await tx
       .select()

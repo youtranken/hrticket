@@ -7,12 +7,14 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  * Needs SEED_DEV_USERS=true fixtures.
  */
 const DEV_PW = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+const SSA_PW = process.env.SEED_SSA_DEV_PASSWORD ?? 'Pmh@1234';
+const pwFor = (email: string): string => (email.startsWith('ssa@') ? SSA_PW : DEV_PW);
 const SHOTS = 'e2e/__screenshots__';
 
 async function login(page: Page, email: string): Promise<void> {
   await page.goto('/login');
   await page.locator('input[autocomplete="username"]').fill(email);
-  await page.locator('input[autocomplete="current-password"]').fill(DEV_PW);
+  await page.locator('input[autocomplete="current-password"]').fill(pwFor(email));
   await page.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(/\/(inbox|my-tickets|pool)/, { timeout: 15000 });
 }
@@ -42,13 +44,15 @@ test('9.4 role capabilities: SSA toggles a cell, locked cell is 🔒, admin is b
   await expect(page.locator('.ant-message')).toContainText('Đã lưu', { timeout: 10000 });
   await page.screenshot({ path: `${SHOTS}/9.4-capabilities.png`, fullPage: true });
 
-  // Locked cell: "edit role capabilities" × SSA shows 🔒 and a disabled switch (AC3).
+  // Locked cell: "edit role capabilities" × SSA shows a lock icon + a disabled switch (AC3).
   const lockedRow = page.locator('.ant-table-row', { hasText: 'Sửa định nghĩa quyền vai trò' });
-  await expect(lockedRow).toContainText('🔒');
+  await expect(lockedRow.locator('.anticon-lock').first()).toBeVisible();
   await expect(lockedRow.locator('.ant-switch-disabled')).toHaveCount(1);
 
-  // Restore the toggled cell so the run is idempotent.
+  // Restore the toggled cell so the run is idempotent. Turning a capability OFF
+  // now confirms first (UX #46) — accept the revoke dialog before the toast.
   await memberSwitch.click();
+  await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'OK' }).click();
   await expect(page.locator('.ant-message').last()).toContainText('Đã lưu', { timeout: 10000 });
   expect(wasOn).toBe(false); // sanity: default is OFF for Member
 

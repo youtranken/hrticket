@@ -11,11 +11,11 @@ import {
 import { AssignmentService } from '../src/modules/tickets/assignment.service';
 import type { SessionUser } from '../src/modules/auth/session.service';
 
-const session = (id: string, email: string): SessionUser => ({
+const session = (id: string, email: string, role: SessionUser['role'] = 'member'): SessionUser => ({
   id,
   email,
   name: email,
-  role: 'member',
+  role,
   projectId: 1,
   disabled: false,
   mustChangePassword: false,
@@ -35,6 +35,7 @@ describe('IT-CLAIM: pool claim + claim-over', () => {
   let M1: SessionUser;
   let M2: SessionUser;
   let M3: SessionUser; // different group
+  let TL: SessionUser; // team lead, same group as M1/M2
   let ticketId: string;
 
   beforeAll(async () => {
@@ -49,13 +50,16 @@ describe('IT-CLAIM: pool claim + claim-over', () => {
       const u1 = (await makeUser(harness.db, { projectId: 1, email: 'm1@x.com' }))!;
       const u2 = (await makeUser(harness.db, { projectId: 1, email: 'm2@x.com' }))!;
       const u3 = (await makeUser(harness.db, { projectId: 1, email: 'm3@x.com' }))!;
+      const utl = (await makeUser(harness.db, { projectId: 1, role: 'team_lead', email: 'tl@x.com' }))!;
       M1 = session(u1.id, u1.email);
       M2 = session(u2.id, u2.email);
       M3 = session(u3.id, u3.email);
+      TL = session(utl.id, utl.email, 'team_lead');
       await harness.db.insert(userGroupMembership).values([
         { userId: M1.id, categoryId: Payroll },
         { userId: M2.id, categoryId: Payroll },
         { userId: M3.id, categoryId: Insurance },
+        { userId: TL.id, categoryId: Payroll },
       ]);
       ready = true;
     } catch (e) {
@@ -110,6 +114,8 @@ describe('IT-CLAIM: pool claim + claim-over', () => {
     if (!ready) return;
     await svc.claim(M1, ticketId); // M1 holds it
     const res = await svc.claim(M2, ticketId, { over: true }); // M2 explicitly takes over
+    // Real category → never the needsCategory branch (đơn 5: only "Khác" asks).
+    if ('needsCategory' in res) throw new Error('unexpected needsCategory');
     expect(res.assigneeId).toBe(M2.id);
     expect(res.from).toBe(M1.id);
 
@@ -128,5 +134,26 @@ describe('IT-CLAIM: pool claim + claim-over', () => {
     await expect(svc.claim(M3, ticketId)).rejects.toThrow();
     const [t] = await harness!.db.select().from(tickets).where(eq(tickets.id, ticketId));
     expect(t!.assigneeId).toBeNull(); // untouched
+  });
+
+  it('IT-CLAIM-004: a member CANNOT claim-over a ticket held by a Team Lead (403)', async () => {
+    if (!ready) return;
+    await svc.claim(TL, ticketId); // TL holds it
+    await expect(svc.claim(M2, ticketId, { over: true })).rejects.toThrow(
+      /cannot take over/i,
+    );
+    const [t] = await harness!.db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(t!.assigneeId).toBe(TL.id); // still the TL — not pulled away
+  });
+
+  it('IT-CLAIM-005: a Team Lead CAN claim-over a ticket held by a member', async () => {
+    if (!ready) return;
+    await svc.claim(M1, ticketId); // member holds it
+    const res = await svc.claim(TL, ticketId, { over: true }); // TL takes over (coordinator)
+    if ('needsCategory' in res) throw new Error('unexpected needsCategory');
+    expect(res.assigneeId).toBe(TL.id);
+    expect(res.from).toBe(M1.id);
+    const [t] = await harness!.db.select().from(tickets).where(eq(tickets.id, ticketId));
+    expect(t!.assigneeId).toBe(TL.id);
   });
 });

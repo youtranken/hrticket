@@ -68,13 +68,18 @@ export function canTransition(
  * The transitions a human may pick from the status dropdown — the forward/branch
  * edges only. Reopen (closed →) is reply-driven and the pool assign (open →) is
  * claim-driven, so both are hidden from the manual picker (Story 5.1 AC3 / 5.2 AC4).
+ *
+ * Resume is reply-driven too: a Pending ticket wakes when the agent replies (the
+ * reply clears the snooze and resumes In Progress), and a Resolved ticket reopens on
+ * a requester reply — so neither offers a manual "resume" button. Pending therefore
+ * has no manual action; Resolved offers only "Close".
  */
 const MANUAL: Record<TicketStatus, TicketStatus[]> = {
   open: [],
   assigned: ['in_progress'],
   in_progress: ['pending', 'resolved', 'closed'],
-  pending: ['in_progress'],
-  resolved: ['in_progress', 'closed'],
+  pending: [],
+  resolved: ['closed'],
   closed: [],
 };
 

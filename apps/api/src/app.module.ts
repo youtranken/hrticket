@@ -14,6 +14,7 @@ import { ReportingModule } from './modules/reporting/reporting.module';
 import { ExportModule } from './modules/export/export.module';
 import { SsaModule } from './modules/ssa/ssa.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { PublicModule } from './modules/public/public.module';
 
 /** HTTP application module. Feature modules (auth, tickets, …) get added per epic. */
 @Module({
@@ -32,6 +33,7 @@ import { AuditModule } from './modules/audit/audit.module';
     ExportModule,
     SsaModule,
     AuditModule,
+    PublicModule,
   ],
   controllers: [AppController],
 })

@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" font-family="'Segoe UI',Arial,sans-serif">
+  <defs>
+    <marker id="aGreen" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1F9D6B"/></marker>
+    <marker id="aRed" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#D14343"/></marker>
+    <marker id="aNavy" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1F3A5F"/></marker>
+    <marker id="aGold" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#B8860B"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1920" height="1080" fill="#eef1f6"/>
+
+  <!-- Header -->
+  <rect x="24" y="18" width="1872" height="66" rx="14" fill="#13243D"/>
+  <text x="48" y="60" fill="#ffffff" font-size="30" font-weight="700">BẢN ĐỒ WORKFLOW — HỆ THỐNG TICKET HRIS / C&amp;B</text>
+  <text x="1872" y="46" fill="#E8B11C" font-size="17" font-weight="700" text-anchor="end">Quét IMAP 60s</text>
+  <text x="1872" y="70" fill="#B9C6DC" font-size="16" text-anchor="end">Scheduler tick 60s</text>
+
+  <!-- ============ PANEL A: INBOUND ============ -->
+  <rect x="596" y="98" width="528" height="104" rx="12" fill="#F4F8FF" stroke="#C7D6EC"/>
+  <rect x="596" y="98" width="250" height="26" rx="8" fill="#1F3A5F"/>
+  <text x="608" y="116" fill="#fff" font-size="14" font-weight="700">① CỔNG TIẾP NHẬN</text>
+  <g>
+    <rect x="620" y="132" width="220" height="58" rx="10" fill="#fff" stroke="#1F3A5F" stroke-width="2"/>
+    <text x="730" y="158" text-anchor="middle" fill="#1F3A5F" font-size="17" font-weight="700">Gmail — HRIS</text>
+    <text x="730" y="178" text-anchor="middle" fill="#5A6478" font-size="13">hộp thư độc lập</text>
+    <rect x="880" y="132" width="220" height="58" rx="10" fill="#fff" stroke="#1F3A5F" stroke-width="2"/>
+    <text x="990" y="158" text-anchor="middle" fill="#1F3A5F" font-size="17" font-weight="700">Gmail — C&amp;B</text>
+    <text x="990" y="178" text-anchor="middle" fill="#5A6478" font-size="13">hộp thư độc lập</text>
+  </g>
+  <text x="860" y="222" text-anchor="middle" fill="#1F3A5F" font-size="14" font-weight="600">Quét IMAP mỗi 60 giây · 2 luồng thô song song đẩy vào phễu</text>
+  <line x1="860" y1="228" x2="860" y2="250" stroke="#1F3A5F" stroke-width="3" marker-end="url(#aNavy)"/>
+
+  <!-- ============ PANEL B: 4-STAGE FUNNEL ============ -->
+  <polygon points="510,250 1210,250 1030,700 690,700" fill="#1F3A5F" opacity="0.05"/>
+  <polygon points="510,250 1210,250 1030,700 690,700" fill="none" stroke="#1F3A5F" stroke-opacity="0.22" stroke-dasharray="6 6"/>
+  <rect x="470" y="250" width="250" height="26" rx="8" fill="#1F3A5F"/>
+  <text x="482" y="268" fill="#fff" font-size="14" font-weight="700">② PHỄU LỌC KỸ THUẬT 4 TẦNG</text>
+
+  <!-- Stage 1 -->
+  <rect x="560" y="284" width="600" height="76" rx="10" fill="#fff" stroke="#1F3A5F" stroke-width="2"/>
+  <text x="860" y="312" text-anchor="middle" fill="#1F3A5F" font-size="17" font-weight="700">TẦNG 1 · DEDUPE — chống gửi trùng</text>
+  <text x="860" y="338" text-anchor="middle" fill="#33415a" font-size="14">Khóa composite (message_id, mailbox) — mail trùng bị nuốt ngay tại cửa ngõ</text>
+
+  <!-- Stage 2 -->
+  <rect x="590" y="376" width="540" height="76" rx="10" fill="#fff" stroke="#1F3A5F" stroke-width="2"/>
+  <text x="860" y="404" text-anchor="middle" fill="#1F3A5F" font-size="17" font-weight="700">TẦNG 2 · BLOCKLIST &amp; MAIL-BOMB</text>
+  <text x="860" y="430" text-anchor="middle" fill="#33415a" font-size="14">Danh sách đen + giới hạn tần suất — spam dồn dập → tự cắt luồng</text>
+
+  <!-- Stage 3: JUNK sub-funnel -->
+  <rect x="606" y="468" width="508" height="168" rx="10" fill="#FFF7F6" stroke="#D14343" stroke-width="2"/>
+  <text x="860" y="494" text-anchor="middle" fill="#B3261E" font-size="17" font-weight="700">TẦNG 3 · JUNK — bóc tách thư máy (4 màng lọc header)</text>
+  <g font-size="13" fill="#7a1d16">
+    <rect x="622" y="506" width="234" height="54" rx="8" fill="#fff" stroke="#E7A6A0"/>
+    <text x="739" y="527" text-anchor="middle" font-weight="700">① Auto-Submitted</text>
+    <text x="739" y="547" text-anchor="middle" fill="#9a4a43">RFC 3834</text>
+    <rect x="864" y="506" width="234" height="54" rx="8" fill="#fff" stroke="#E7A6A0"/>
+    <text x="981" y="527" text-anchor="middle" font-weight="700">② Precedence</text>
+    <text x="981" y="547" text-anchor="middle" fill="#9a4a43">bulk / auto / list</text>
+    <rect x="622" y="568" width="234" height="54" rx="8" fill="#fff" stroke="#E7A6A0"/>
+    <text x="739" y="589" text-anchor="middle" font-weight="700">③ X-Autoreply</text>
+    <text x="739" y="609" text-anchor="middle" fill="#9a4a43">header tự chế</text>
+    <rect x="864" y="568" width="234" height="54" rx="8" fill="#fff" stroke="#E7A6A0"/>
+    <text x="981" y="589" text-anchor="middle" font-weight="700">④ List-Id / List-Unsub</text>
+    <text x="981" y="609" text-anchor="middle" fill="#9a4a43">dấu hiệu marketing</text>
+  </g>
+
+  <!-- Stage 4 -->
+  <rect x="640" y="652" width="440" height="76" rx="10" fill="#fff" stroke="#1F9D6B" stroke-width="2"/>
+  <text x="860" y="680" text-anchor="middle" fill="#137a51" font-size="17" font-weight="700">TẦNG 4 · CLASSIFY — phân loại tự động</text>
+  <text x="860" y="705" text-anchor="middle" fill="#33415a" font-size="13.5">So khớp từ khóa KHÔNG DẤU → nhãn (Payroll · Insurance · Leave…) · lệch → “Khác”</text>
+
+  <!-- vertical pass-through arrows -->
+  <line x1="860" y1="360" x2="860" y2="376" stroke="#1F3A5F" stroke-width="3" marker-end="url(#aNavy)"/>
+  <line x1="860" y1="452" x2="860" y2="468" stroke="#1F3A5F" stroke-width="3" marker-end="url(#aNavy)"/>
+  <line x1="860" y1="636" x2="860" y2="652" stroke="#1F9D6B" stroke-width="3" marker-end="url(#aGreen)"/>
+
+  <!-- ============ LEFT REJECT BINS ============ -->
+  <!-- bin 1 -->
+  <line x1="560" y1="322" x2="452" y2="322" stroke="#D14343" stroke-width="2.5" marker-end="url(#aRed)"/>
+  <text x="506" y="313" text-anchor="middle" fill="#D14343" font-size="12" font-weight="700">trùng</text>
+  <rect x="60" y="296" width="384" height="52" rx="9" fill="#FCEBEA" stroke="#D14343"/>
+  <text x="76" y="318" fill="#B3261E" font-size="14" font-weight="700">✕ Nuốt mail trùng</text>
+  <text x="76" y="338" fill="#7a1d16" font-size="12.5">tránh sinh ticket rác do gửi 2 lần / lỗi mạng</text>
+
+  <!-- bin 2 -->
+  <line x1="590" y1="414" x2="452" y2="414" stroke="#D14343" stroke-width="2.5" marker-end="url(#aRed)"/>
+  <text x="521" y="405" text-anchor="middle" fill="#D14343" font-size="12" font-weight="700">spam</text>
+  <rect x="60" y="388" width="384" height="52" rx="9" fill="#FCEBEA" stroke="#D14343"/>
+  <text x="76" y="410" fill="#B3261E" font-size="14" font-weight="700">✕ Chặn &amp; ngắt luồng</text>
+  <text x="76" y="430" fill="#7a1d16" font-size="12.5">người gửi bị chặn hoặc mail-bomb dồn dập</text>
+
+  <!-- bin 3 JUNK -->
+  <line x1="606" y1="552" x2="452" y2="552" stroke="#D14343" stroke-width="3" marker-end="url(#aRed)"/>
+  <text x="529" y="543" text-anchor="middle" fill="#D14343" font-size="12" font-weight="700">dính 1 màng</text>
+  <rect x="60" y="470" width="384" height="164" rx="10" fill="#F8D7D3" stroke="#D14343" stroke-width="2"/>
+  <text x="252" y="500" text-anchor="middle" fill="#B3261E" font-size="18" font-weight="700">🗑 THÙNG JUNK</text>
+  <text x="252" y="524" text-anchor="middle" fill="#7a1d16" font-size="13">Dính bất kỳ 1 trong 4 màng header</text>
+  <text x="252" y="544" text-anchor="middle" fill="#7a1d16" font-size="13">→ bẻ hướng, rơi thẳng xuống đây.</text>
+  <line x1="96" y1="558" x2="408" y2="558" stroke="#D14343" stroke-opacity="0.4"/>
+  <text x="252" y="582" text-anchor="middle" fill="#8a2b22" font-size="12.5" font-style="italic">Ví dụ: mail báo nghỉ phép tự động</text>
+  <text x="252" y="612" text-anchor="middle" fill="#137a51" font-size="13" font-weight="700">Giữ bể ticket luôn SẠCH ✔</text>
+
+  <!-- ============ PANEL C: POOL / CLAIM / ASSIGN ============ -->
+  <rect x="404" y="742" width="912" height="316" rx="14" fill="#F1FAF6" stroke="#A7D8C4"/>
+  <rect x="404" y="742" width="300" height="26" rx="8" fill="#1F9D6B"/>
+  <text x="416" y="760" fill="#fff" font-size="14" font-weight="700">③ POOL · CLAIM · ASSIGN</text>
+
+  <line x1="860" y1="728" x2="860" y2="782" stroke="#1F9D6B" stroke-width="3" marker-end="url(#aGreen)"/>
+  <text x="1010" y="770" text-anchor="middle" fill="#137a51" font-size="13" font-weight="600">email “người thật gõ tay” → an toàn vào Pool</text>
+
+  <rect x="470" y="784" width="780" height="74" rx="12" fill="#1F3A5F"/>
+  <text x="860" y="812" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">🏊 THE POOL — Bể ticket chung</text>
+  <text x="860" y="838" text-anchor="middle" fill="#B9C6DC" font-size="13.5">Ticket chờ được nhận / giao việc</text>
+
+  <!-- claim card -->
+  <line x1="720" y1="858" x2="640" y2="900" stroke="#1F9D6B" stroke-width="2.5" marker-end="url(#aGreen)"/>
+  <rect x="430" y="902" width="410" height="146" rx="12" fill="#fff" stroke="#1F9D6B" stroke-width="2"/>
+  <text x="450" y="932" fill="#137a51" font-size="17" font-weight="700">CLAIM · Nhận việc</text>
+  <text x="450" y="960" fill="#33415a" font-size="14">Member + Team Lead (trong nhóm) chủ</text>
+  <text x="450" y="982" fill="#33415a" font-size="14">động vào Pool kéo ticket về danh sách</text>
+  <text x="450" y="1004" fill="#33415a" font-size="14">cá nhân của mình.</text>
+  <rect x="450" y="1018" width="150" height="22" rx="11" fill="#E4F3EC"/>
+  <text x="525" y="1033" text-anchor="middle" fill="#137a51" font-size="12" font-weight="700">Member · Team Lead</text>
+
+  <!-- assign card -->
+  <line x1="1000" y1="858" x2="1080" y2="900" stroke="#1F3A5F" stroke-width="2.5" marker-end="url(#aNavy)"/>
+  <rect x="880" y="902" width="410" height="146" rx="12" fill="#fff" stroke="#1F3A5F" stroke-width="2"/>
+  <text x="900" y="932" fill="#1F3A5F" font-size="17" font-weight="700">ASSIGN · Giao việc</text>
+  <text x="900" y="960" fill="#33415a" font-size="14">Chỉ Team Lead điều phối — giao thẳng</text>
+  <text x="900" y="982" fill="#33415a" font-size="14">ticket từ Pool xuống các Member</text>
+  <text x="900" y="1004" fill="#33415a" font-size="14">dưới quyền.</text>
+  <rect x="900" y="1018" width="180" height="22" rx="11" fill="#E7EDF6"/>
+  <text x="990" y="1033" text-anchor="middle" fill="#1F3A5F" font-size="12" font-weight="700">Team Lead → Member</text>
+
+  <!-- ============ PANEL D: GOVERNANCE (small) ============ -->
+  <rect x="1360" y="250" width="536" height="480" rx="14" fill="#FFFBEF" stroke="#E8C868"/>
+  <rect x="1360" y="250" width="340" height="26" rx="8" fill="#B8860B"/>
+  <text x="1372" y="268" fill="#fff" font-size="14" font-weight="700">④ QUẢN TRỊ TÁCH BIỆT (SSA / ADMIN)</text>
+
+  <!-- SSA -->
+  <rect x="1384" y="290" width="488" height="86" rx="12" fill="#13243D"/>
+  <text x="1628" y="322" text-anchor="middle" fill="#E8B11C" font-size="18" font-weight="700">👑 SSA · Super System Admin</text>
+  <text x="1628" y="348" text-anchor="middle" fill="#fff" font-size="13.5">Cấp cao nhất — quyền XUYÊN SUỐT</text>
+  <text x="1628" y="367" text-anchor="middle" fill="#B9C6DC" font-size="13">cấu hình đồng thời cả 2 project (HRIS &amp; C&amp;B)</text>
+
+  <line x1="1500" y1="376" x2="1500" y2="404" stroke="#B8860B" stroke-width="2.5" marker-end="url(#aGold)"/>
+  <line x1="1756" y1="376" x2="1756" y2="404" stroke="#B8860B" stroke-width="2.5" marker-end="url(#aGold)"/>
+
+  <!-- Admin HRIS -->
+  <rect x="1384" y="406" width="232" height="120" rx="12" fill="#fff" stroke="#B8860B" stroke-width="2"/>
+  <text x="1500" y="434" text-anchor="middle" fill="#8a6508" font-size="16" font-weight="700">ADMIN · HRIS</text>
+  <text x="1500" y="460" text-anchor="middle" fill="#5A6478" font-size="12.5">Cấu hình toàn bộ tham số</text>
+  <text x="1500" y="478" text-anchor="middle" fill="#5A6478" font-size="12.5">riêng project HRIS</text>
+  <text x="1500" y="506" text-anchor="middle" fill="#B3261E" font-size="12" font-weight="700">⟂ không đụng C&amp;B</text>
+
+  <!-- Admin C&B -->
+  <rect x="1640" y="406" width="232" height="120" rx="12" fill="#fff" stroke="#B8860B" stroke-width="2"/>
+  <text x="1756" y="434" text-anchor="middle" fill="#8a6508" font-size="16" font-weight="700">ADMIN · C&amp;B</text>
+  <text x="1756" y="460" text-anchor="middle" fill="#5A6478" font-size="12.5">Cấu hình toàn bộ tham số</text>
+  <text x="1756" y="478" text-anchor="middle" fill="#5A6478" font-size="12.5">riêng project C&amp;B</text>
+  <text x="1756" y="506" text-anchor="middle" fill="#B3261E" font-size="12" font-weight="700">⟂ không đụng HRIS</text>
+
+  <rect x="1384" y="540" width="488" height="72" rx="10" fill="#FBF3DC" stroke="#E8C868"/>
+  <text x="1628" y="566" text-anchor="middle" fill="#7a5c06" font-size="13.5" font-weight="700">Admin chỉ: tạo · sửa · khóa · chuyển Pool</text>
+  <text x="1628" y="590" text-anchor="middle" fill="#8a6508" font-size="13">KHÔNG trả lời mail chuyên môn — chỉ điều phối vòng đời</text>
+
+  <!-- Scheduler badge -->
+  <rect x="1384" y="626" width="488" height="82" rx="10" fill="#fff" stroke="#9BA4B5"/>
+  <text x="1628" y="654" text-anchor="middle" fill="#1F3A5F" font-size="15" font-weight="700">⏱ Scheduler — tick mỗi 60 giây</text>
+  <text x="1628" y="678" text-anchor="middle" fill="#5A6478" font-size="13">digest · nhắc quá hạn · snooze tới hạn</text>
+  <text x="1628" y="697" text-anchor="middle" fill="#5A6478" font-size="13">· repair đính kèm · worker heartbeat</text>
+
+  <!-- governance dashed arrow to Pool -->
+  <path d="M1384,600 C1300,660 1300,760 1256,806" fill="none" stroke="#B8860B" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#aGold)"/>
+  <text x="1300" y="748" text-anchor="middle" fill="#8a6508" font-size="12.5" font-weight="700" transform="rotate(-8 1300 748)">quản trị vòng đời ticket</text>
+
+  <!-- Legend -->
+  <rect x="60" y="662" width="330" height="76" rx="10" fill="#fff" stroke="#cbd3df"/>
+  <text x="76" y="686" fill="#33415a" font-size="13" font-weight="700">CHÚ THÍCH</text>
+  <line x1="78" y1="704" x2="108" y2="704" stroke="#1F9D6B" stroke-width="3" marker-end="url(#aGreen)"/>
+  <text x="116" y="708" fill="#33415a" font-size="12.5">luồng hợp lệ (pass)</text>
+  <line x1="240" y1="704" x2="270" y2="704" stroke="#D14343" stroke-width="3" marker-end="url(#aRed)"/>
+  <text x="278" y="708" fill="#33415a" font-size="12.5">bị loại</text>
+  <line x1="78" y1="726" x2="108" y2="726" stroke="#B8860B" stroke-width="3" stroke-dasharray="6 5" marker-end="url(#aGold)"/>
+  <text x="116" y="730" fill="#33415a" font-size="12.5">điều phối / quản trị</text>
+</svg>

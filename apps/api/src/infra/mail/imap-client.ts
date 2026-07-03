@@ -22,8 +22,14 @@ export type ImapFetcher = (
 
 const SOCKET_TIMEOUT_MS = 30_000;
 
+export interface MailboxProbe {
+  uidValidity: string;
+  /** Next UID the server will assign — i.e. (highest existing UID + 1). */
+  uidNext: number;
+}
+
 function makeClient(settings: ImapSettings): ImapFlow {
-  return new ImapFlow({
+  const client = new ImapFlow({
     host: settings.host,
     port: settings.port,
     secure: settings.secure,
@@ -34,6 +40,13 @@ function makeClient(settings: ImapSettings): ImapFlow {
     greetingTimeout: 10_000,
     connectionTimeout: 10_000,
   });
+  // ImapFlow is an EventEmitter: a socket/idle 'error' (e.g. ETIMEOUT mid-poll) emitted
+  // with NO listener CRASHES the whole worker process — taking the outbox sender, intake
+  // and scheduler down with it (only restart:always saves it). Control flow is already
+  // driven by the connect/fetch promise rejection (caught by the caller + the loop
+  // runner), so attach a no-op listener purely to neutralise the unhandled-error crash.
+  client.on('error', () => {});
+  return client;
 }
 
 /**
@@ -67,6 +80,27 @@ export async function fetchNew(
       }
       messages.sort((a, b) => a.uid - b.uid);
       return { uidValidity, messages };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => client.close());
+  }
+}
+
+/**
+ * Read a mailbox's high-water mark (UIDVALIDITY + UIDNEXT) WITHOUT fetching any
+ * message. Used to prime the poll cursor at go-live so intake starts from "now"
+ * (only new mail), never the pre-existing history.
+ */
+export async function probeMailbox(settings: ImapSettings, folder: string): Promise<MailboxProbe> {
+  const client = makeClient(settings);
+  await client.connect();
+  try {
+    const lock = await client.getMailboxLock(folder);
+    try {
+      const mb = client.mailbox as { uidValidity: bigint; uidNext: number };
+      return { uidValidity: String(mb.uidValidity), uidNext: Number(mb.uidNext) };
     } finally {
       lock.release();
     }

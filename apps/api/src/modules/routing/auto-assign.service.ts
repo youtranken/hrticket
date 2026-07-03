@@ -13,10 +13,24 @@ export type AssignStrategy = 'round_robin' | 'least_load';
 
 export type AutoAssignReason =
   | 'assigned'
+  | 'pool_feature_disabled' // ops kill-switch: AUTO_ASSIGN_ENABLED=false → everything pools
   | 'pool_system_category' // "Khác" never auto-assigns (FR28/FR35)
   | 'pool_no_config'
   | 'pool_empty_roster'
   | 'pool_all_away';
+
+/**
+ * Ops kill-switch for round-robin / least-load auto-assignment. When OFF, every new
+ * ticket stays in the pool (assignee NULL, status 'open') for any Member/TL in the
+ * category's group to self-claim — the per-category auto_assign_config + roster are
+ * left UNTOUCHED, so re-enabling is a single env flip + restart. Default ON (unset)
+ * preserves the original behavior and keeps the IT-* assign suites green; the on-prem
+ * deploy turns it off via .env. Read from process.env directly (same pattern as
+ * worker-runner's POLL_INTERVAL_MS) since autoAssign is a plain tx-scoped function.
+ */
+function autoAssignEnabled(): boolean {
+  return process.env.AUTO_ASSIGN_ENABLED !== 'false';
+}
 
 export interface AutoAssignResult {
   assigneeId: string | null;
@@ -59,6 +73,9 @@ export async function autoAssign(
   input: { projectId: number; ticketId: string; ticketCode: string; categoryId: number },
 ): Promise<AutoAssignResult> {
   const { projectId, ticketId, ticketCode, categoryId } = input;
+
+  // Feature OFF → leave the ticket pooled (open, unassigned) for self-claim.
+  if (!autoAssignEnabled()) return { assigneeId: null, reason: 'pool_feature_disabled' };
 
   // "Khác"/system category → always pool.
   const [cat] = await tx

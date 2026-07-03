@@ -64,6 +64,55 @@
       "when": 1781450221692,
       "tag": "0008_fast_iron_lad",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781757306227,
+      "tag": "0009_stiff_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782097313077,
+      "tag": "0010_giant_shiver_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782103266128,
+      "tag": "0011_lyrical_jamie_braddock",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783000000000,
+      "tag": "0012_participants_all_active",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783000000001,
+      "tag": "0013_digest_split",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783000000002,
+      "tag": "0014_resolved_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783058968546,
+      "tag": "0015_resnapshot_sync",
+      "breakpoints": true
     }
   ]
 }

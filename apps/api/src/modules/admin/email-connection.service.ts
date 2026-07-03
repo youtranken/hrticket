@@ -3,12 +3,13 @@ import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
 import nodemailer from 'nodemailer';
 import { withActor, systemActor } from '../../infra/db/with-actor';
-import { emailConnections } from '../../infra/db/schema';
+import { emailConnections, imapCursor } from '../../infra/db/schema';
 import type { ProjectKey } from '../../infra/db/schema';
 import type { SessionUser } from '../auth/session.service';
 import { writeAudit } from '../../infra/audit/audit';
 import { encryptSecret, decryptSecret, maskSecret } from '../../infra/crypto/secret';
 import { isSecurePort, requiresStartTls } from '../../infra/mail/connection-resolver';
+import { probeMailbox } from '../../infra/mail/imap-client';
 import { imapConfigFor } from '../../infra/mail/mail-config';
 import { smtpConfigFor } from '../../infra/mail/smtp-config';
 
@@ -111,6 +112,15 @@ export class EmailConnectionService {
     const passwordEncrypted = input.password
       ? encryptSecret(input.password)
       : (existing?.passwordEncrypted ?? null);
+
+    // Go-live: prime the poll cursor to the mailbox's current high-water mark BEFORE
+    // the connection row goes live, so the first poll ingests only NEW mail — not the
+    // whole pre-existing history (which would mass-create tickets + auto-ack every past
+    // sender). Best-effort; only while the cursor is still pristine (never ingested).
+    const plainPassword =
+      input.password ??
+      (existing?.passwordEncrypted ? (this.safeDecrypt(existing.passwordEncrypted) ?? undefined) : undefined);
+    await this.primeCursorIfPristine(input, plainPassword);
 
     await withActor(systemActor, async (tx) => {
       await tx
@@ -310,6 +320,53 @@ export class EmailConnectionService {
     if (/timeout|ETIMEDOUT|timed out/i.test(msg)) return 'timeout';
     if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg)) return 'host not found';
     return msg.slice(0, 120) || 'connection error';
+  }
+
+  /**
+   * Prime the IMAP poll cursor to the mailbox's current UIDNEXT-1 so intake starts
+   * from "now" (only new mail). Guarded so it NEVER rewinds a live mailbox: it acts
+   * only when the cursor is absent or pristine (lastUid=0 AND no uidvalidity), so a
+   * later re-save / password rotation can't skip mail that arrived in between.
+   * Best-effort: a connect failure just leaves the cursor pristine for a later save.
+   */
+  private async primeCursorIfPristine(input: ConnectionInput, password?: string): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return; // never touch the network in unit/it tests
+    try {
+      const probe = await probeMailbox(
+        {
+          host: input.imapHost,
+          port: input.imapPort,
+          user: input.imapUser,
+          pass: password,
+          secure: isSecurePort(input.imapPort),
+        },
+        'INBOX',
+      );
+      const startUid = Math.max(0, probe.uidNext - 1);
+      await withActor(systemActor, async (tx) => {
+        const [cur] = await tx
+          .select()
+          .from(imapCursor)
+          .where(eq(imapCursor.mailbox, input.imapUser));
+        const pristine = !cur || (cur.lastUid === 0 && !cur.uidvalidity);
+        if (!pristine) return; // live cursor — leave it alone
+        await tx
+          .insert(imapCursor)
+          .values({
+            mailbox: input.imapUser,
+            folder: 'INBOX',
+            lastUid: startUid,
+            uidvalidity: probe.uidValidity,
+          })
+          .onConflictDoUpdate({
+            target: imapCursor.mailbox,
+            set: { lastUid: startUid, uidvalidity: probe.uidValidity },
+          });
+      });
+      this.logger.log(`primed poll cursor for ${input.imapUser} at uid ${startUid} (skip history)`);
+    } catch (e) {
+      this.logger.warn(`cursor prime skipped for ${input.imapUser}: ${this.friendly(e)}`);
+    }
   }
 
   private safeDecrypt(blob: string): string | null {

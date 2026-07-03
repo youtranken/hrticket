@@ -12,10 +12,10 @@ const DEV_PW = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
 const PDF = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(32, 0x20)]);
 const EXE = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(32, 0)]);
 
-async function injectMail(subject: string, messageId: string): Promise<void> {
-  const t = nodemailer.createTransport({ host: 'localhost', port: 3025, secure: false, tls: { rejectUnauthorized: false } });
+async function injectMail(subject: string, messageId: string, sender: string): Promise<void> {
+  const t = nodemailer.createTransport({ host: 'localhost', port: Number(process.env.E2E_SMTP_PORT ?? 3025), secure: false, tls: { rejectUnauthorized: false } });
   await t.sendMail({
-    from: 'employee@company.com',
+    from: sender,
     to: 'hris@test.local',
     cc: 'colleague@company.com',
     subject,
@@ -40,9 +40,16 @@ async function login(page: Page, email: string): Promise<void> {
 test('Epic 2: injected mail becomes a ticket and renders with attachment states', async ({ page }) => {
   const stamp = `${Date.now()}`;
   const subject = `E2E leave question ${stamp}`;
-  await injectMail(subject, `<e2e-${stamp}@company.com>`);
+  // Unique sender per run so the mail-bomb throttle (20/h per sender) never trips
+  // when the whole suite injects many mails in one hour.
+  const sender = `emp-${stamp}@company.com`;
+  await injectMail(subject, `<e2e-${stamp}@company.com>`, sender);
 
   await login(page, 'admin@dev.local'); // admin sees the whole hris project
+
+  // Sort newest-first so the just-created pool ticket sits on page 1 regardless of how
+  // many tickets the shared dev stack has accumulated (pool sinks in worklist order).
+  await page.goto('/inbox?sort=created&dir=desc');
 
   // The worker polls every 5s — reload the Inbox until the new ticket appears.
   await expect(async () => {
@@ -55,5 +62,5 @@ test('Epic 2: injected mail becomes a ticket and renders with attachment states'
   await expect(page.getByText('Please advise on annual leave policy.')).toBeVisible();
   await expect(page.getByText(/policy\.pdf/)).toBeVisible(); // stored
   await expect(page.getByText(/macro\.exe/)).toBeVisible(); // blocked card
-  await expect(page.getByText('employee@company.com').first()).toBeVisible(); // requester
+  await expect(page.getByText(sender).first()).toBeVisible(); // requester
 });

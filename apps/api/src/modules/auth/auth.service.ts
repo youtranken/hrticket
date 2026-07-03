@@ -17,34 +17,56 @@ export type LoginResult =
   | { kind: 'session'; sessionId: string }
   | { kind: 'otp_required'; preAuthToken: string };
 
+// A constant argon2 hash to verify against when the email is unknown, so a failed login
+// does equal work whether or not the account exists (kills the timing-enumeration oracle).
+// Computed once, lazily (argon2 hashing is async).
+let dummyHashPromise: Promise<string> | null = null;
+function dummyHash(): Promise<string> {
+  if (!dummyHashPromise) dummyHashPromise = hashPassword('login-timing-equalizer');
+  return dummyHashPromise;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly lockout: LockoutService,
     private readonly sessions: SessionService,
     private readonly otp: OtpService,
-  ) {}
+  ) {
+    // Warm the constant-time dummy hash at boot so the FIRST unknown-email login isn't
+    // measurably slower than later ones (would otherwise leak a residual timing signal).
+    void dummyHash();
+  }
 
   async login(email: string, password: string, ip: string): Promise<LoginResult> {
-    if (await this.lockout.isLocked(ip, email)) {
+    // Normalize so stored (lowercased) emails match, and the lockout buckets key on a
+    // single canonical form (not per exact-case string).
+    const normEmail = email.trim().toLowerCase();
+    if (await this.lockout.isLocked(ip, normEmail)) {
       throw new HttpException('Too many attempts, try again later', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const user = await withActor(systemActor, async (tx) => {
-      const [row] = await tx.select().from(users).where(eq(users.email, email));
+      const [row] = await tx.select().from(users).where(eq(users.email, normEmail));
       return row ?? null;
     });
 
-    const ok = user ? await verifyPassword(user.passwordHash, password) : false;
+    // Constant-work verify: run argon2 even when the user is missing (timing oracle).
+    let ok = false;
+    if (user) {
+      ok = await verifyPassword(user.passwordHash, password);
+    } else {
+      await verifyPassword(await dummyHash(), password);
+    }
     if (!user || !ok) {
-      await this.lockout.recordFailures(ip, email);
+      await this.lockout.recordFailures(ip, normEmail);
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
     if (user.disabled) {
       throw new ForbiddenException('Tài khoản đã bị vô hiệu hóa');
     }
 
-    await this.lockout.reset(ip, email);
+    await this.lockout.reset(ip, normEmail);
 
     // OTP gate (Story 1.5). When enabled, issue a code + pre-auth token; no session yet.
     if (user.otpEnabled) {
@@ -73,7 +95,12 @@ export class AuthService {
   }
 
   /** Change own password (also clears the must-change flag). Returns false if current is wrong. */
-  async changePassword(userId: string, current: string, next: string): Promise<boolean> {
+  async changePassword(
+    userId: string,
+    current: string,
+    next: string,
+    keepSessionId?: string,
+  ): Promise<boolean> {
     const ok = await this.confirmPassword(userId, current);
     if (!ok) return false;
     await withActor(systemActor, async (tx) => {
@@ -82,6 +109,10 @@ export class AuthService {
         .set({ passwordHash: await hashPassword(next), mustChangePassword: false })
         .where(eq(users.id, userId));
     });
+    // A password change invalidates every OTHER session (kills a stolen one), keeping the
+    // caller's current session alive so they aren't logged out of the device they used.
+    if (keepSessionId) await this.sessions.revokeOthersForUser(userId, keepSessionId);
+    else await this.sessions.revokeAllForUser(userId);
     return true;
   }
 

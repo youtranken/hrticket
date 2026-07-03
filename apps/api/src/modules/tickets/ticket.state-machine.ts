@@ -49,3 +49,55 @@ export function assertCanActOnTicket(
     throw new ForbiddenException('Not allowed to change this ticket');
   }
 }
+
+/**
+ * Who may change a ticket's STATUS via the lifecycle dropdown: the HANDLER (assignee)
+ * or Admin/SSA as a supervisory override. Tighter than `canActOnTicket` — a Team Lead
+ * who isn't the assignee coordinates (assign), they don't drive the status; if a TL
+ * wants to handle a ticket they assign it to themselves first. (junk/spam keep the wider
+ * `canActOnTicket`, so a TL can still clean up.)
+ */
+export function canChangeStatus(user: SessionUser, ticket: LifecycleTicket): boolean {
+  if (user.role === 'admin' || user.role === 'ssa') return true;
+  return ticket.assigneeId === user.id;
+}
+
+export function assertCanChangeStatus(user: SessionUser, ticket: LifecycleTicket): void {
+  if (!canChangeStatus(user, ticket)) {
+    throw new ForbiddenException('Only the assignee may change this ticket status');
+  }
+}
+
+/**
+ * Who may SEND an outbound reply (process the conversation by emailing the requester):
+ * the assignee, or the Team Lead of the ticket's category group. Deliberately NARROWER
+ * than `canActOnTicket` — Admin/SSA are administrative (they assign + oversee, e.g.
+ * close/lock/junk), they do NOT process tickets by replying (model decision). A Member
+ * who isn't the assignee must claim it first. Internal notes are a separate path (no
+ * email leaves) and are not gated here.
+ */
+export function canReplyTicket(
+  user: SessionUser,
+  groups: number[],
+  ticket: LifecycleTicket,
+): boolean {
+  // The HANDLER replies — assignee-first (đơn 5): an Admin who claimed the ticket
+  // processes it end-to-end, so the administrative block below only applies when
+  // they are NOT the one holding it.
+  if (ticket.assigneeId === user.id) return true;
+  if (user.role === 'admin' || user.role === 'ssa') return false; // administrative — don't process
+  if (user.role === 'team_lead' && ticket.categoryId !== null && groups.includes(ticket.categoryId)) {
+    return true;
+  }
+  return false;
+}
+
+export function assertCanReplyTicket(
+  user: SessionUser,
+  groups: number[],
+  ticket: LifecycleTicket,
+): void {
+  if (!canReplyTicket(user, groups, ticket)) {
+    throw new ForbiddenException('Not allowed to reply to this ticket');
+  }
+}

@@ -25,8 +25,14 @@ export async function startGreenMail(): Promise<GreenMail> {
   const container = await new GenericContainer('greenmail/standalone:2.1.0')
     .withExposedPorts(SMTP, IMAP, API)
     .withEnvironment({
+      // greenmail.startup.timeout=30s: the INTERNAL per-server startup timeout
+      // defaults to 2000ms — on a loaded machine the smtps/imaps SSL keystore load
+      // takes longer, GreenMail's main thread throws IllegalStateException, the
+      // REST API (8080) never starts, and testcontainers times out with the
+      // misleading "Port 8080 not bound". Root-caused 3/7/2026 after a day of
+      // "random" GreenMail suite flakes.
       GREENMAIL_OPTS:
-        '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose -Dgreenmail.api.enabled',
+        '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose -Dgreenmail.api.enabled -Dgreenmail.startup.timeout=30000',
     })
     .withWaitStrategy(Wait.forListeningPorts())
     .withStartupTimeout(150_000) // Docker is often busy (compose stack + other suites)

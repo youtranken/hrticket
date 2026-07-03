@@ -14,6 +14,7 @@ import { RolesPage } from './features/admin/RolesPage';
 import { AuditLogPage } from './features/admin/AuditLogPage';
 import { ReminderConfigPage } from './features/admin/ReminderConfigPage';
 import { MailProtectionPage } from './features/admin/MailProtectionPage';
+import { ReplyTemplatesPage } from './features/admin/ReplyTemplatesPage';
 import { AttachmentConfigPage } from './features/admin/AttachmentConfigPage';
 import { EmailConnectionPage } from './features/admin/EmailConnectionPage';
 import { SettingsHubPage } from './features/admin/SettingsHubPage';
@@ -24,7 +25,8 @@ import { SearchResultsPage } from './features/search/SearchResultsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { TicketDetailPage } from './features/ticket/TicketDetailPage';
 import { AppShell } from './layout/AppShell';
-import { ForbiddenPage } from './components/Placeholder';
+import { PublicStatusPage } from './features/public/PublicStatusPage';
+import { ForbiddenPage, NotFoundPage } from './components/Placeholder';
 
 type Role = Me['role'];
 
@@ -33,9 +35,12 @@ function RequireRole({ roles, me, children }: { roles: Role[]; me: Me; children:
 }
 
 function ProtectedApp() {
-  const { data: me, isLoading } = useMe();
+  const { data: me, isLoading, isFetching } = useMe();
   const location = useLocation();
-  if (isLoading) return <Spin style={{ margin: 80 }} />;
+  // After login we invalidate ['me']; the cached value is still `null` from the
+  // pre-login 401, so a plain `!me` check would bounce straight back to /login before
+  // the refetch lands. Wait while a refetch is in flight with no user yet.
+  if (isLoading || (isFetching && !me)) return <Spin style={{ margin: 80 }} />;
   if (!me) {
     const returnUrl = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?returnUrl=${returnUrl}`} replace />;
@@ -54,14 +59,8 @@ function ProtectedApp() {
         <Route path="pool" element={<PoolPage />} />
         <Route path="pending" element={<PendingPage />} />
         <Route path="search" element={<SearchResultsPage />} />
-        <Route
-          path="reports"
-          element={
-            <RequireRole roles={['team_lead', 'admin', 'ssa']} me={me}>
-              <ReportsPage />
-            </RequireRole>
-          }
-        />
+        {/* Đơn 13: every role — a member gets a BE-pinned self report. */}
+        <Route path="reports" element={<ReportsPage />} />
         <Route
           path="audit"
           element={
@@ -99,6 +98,14 @@ function ProtectedApp() {
           element={
             <RequireRole roles={admin} me={me}>
               <ReminderConfigPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="admin/reply-templates"
+          element={
+            <RequireRole roles={['team_lead', 'admin', 'ssa']} me={me}>
+              <ReplyTemplatesPage />
             </RequireRole>
           }
         />
@@ -151,7 +158,8 @@ function ProtectedApp() {
           }
         />
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="*" element={<ForbiddenPage />} />
+        {/* Unknown URL = 404. Real 403s come from RequireRole above. */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AppShell>
   );
@@ -164,6 +172,8 @@ export function AppRoutes() {
       <Route path="/otp" element={<OtpPage />} />
       <Route path="/forgot" element={<ForgotPage />} />
       <Route path="/reset" element={<ResetPage />} />
+      {/* Public, no-auth ticket status tracking from the auto-ack email link (#7). */}
+      <Route path="/track/:token" element={<PublicStatusPage />} />
       <Route path="/*" element={<ProtectedApp />} />
     </Routes>
   );

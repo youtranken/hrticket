@@ -23,6 +23,12 @@ import {
   type BlocklistEntry,
 } from '../../lib/blocklist';
 import {
+  useAllowlist,
+  useAddAllow,
+  useRemoveAllow,
+  type AllowlistEntry,
+} from '../../lib/allowlist';
+import {
   useSuppressed,
   useMailBombConfig,
   useSaveMailBombConfig,
@@ -52,6 +58,7 @@ export function MailProtectionPage() {
       <Tabs
         items={[
           { key: 'blocklist', label: t('spam.blocklist.tab'), children: <BlocklistTab /> },
+          { key: 'allowlist', label: t('spam.allowlist.tab'), children: <AllowlistTab /> },
           { key: 'held', label: t('spam.held.tab'), children: <HeldMailTab /> },
           { key: 'junkRules', label: t('spam.junkRules.tab'), children: <JunkRulesTab /> },
         ]}
@@ -64,18 +71,32 @@ function BlocklistTab() {
   const { t } = useTranslation();
   const { message, modal } = AntApp.useApp();
   const { data: rows = [], isLoading } = useBlocklist();
+  const { data: allowRows = [] } = useAllowlist();
   const add = useAddBlock();
   const remove = useRemoveBlock();
   const [form] = Form.useForm<{ email: string; reason?: string }>();
 
   const onAdd = (v: { email: string; reason?: string }) => {
-    add.mutate(v, {
-      onSuccess: () => {
-        message.success(t('spam.blocklist.added'));
-        form.resetFields();
-      },
-      onError: (e) => message.error(e.message),
-    });
+    const doAdd = () =>
+      add.mutate(v, {
+        onSuccess: () => {
+          message.success(t('spam.blocklist.added'));
+          form.resetFields();
+        },
+        onError: (e) => message.error(e.message),
+      });
+    // Mirror of the allowlist-side warning: blocking a sender who is also on the
+    // Allowlist wins over it — flag the overlap instead of leaving a stale allow row.
+    const allowed = allowRows.some((r) => r.email.toLowerCase() === v.email.trim().toLowerCase());
+    if (allowed) {
+      modal.confirm({
+        title: t('spam.conflictWithAllow', { email: v.email }),
+        okButtonProps: { danger: true },
+        onOk: doAdd,
+      });
+    } else {
+      doAdd();
+    }
   };
 
   const onRemove = (row: BlocklistEntry) => {
@@ -155,6 +176,115 @@ function BlocklistTab() {
   );
 }
 
+/** Allowlist CRUD — the twin of the blocklist. An allowlisted sender's mail always
+ *  opens a ticket even when it carries list/bulk/auto-submitted headers (e.g. HR
+ *  announcements sent via a Google Group). Only relaxes that filter; blocklist /
+ *  mail-bomb / junk still apply. */
+function AllowlistTab() {
+  const { t } = useTranslation();
+  const { message, modal } = AntApp.useApp();
+  const { data: rows = [], isLoading } = useAllowlist();
+  const { data: blockRows = [] } = useBlocklist();
+  const add = useAddAllow();
+  const remove = useRemoveAllow();
+  const [form] = Form.useForm<{ email: string; reason?: string }>();
+
+  const onAdd = (v: { email: string; reason?: string }) => {
+    const doAdd = () =>
+      add.mutate(v, {
+        onSuccess: () => {
+          message.success(t('spam.allowlist.added'));
+          form.resetFields();
+        },
+        onError: (e) => message.error(e.message),
+      });
+    // The intake pipeline runs the Blocklist AFTER the allowlist relax and it always
+    // wins — allowing a blocked sender silently does nothing, so say it up front.
+    const blocked = blockRows.some((r) => r.email.toLowerCase() === v.email.trim().toLowerCase());
+    if (blocked) {
+      modal.confirm({ title: t('spam.conflictWithBlock', { email: v.email }), onOk: doAdd });
+    } else {
+      doAdd();
+    }
+  };
+
+  const onRemove = (row: AllowlistEntry) => {
+    modal.confirm({
+      title: t('spam.allowlist.confirmRemove', { email: row.email }),
+      okButtonProps: { danger: true },
+      onOk: () =>
+        remove
+          .mutateAsync(row.id)
+          .then(() => message.success(t('spam.allowlist.removed')))
+          .catch((e: Error) => message.error(e.message)),
+    });
+  };
+
+  return (
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Text type="secondary">{t('spam.allowlist.hint')}</Text>
+      <Form form={form} layout="inline" onFinish={onAdd}>
+        <Form.Item
+          name="email"
+          rules={[
+            { required: true, message: t('spam.allowlist.emailRequired') },
+            { type: 'email', message: t('spam.allowlist.emailInvalid') },
+          ]}
+        >
+          <Input placeholder={t('spam.allowlist.emailPlaceholder')} style={{ width: 260 }} />
+        </Form.Item>
+        <Form.Item name="reason">
+          <Input placeholder={t('spam.allowlist.reasonPlaceholder')} style={{ width: 260 }} />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={add.isPending}>
+          {t('spam.allowlist.addButton')}
+        </Button>
+      </Form>
+
+      <Table<AllowlistEntry>
+        rowKey="id"
+        loading={isLoading}
+        dataSource={rows}
+        pagination={false}
+        columns={[
+          { title: t('spam.allowlist.colEmail'), dataIndex: 'email', width: 260 },
+          {
+            title: t('spam.allowlist.colReason'),
+            dataIndex: 'reason',
+            render: (r: string | null) => r ?? '—',
+          },
+          {
+            title: t('spam.allowlist.colAllowedCount'),
+            dataIndex: 'allowedCount',
+            width: 130,
+            render: (n: number) => <Tag color={n > 0 ? 'green' : 'default'}>{n}</Tag>,
+          },
+          {
+            title: t('spam.allowlist.colAddedBy'),
+            dataIndex: 'addedByEmail',
+            render: (e: string | null) => e ?? '—',
+          },
+          {
+            title: t('spam.allowlist.colDate'),
+            dataIndex: 'createdAt',
+            width: 170,
+            render: (d: string) => new Date(d).toLocaleString(),
+          },
+          {
+            title: '',
+            width: 100,
+            render: (_: unknown, row: AllowlistEntry) => (
+              <Button size="small" danger onClick={() => onRemove(row)}>
+                {t('spam.allowlist.remove')}
+              </Button>
+            ),
+          },
+        ]}
+      />
+    </Space>
+  );
+}
+
 /** Mail-bomb threshold config + the "held mail" (suppressed) review: grouped by
  *  sender, each releasable ("Xử lý lại"), blockable, or ignorable (Story 7.2). */
 function HeldMailTab() {
@@ -173,6 +303,8 @@ function HeldMailTab() {
   };
 
   const onIgnore = (item: SuppressedItem) => {
+    // "Ignore" is audit-only on the BE (mark reviewed, row stays releasable) — no
+    // confirm needed. Verified in admin-mailbomb.service.ts before assuming otherwise.
     ignore.mutate(item.id, {
       onSuccess: () => message.success(t('spam.held.ignored')),
       onError: (e) => message.error(e.message),

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Table, Tag, Typography, Empty, Space, Segmented } from 'antd';
+import { Table, Tag, Empty, Space, Button, Dropdown } from 'antd';
+import { SortAscendingOutlined, DownOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useMe } from '../../lib/auth';
+import { TicketsTabBar } from '../inbox/TicketsTabBar';
 import { useTickets, displayCode, type TicketListItem, type SortDir } from '../../lib/tickets';
 import { StatusTag } from '../../components/StatusTag';
 import { AwayBadge } from '../../components/AwayBadge';
@@ -88,22 +90,40 @@ export function PendingPage() {
 
   return (
     <div>
-      <Space align="center" style={{ marginBottom: 12 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          {t('menu.pending')}
-        </Typography.Title>
-        <Segmented
-          value={dir}
-          onChange={(v) => {
-            setDir(v as SortDir);
-            setPage(1);
+      {/* Tab bar (with "Chờ xử lý" active) on the left; the snooze-sort control on the
+          right — no separate page title, which only duplicated the active tab. */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 10,
+          marginBottom: 12,
+        }}
+      >
+        <TicketsTabBar mb={0} />
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            selectable: true,
+            selectedKeys: [dir],
+            items: [
+              { key: 'asc', label: t('reports.pending.sortNearest') },
+              { key: 'desc', label: t('reports.pending.sortOldest') },
+            ],
+            onClick: ({ key }) => {
+              setDir(key as SortDir);
+              setPage(1);
+            },
           }}
-          options={[
-            { label: t('reports.pending.sortNearest'), value: 'asc' },
-            { label: t('reports.pending.sortOldest'), value: 'desc' },
-          ]}
-        />
-      </Space>
+        >
+          <Button icon={<SortAscendingOutlined />}>
+            {dir === 'asc' ? t('reports.pending.sortNearest') : t('reports.pending.sortOldest')}
+            <DownOutlined style={{ fontSize: 10, marginInlineStart: 2 }} />
+          </Button>
+        </Dropdown>
+      </div>
       <Table<TicketListItem>
         rowKey="id"
         loading={isLoading}
@@ -125,6 +145,7 @@ export function PendingPage() {
           pageSize,
           total: data?.total ?? 0,
           showSizeChanger: true,
+          hideOnSinglePage: true,
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);

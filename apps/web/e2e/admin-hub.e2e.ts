@@ -7,6 +7,8 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  * the menu nor route access. The scope/audit contract itself is IT-CFGSWEEP-001/002.
  */
 const DEV_PW = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+const SSA_PW = process.env.SEED_SSA_DEV_PASSWORD ?? 'Pmh@1234';
+const pwFor = (email: string): string => (email.startsWith('ssa@') ? SSA_PW : DEV_PW);
 
 const IGNORED = [/\[antd: compatible\]/, /React Router Future Flag/, /Failed to load resource/];
 
@@ -22,7 +24,7 @@ function trackConsoleErrors(page: Page): string[] {
 async function login(page: Page, email: string): Promise<void> {
   await page.goto('/login');
   await page.locator('input[autocomplete="username"]').fill(email);
-  await page.locator('input[autocomplete="current-password"]').fill(DEV_PW);
+  await page.locator('input[autocomplete="current-password"]').fill(pwFor(email));
   await page.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(/\/(inbox|my-tickets|pool)/, { timeout: 15000 });
 }

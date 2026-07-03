@@ -131,7 +131,7 @@ CREATE POLICY tickets_user ON tickets
         AND (
           app_role() = 'admin'                                       -- admin sees whole project
           OR (assignee_id = app_actor_id() AND status <> 'closed')   -- keep work-in-progress (FR59), bounded
-          OR category_id = ANY (app_groups())                        -- member/TL see their groups
+          OR category_id = ANY (app_groups())                        -- member/TL see their groups (đơn 5 v2: TL claims BY MEMBERSHIP, not project-wide)
         )
       )
     )
@@ -170,6 +170,30 @@ CREATE POLICY notifications_update ON notifications
 DROP POLICY IF EXISTS notifications_insert ON notifications;
 CREATE POLICY notifications_insert ON notifications
   FOR INSERT WITH CHECK (NOT app_is_system());
+
+-- ── resolved_at bookkeeping (Report v2) ──────────────────────────────────────
+-- Ticket status flips happen in HALF A DOZEN services (lifecycle, reply statusAfter,
+-- junk close, auto-close siblings, reopen…) — a trigger stamps the resolution
+-- instant in ONE place instead of chasing every call site. Entering
+-- resolved/closed sets it; leaving them (reopen) clears it so the eventual
+-- re-resolution restamps ("last resolution wins" for the avg-handling-time metric).
+CREATE OR REPLACE FUNCTION f_tickets_resolved_at() RETURNS trigger AS $$
+BEGIN
+  IF NEW.status IN ('resolved', 'closed') AND OLD.status NOT IN ('resolved', 'closed') THEN
+    NEW.resolved_at := now();
+  ELSIF NEW.status IN ('resolved', 'closed') AND NEW.resolved_at IS NULL THEN
+    -- In-set transition (resolved→closed) with no stamp: the pre-0014 cohort that
+    -- was sitting in 'resolved' at migration time. Late stamp beats never (review 3/7)
+    -- — without this branch those tickets stay excluded from avg/on-time FOREVER.
+    NEW.resolved_at := now();
+  ELSIF NEW.status NOT IN ('resolved', 'closed') AND OLD.status IN ('resolved', 'closed') THEN
+    NEW.resolved_at := NULL;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_tickets_resolved_at ON tickets;
+CREATE TRIGGER trg_tickets_resolved_at BEFORE UPDATE OF status ON tickets
+  FOR EACH ROW EXECUTE FUNCTION f_tickets_resolved_at();
 
 -- ── Grants for the app runtime role ──────────────────────────────────────────
 -- Everything exists by now (base tables + audit_log). The app role gets DML on

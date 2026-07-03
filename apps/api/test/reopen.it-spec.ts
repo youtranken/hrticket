@@ -162,7 +162,9 @@ describe('IT-REOPEN: auto-reopen on reply', () => {
     expect(tk1.assigneeId).toBeNull();
     expect(tk1.reopenCount).toBe(1);
     // a group member can claim it RIGHT NOW (status=open AND assignee null).
+    // claim() returns a union — a needsCategory branch here would be a test failure.
     const claimed = await assignSvc.claim(M, t1);
+    if ('needsCategory' in claimed) throw new Error('unexpected needsCategory on claim');
     expect(claimed.assigneeId).toBe(M.id);
     await harness!.db.update(users).set({ disabled: false }).where(eq(users.id, A));
 

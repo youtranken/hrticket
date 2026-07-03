@@ -1,12 +1,11 @@
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
-import request from 'supertest';
 import { and, eq } from 'drizzle-orm';
 import type { ItHarness } from './setup.it';
 import { startHarness } from './setup.it';
 import { AppModule } from '../src/app.module';
-import { makeUser } from './factories/user.factory';
+
 import { makeRaw, seedInbox } from './helpers/mail-raw';
 import { IntakeService } from '../src/modules/intake/intake.service';
 import {
@@ -123,13 +122,14 @@ describe('IT-THREAD: inbound threading', () => {
     expect(all.filter((t) => t.projectId === CNB)).toHaveLength(1);
   });
 
-  it('IT-THREAD-004: stranger reply → pending_approval; admin approves → active', async () => {
+  it('IT-THREAD-004: a first-seen address on a reply joins as ACTIVE (approval removed)', async () => {
     if (!ready) return;
     await seedInbox(harness!.db, HRIS, HRIS_BOX, makeRaw({ from: 'a@x.com', to: HRIS_BOX, subject: 'Orig', messageId: '<c4@x.com>' }), '<c4@x.com>');
     await intake.processReceived();
     const [t] = await tall();
 
-    // stranger c@y.com replies in-thread → pending_approval
+    // A new address replies in-thread → admitted ACTIVE right away: the next
+    // reply-all includes them with no human approval step (feature removed).
     await seedInbox(
       harness!.db,
       HRIS,
@@ -139,27 +139,10 @@ describe('IT-THREAD: inbound threading', () => {
     );
     await intake.processReceived();
 
-    const [stranger] = await harness!.db
+    const [newcomer] = await harness!.db
       .select()
       .from(participants)
       .where(and(eq(participants.ticketId, t!.id), eq(participants.email, 'c@y.com')));
-    expect(stranger!.status).toBe('pending_approval');
-
-    // Admin (hris) approves via the API.
-    await makeUser(harness!.db, { projectId: HRIS, email: 'admin4@test.local', role: 'admin' });
-    const login = await request(app!.getHttpServer())
-      .post('/api/auth/login')
-      .send({ email: 'admin4@test.local', password: 'test-password' })
-      .expect(201);
-    const cookie = login.headers['set-cookie'] as unknown as string[];
-
-    await request(app!.getHttpServer())
-      .patch(`/api/tickets/${t!.id}/participants/${stranger!.id}`)
-      .set('Cookie', cookie)
-      .send({ action: 'approve' })
-      .expect(200);
-
-    const [after] = await harness!.db.select().from(participants).where(eq(participants.id, stranger!.id));
-    expect(after!.status).toBe('active');
+    expect(newcomer!.status).toBe('active');
   });
 });

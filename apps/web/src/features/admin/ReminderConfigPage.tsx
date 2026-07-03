@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ClockCircleOutlined, MailOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import {
-  Alert,
   Button,
   Card,
+  Col,
   Form,
   InputNumber,
   Input,
+  Row,
   Select,
   Space,
   Switch,
@@ -14,6 +16,8 @@ import {
   Typography,
   App as AntApp,
 } from 'antd';
+import { PageHeader } from '../../components/PageHeader';
+import { palette } from '../../theme';
 import {
   useReminderConfig,
   useSaveReminderConfig,
@@ -23,7 +27,19 @@ import {
   type EmailTemplate,
 } from '../../lib/adminReminders';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
+
+/** A labelled field — caption above a full-width control, consistent spacing. */
+function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
+  return (
+    <div>
+      <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>
+        {label}
+      </Text>
+      {children}
+    </div>
+  );
+}
 
 /** Admin "Reminder settings" (Story 6.4): the shared overdue threshold + digest
  *  schedule, plus an email-template editor with a live "send test" to the admin. */
@@ -39,41 +55,94 @@ export function ReminderConfigPage() {
   }, [cfg, form]);
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%', maxWidth: 760 }}>
-      <Title level={4}>{t('reminders.title')}</Title>
+    <div style={{ maxWidth: 820 }}>
+      <PageHeader title={t('reminders.title')} subtitle={t('reminders.subtitle')} />
 
-      <Card title={t('reminders.scheduleTitle')}>
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={(v) =>
-            save.mutate(v, {
-              onSuccess: () => message.success(t('reminders.saved')),
-              onError: (e) => message.error(e.message),
-            })
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Card
+          size="small"
+          title={
+            <Space>
+              <ClockCircleOutlined style={{ color: palette.primary }} />
+              {t('reminders.scheduleTitle')}
+            </Space>
           }
         >
-          <Form.Item name="overdueDays" label={t('reminders.overdueDays')} rules={[{ required: true }]}>
-            <InputNumber min={1} max={60} style={{ width: 120 }} />
-          </Form.Item>
-          <Form.Item name="digestHour" label={t('reminders.digestHour')} rules={[{ required: true }]}>
-            <InputNumber min={0} max={23} style={{ width: 120 }} addonAfter="h" />
-          </Form.Item>
-          <Form.Item name="digestMaxN" label={t('reminders.digestMaxN')} rules={[{ required: true }]}>
-            <InputNumber min={1} max={100} style={{ width: 120 }} />
-          </Form.Item>
-          <Form.Item name="digestEnabled" label={t('reminders.digestEnabled')} valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={save.isPending}>
-            {t('common.save')}
-          </Button>
-        </Form>
-        <Alert style={{ marginTop: 16 }} type="info" showIcon message={t('reminders.fixedNote')} />
-      </Card>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={(v) =>
+              save.mutate(v, {
+                onSuccess: () => message.success(t('reminders.saved')),
+                onError: (e) => message.error(e.message),
+              })
+            }
+          >
+            <Row gutter={16}>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  name="overdueDays"
+                  label={t('reminders.overdueDays')}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={1} max={60} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  name="poolUnclaimedDays"
+                  label={t('reminders.poolUnclaimedDays')}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={60} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  name="digestMaxN"
+                  label={t('reminders.digestMaxN')}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={1} max={100} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  name="digestHour"
+                  label={t('reminders.digestHour')}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={23} style={{ width: '100%' }} addonAfter="h" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item
+                  name="digestMinute"
+                  label={t('reminders.digestMinute')}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={59} style={{ width: '100%' }} addonAfter="m" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item
+              name="digestEnabled"
+              label={t('reminders.digestEnabled')}
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Button type="primary" icon={<SaveOutlined />} htmlType="submit" loading={save.isPending}>
+              {t('common.save')}
+            </Button>
+          </Form>
+        </Card>
 
-      <TemplateEditor />
-    </Space>
+        <TemplateEditor />
+      </Space>
+    </div>
   );
 }
 
@@ -122,46 +191,82 @@ function TemplateEditor() {
   };
 
   return (
-    <Card title={t('reminders.templatesTitle')}>
-      <Select
-        style={{ width: 280, marginBottom: 12 }}
-        placeholder={t('reminders.pickTemplate')}
-        value={key}
-        onChange={pick}
-        options={(templates ?? []).map((tp) => ({ value: tp.key, label: t(`reminders.tpl.${tp.key}`, { defaultValue: tp.key }) }))}
-      />
+    <Card
+      size="small"
+      title={
+        <Space>
+          <MailOutlined style={{ color: palette.primary }} />
+          {t('reminders.templatesTitle')}
+        </Space>
+      }
+    >
+      <Field label={t('reminders.pickTemplate')}>
+        <Select
+          style={{ width: '100%', maxWidth: 360 }}
+          placeholder={t('reminders.pickTemplate')}
+          value={key}
+          onChange={pick}
+          options={(templates ?? []).map((tp) => ({
+            value: tp.key,
+            label: t(`reminders.tpl.${tp.key}`, { defaultValue: tp.key }),
+          }))}
+        />
+      </Field>
       {draft && (
-        <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          <Text type="secondary">
-            {t('reminders.placeholders')}: {draft.placeholders.map((p) => <Tag key={p}>{`{{${p}}}`}</Tag>)}
-          </Text>
-          <Input
-            addonBefore="Subject (VI)"
-            value={draft.subjectVi}
-            onChange={(e) => setDraft({ ...draft, subjectVi: e.target.value })}
-          />
-          <Input
-            addonBefore="Subject (EN)"
-            value={draft.subjectEn}
-            onChange={(e) => setDraft({ ...draft, subjectEn: e.target.value })}
-          />
-          <Input.TextArea
-            rows={4}
-            value={draft.bodyVi}
-            onChange={(e) => setDraft({ ...draft, bodyVi: e.target.value })}
-            placeholder="Body (VI)"
-          />
-          <Input.TextArea
-            rows={4}
-            value={draft.bodyEn}
-            onChange={(e) => setDraft({ ...draft, bodyEn: e.target.value })}
-            placeholder="Body (EN)"
-          />
+        <Space direction="vertical" size="middle" style={{ width: '100%', marginTop: 16 }}>
+          <div>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {t('reminders.placeholders')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Space size={4} wrap>
+                {draft.placeholders.map((p) => (
+                  <Tag key={p} color="blue">{`{{${p}}}`}</Tag>
+                ))}
+              </Space>
+            </div>
+          </div>
+          <Row gutter={[16, 12]}>
+            <Col xs={24} md={12}>
+              <Field label={t('reminders.subjectVi')}>
+                <Input
+                  value={draft.subjectVi}
+                  onChange={(e) => setDraft({ ...draft, subjectVi: e.target.value })}
+                />
+              </Field>
+            </Col>
+            <Col xs={24} md={12}>
+              <Field label={t('reminders.subjectEn')}>
+                <Input
+                  value={draft.subjectEn}
+                  onChange={(e) => setDraft({ ...draft, subjectEn: e.target.value })}
+                />
+              </Field>
+            </Col>
+            <Col xs={24} md={12}>
+              <Field label={t('reminders.bodyVi')}>
+                <Input.TextArea
+                  rows={6}
+                  value={draft.bodyVi}
+                  onChange={(e) => setDraft({ ...draft, bodyVi: e.target.value })}
+                />
+              </Field>
+            </Col>
+            <Col xs={24} md={12}>
+              <Field label={t('reminders.bodyEn')}>
+                <Input.TextArea
+                  rows={6}
+                  value={draft.bodyEn}
+                  onChange={(e) => setDraft({ ...draft, bodyEn: e.target.value })}
+                />
+              </Field>
+            </Col>
+          </Row>
           <Space>
-            <Button type="primary" onClick={onSave} loading={save.isPending}>
+            <Button type="primary" icon={<SaveOutlined />} onClick={onSave} loading={save.isPending}>
               {t('common.save')}
             </Button>
-            <Button onClick={onTest} loading={sending}>
+            <Button icon={<SendOutlined />} onClick={onTest} loading={sending}>
               {t('reminders.testSend')}
             </Button>
           </Space>

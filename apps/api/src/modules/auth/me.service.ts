@@ -17,6 +17,8 @@ export interface MePayload {
   /** Per-account UI language (Story 11.2) — applied on login from any machine. */
   language: string;
   availability: { awayFrom: string | null; awayTo: string | null };
+  /** Whether OTP 2FA is on — the Profile security switch reflects this. */
+  otpEnabled: boolean;
 }
 
 @Injectable()
@@ -44,7 +46,12 @@ export class MeService {
         .where(and(eq(roleCapabilities.role, u.role), eq(roleCapabilities.allowed, true)));
 
       const [av] = await tx
-        .select({ awayFrom: users.awayFrom, awayTo: users.awayTo, language: users.language })
+        .select({
+          awayFrom: users.awayFrom,
+          awayTo: users.awayTo,
+          language: users.language,
+          otpEnabled: users.otpEnabled,
+        })
         .from(users)
         .where(eq(users.id, u.id));
 
@@ -59,6 +66,7 @@ export class MeService {
         mustChangePassword: u.mustChangePassword,
         language: av?.language ?? 'vi',
         availability: { awayFrom: av?.awayFrom ?? null, awayTo: av?.awayTo ?? null },
+        otpEnabled: av?.otpEnabled ?? false,
       };
     });
   }

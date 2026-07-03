@@ -24,9 +24,23 @@ const replySchema = z.object({
   bcc: z.array(z.string().email()).optional(),
   body: z.string().min(1),
   bodyHtml: z.string().optional(),
-  attachmentIds: z.array(z.string().uuid()).optional(),
+  attachmentIds: z.array(z.string().uuid()).max(20).optional(),
   confirmNewRecipients: z.boolean().optional(),
   closeAfter: z.boolean().optional(),
+  statusAfter: z.enum(['pending', 'resolved']).optional(),
+  snoozeUntil: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
+const forwardSchema = z.object({
+  to: z.array(z.string().email()).min(1),
+  cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
+  body: z.string().optional(),
+  ticketMessageId: z.string().uuid(),
+  confirmNewRecipients: z.boolean().optional(),
 });
 
 const noteSchema = z.object({ body: z.string().min(1) });
@@ -59,6 +73,14 @@ export class ComposeController {
     const parsed = replySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
     return this.replies.reply(user, id, parsed.data);
+  }
+
+  /** Forward one message of the thread to new recipients (Gmail-style Fwd:). */
+  @Post('forward')
+  async forward(@CurrentUser() user: SessionUser, @Param('id') id: string, @Body() body: unknown) {
+    const parsed = forwardSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.replies.forward(user, id, parsed.data);
   }
 
   @Post('notes')

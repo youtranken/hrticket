@@ -1,13 +1,48 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
-import { Card, Table, Tabs, Tag, Input, Space, Typography, Button } from 'antd';
+import { useSearchParams, Link } from 'react-router-dom';
+import { Card, Table, Tabs, Tag, Input, Space, Typography, Button, Tooltip } from 'antd';
 import { useAudit, useViewLog, type AuditRow, type ViewLogRow } from '../../lib/audit';
 
 const { Text } = Typography;
 
 function fmt(iso: string): string {
   return new Date(iso).toLocaleString('vi-VN');
+}
+
+/** Readable object cell: a ticket shows its #code (linked) + subject + short uid; a user
+ *  shows name (email); everything else keeps the raw type:id. */
+function ObjectCell({ row }: { row: AuditRow }) {
+  if (row.objectType === 'ticket' && row.objectId) {
+    const shortId = row.objectId.slice(0, 8);
+    return (
+      <Space direction="vertical" size={0}>
+        <span>
+          <Link to={`/tickets/${row.objectId}`} onClick={(e) => e.stopPropagation()}>
+            <Text strong>{row.ticketCode ?? '#?'}</Text>
+          </Link>
+          {row.objectLabel && (
+            <Text style={{ marginLeft: 6 }}>· {row.objectLabel.replace(`${row.ticketCode} · `, '')}</Text>
+          )}
+        </span>
+        <Tooltip title={row.objectId}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {shortId}…
+          </Text>
+        </Tooltip>
+      </Space>
+    );
+  }
+  if (row.objectType === 'user') {
+    return <span>{row.objectLabel ?? `user:${row.objectId ?? ''}`}</span>;
+  }
+  if (!row.objectType) return <>—</>;
+  return (
+    <span>
+      {row.objectType}
+      {row.objectId ? `:${row.objectId}` : ''}
+    </span>
+  );
 }
 
 /** Story 9.5 — Audit log + sensitive view-log reader (Admin/TL/SSA; Member → 403). */
@@ -109,7 +144,7 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
           },
           {
             title: t('audit.object'),
-            render: (_: unknown, r: AuditRow) => (r.objectType ? `${r.objectType}:${r.objectId ?? ''}` : '—'),
+            render: (_: unknown, r: AuditRow) => <ObjectCell row={r} />,
           },
         ]}
       />

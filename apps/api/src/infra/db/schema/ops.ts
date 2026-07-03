@@ -45,8 +45,11 @@ export const reminderConfig = pgTable('reminder_config', {
     .references(() => projects.id),
   overdueDays: integer('overdue_days').notNull().default(3),
   digestHour: integer('digest_hour').notNull().default(8), // VN local hour
+  digestMinute: integer('digest_minute').notNull().default(30), // VN local minute (đơn 12: 08:30)
   digestEnabled: boolean('digest_enabled').notNull().default(true),
   digestMaxN: integer('digest_max_n').notNull().default(20),
+  /** Đơn 12: a pool ticket unclaimed for >= this many days enters the admin digest. */
+  poolUnclaimedDays: integer('pool_unclaimed_days').notNull().default(2),
 });
 
 /** Dynamic per-project settings (attachment whitelist/cap, auto-tag, mail-bomb, disk). */
@@ -95,6 +98,37 @@ export const digestLog = pgTable(
     dateVn: date('date_vn').notNull(),
   },
   (t) => [unique('uq_digest').on(t.recipient, t.dateVn)],
+);
+
+/** Overdue-escalation digest dedup per (recipient TL, VN date) — one roll-up mail a
+ *  day listing the overdue tickets in that lead's groups (mirrors digest_log). */
+export const overdueEscalationLog = pgTable(
+  'overdue_escalation_log',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    recipient: text('recipient').notNull(),
+    dateVn: date('date_vn').notNull(),
+  },
+  (t) => [unique('uq_overdue_escalation').on(t.recipient, t.dateVn)],
+);
+
+/** Agent canned-reply templates per project (editable by SSA/Admin/TL; everyone may
+ *  USE them when composing a reply). Bodies may carry {{ticketCode}}/{{requesterName}}/
+ *  {{agentName}} placeholders, substituted client-side on insert. */
+export const replyTemplates = pgTable(
+  'reply_templates',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    createdBy: uuid('created_by').references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('idx_reply_templates_project').on(t.projectId)],
 );
 
 /** "Contact HR" reopen-locked notice throttle: ≤1 notice / 24h / requester per

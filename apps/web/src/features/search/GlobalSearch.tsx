@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AutoComplete, Input, Tag, Typography } from 'antd';
 import type { InputRef } from 'antd';
@@ -48,11 +48,19 @@ function useDebounced(value: string, ms: number): string {
 export function GlobalSearch() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: me } = useMe();
   const ssa = me?.role === 'ssa';
   const inputRef = useRef<InputRef>(null);
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
+
+  // The search box lives in the persistent header → clear it on every navigation so a
+  // stale query (or a ticket id from a picked result) never lingers across pages.
+  useEffect(() => {
+    setText('');
+    setOpen(false);
+  }, [location.pathname]);
   const debounced = useDebounced(text, 250);
   const { data } = useTicketSearch(debounced, 1, 5, open);
 
@@ -74,6 +82,7 @@ export function GlobalSearch() {
     if (!trimmed) return;
     pushRecent(trimmed);
     setOpen(false);
+    setText(''); // clear the box once the search is submitted (results live on /search)
     navigate(`/search?q=${encodeURIComponent(trimmed)}`);
   };
 
@@ -101,6 +110,18 @@ export function GlobalSearch() {
       style={{ minWidth: 280 }}
       open={open}
       options={options}
+      // The displayed value is controlled on the AutoComplete itself, NOT on the inner
+      // Input — AntD clones the child and would otherwise OVERRIDE the Input's `value`
+      // with the picked option's value (the ticket id), leaving "158xxx" stuck in the box.
+      value={text}
+      onChange={(v: string) => {
+        // Selecting a recent option also fires onChange with its `recent:` value — ignore
+        // that (onSelect handles it). Keep only genuine typing. A ticket pick navigates +
+        // the route-change effect clears the box, so any momentary id never lingers.
+        if (v?.startsWith('recent:')) return;
+        setText(v);
+        setOpen(true);
+      }}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
       onSelect={(value: string) => {
@@ -109,23 +130,14 @@ export function GlobalSearch() {
           setText(r);
           goResults(r);
         } else {
-          // Selected a ticket result → open it directly.
+          // Selected a ticket result → open it directly; clear the box immediately.
+          setText('');
           setOpen(false);
           navigate(`/tickets/${value}`);
         }
       }}
     >
-      <Input.Search
-        ref={inputRef}
-        allowClear
-        placeholder={t('reports.search.placeholder')}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setOpen(true);
-        }}
-        onSearch={goResults}
-      />
+      <Input.Search ref={inputRef} allowClear placeholder={t('reports.search.placeholder')} onSearch={goResults} />
     </AutoComplete>
   );
 }

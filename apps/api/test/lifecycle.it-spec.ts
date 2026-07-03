@@ -147,22 +147,60 @@ describe('IT-STATE / IT-CLOSE: lifecycle transitions + reply&close', () => {
     expect(tk!.status).toBe('open'); // untouched
   });
 
-  it('IT-CLOSE-002: close permission matrix — assignee/admin ok, member-not-assignee 403', async () => {
+  it('IT-CLOSE-002: reply permission matrix — assignee ok, member-not-assignee 403, Admin cannot reply but oversees the close via lifecycle', async () => {
     if (!ready) return;
     const t = await makeTicket('in_progress', A.id);
+    // A member who is not the assignee cannot reply (must claim first).
     await expect(
       replySvc.reply(B, t, { to: ['r@x.com'], body: 'x', closeAfter: true }),
     ).rejects.toMatchObject({ status: 403 });
 
-    // Admin closes on behalf — allowed.
-    const res = await replySvc.reply(Admin, t, {
+    // Admin is administrative — they do NOT process tickets by replying (sending email),
+    // even to close. Reply & Close is rejected for Admin/SSA.
+    await expect(
+      replySvc.reply(Admin, t, {
+        to: ['r@x.com'],
+        body: 'closing for you',
+        closeAfter: true,
+        confirmNewRecipients: true,
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+
+    // …but Admin keeps lifecycle oversight: they can close via the status path (no email,
+    // no processing) — the ticket isn't left stuck just because Admin can't reply.
+    await statusSvc.changeStatus(Admin, t, { to: 'closed' });
+    const [tk] = await harness!.db.select().from(tickets).where(eq(tickets.id, t));
+    expect(tk!.status).toBe('closed');
+  });
+
+  it('IT-CLOSE-003: replying to a Pending ticket wakes it to In Progress and clears the snooze', async () => {
+    if (!ready) return;
+    const t = await makeTicket('pending', A.id);
+    await harness!.db.update(tickets).set({ snoozeUntil: '2999-01-01' }).where(eq(tickets.id, t));
+    const res = await replySvc.reply(A, t, {
       to: ['r@x.com'],
-      body: 'closing for you',
+      body: 'following up',
+      confirmNewRecipients: true,
+    });
+    expect('closed' in res && res.closed).toBe(false);
+    const [tk] = await harness!.db.select().from(tickets).where(eq(tickets.id, t));
+    expect(tk!.status).toBe('in_progress'); // woken, not left snoozed
+    expect(tk!.snoozeUntil).toBeNull();
+  });
+
+  it('IT-CLOSE-004: reply & close on a Pending ticket closes it in one tx', async () => {
+    if (!ready) return;
+    const t = await makeTicket('pending', A.id);
+    await harness!.db.update(tickets).set({ snoozeUntil: '2999-01-01' }).where(eq(tickets.id, t));
+    const res = await replySvc.reply(A, t, {
+      to: ['r@x.com'],
+      body: 'resolved, closing',
       closeAfter: true,
       confirmNewRecipients: true,
     });
     expect('closed' in res && res.closed).toBe(true);
     const [tk] = await harness!.db.select().from(tickets).where(eq(tickets.id, t));
     expect(tk!.status).toBe('closed');
+    expect(tk!.closedAt).not.toBeNull();
   });
 });

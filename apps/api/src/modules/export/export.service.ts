@@ -100,27 +100,43 @@ export class ExportService {
     user: SessionUser,
     projectId: number,
     kind: 'by-time' | 'by-category' | 'by-staff',
-    range: { from?: string; to?: string },
+    range: { from?: string; to?: string; granularity?: 'week' | 'month' | 'year'; assigneeId?: string },
     lang: 'vi' | 'en',
   ): Promise<ExportTable> {
     const L = labels(lang);
     let headers: string[];
     let rows: string[][];
     if (kind === 'by-time') {
-      const { buckets } = await this.reporting.byTime(user, projectId, range.from, range.to);
-      headers = [L.month, L.created, L.closed, L.open, L.overdue, L.reopened];
-      rows = buckets.map((b) => [b.bucket, n(b.created), n(b.closed), n(b.open), n(b.overdue), n(b.reopened)]);
+      const { buckets } = await this.reporting.byTime(user, projectId, range);
+      const period = range.granularity === 'week' ? L.week : range.granularity === 'year' ? L.year : L.month;
+      headers = [period, L.created, L.handled, L.closed, L.open, L.overdue, L.reopened];
+      rows = buckets.map((b) => [
+        b.bucket, n(b.created), n(b.handled), n(b.closed), n(b.open), n(b.overdue), n(b.reopened),
+      ]);
     } else if (kind === 'by-category') {
-      const { categories } = await this.reporting.byCategory(user, projectId, range.from, range.to);
-      headers = [L.category, L.created, L.closed, L.open, L.overdue];
+      const { categories } = await this.reporting.byCategory(user, projectId, range);
+      headers = [L.category, L.created, L.handled, L.open, L.overdue];
       rows = categories.map((c) => [
         (lang === 'en' ? c.nameEn : c.nameVi) ?? L.uncategorized,
-        n(c.created), n(c.closed), n(c.open), n(c.overdue),
+        n(c.created), n(c.handled), n(c.open), n(c.overdue),
       ]);
     } else {
-      const { staff } = await this.reporting.byStaff(user, projectId, range.from, range.to);
-      headers = [L.assignee, L.handled, L.closed, L.open, L.overdue];
-      rows = staff.map((s) => [s.name ?? L.unassigned, n(s.handled), n(s.closed), n(s.open), n(s.overdue)]);
+      const { staff } = await this.reporting.byStaff(user, projectId, range);
+      headers = [L.assignee, L.holding, L.handled, L.overdue, L.avgDays, L.onTime];
+      // The pool row mirrors the dashboard EXACTLY (AC4): handled/avg/on-time are
+      // blanked — nobody "handled" an unassigned ticket (junk-close / auto-close
+      // can resolve pool tickets and would otherwise print misleading quality stats).
+      rows = staff.map((s) => {
+        const pool = s.assigneeId === null;
+        return [
+          s.name ?? L.unassigned,
+          n(s.holding),
+          pool ? '' : n(s.handled),
+          n(s.overdue),
+          pool || s.avgDays === null ? '' : s.avgDays.toFixed(1),
+          pool || s.onTimePct === null ? '' : `${Math.round(s.onTimePct)}%`,
+        ];
+      });
     }
     await this.audit(user, 'export.report', { kind, range, rowCount: rows.length });
     return { headers, rows, baseName: `report_${kind}_${todayVn()}`, sheetName: 'Report', rowCount: rows.length };
@@ -182,13 +198,17 @@ function labels(lang: 'vi' | 'en') {
     ? {
         code: 'Code', subject: 'Subject', category: 'Category', status: 'Status', requester: 'Requester',
         assignee: 'Assignee', tags: 'Tags', createdAt: 'Created at', closedAt: 'Closed at', overdue: 'Overdue (days)',
-        reopenCount: 'Reopen count', month: 'Month', created: 'Created', closed: 'Closed', open: 'Open',
+        reopenCount: 'Reopen count', month: 'Month', week: 'Week', year: 'Year', created: 'Created',
+        closed: 'Closed', open: 'Open',
         reopened: 'Reopened', handled: 'Handled', uncategorized: '(Uncategorized)', unassigned: '(Unassigned)',
+        holding: 'Holding', avgDays: 'Avg handling (days)', onTime: 'On time',
       }
     : {
         code: 'Mã', subject: 'Tiêu đề', category: 'Nhóm', status: 'Trạng thái', requester: 'Người gửi',
         assignee: 'Người xử lý', tags: 'Nhãn', createdAt: 'Ngày tạo', closedAt: 'Ngày đóng', overdue: 'Quá hạn (ngày)',
-        reopenCount: 'Số lần mở lại', month: 'Tháng', created: 'Tạo mới', closed: 'Đã đóng', open: 'Đang mở',
+        reopenCount: 'Số lần mở lại', month: 'Tháng', week: 'Tuần', year: 'Năm', created: 'Tạo mới',
+        closed: 'Đã đóng', open: 'Đang mở',
         reopened: 'Mở lại', handled: 'Đã xử lý', uncategorized: '(Chưa phân nhóm)', unassigned: '(Chưa gán)',
+        holding: 'Đang giữ', avgDays: 'TG xử lý TB (ngày)', onTime: 'Đúng hạn',
       };
 }

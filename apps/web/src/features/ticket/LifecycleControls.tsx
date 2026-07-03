@@ -26,11 +26,17 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeDate, setSnoozeDate] = useState('');
   const [snoozeNote, setSnoozeNote] = useState('');
+  // "Mark resolved" opens a confirm with an optional "close it too" tickbox, so the
+  // common resolve→close in one step doesn't need a second trip to the dropdown.
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveAndClose, setResolveAndClose] = useState(false);
 
-  const inGroup = ticket.categoryId !== null && (me?.groups ?? []).includes(ticket.categoryId);
   const isAdmin = me?.role === 'ssa' || me?.role === 'admin';
   const mine = ticket.assignee?.id === me?.user.id;
-  const canAct = isAdmin || mine || (me?.role === 'team_lead' && inGroup);
+  // Only the HANDLER (assignee) drives the lifecycle — plus Admin/SSA as a supervisory
+  // override. A Team Lead who isn't the assignee coordinates (assign), they don't change
+  // status; if a TL wants to handle a ticket they assign it to themselves first.
+  const canAct = isAdmin || mine;
   if (!canAct) return null;
 
   const next = manualNextStates(ticket.status as TicketStatus);
@@ -53,8 +59,18 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
 
   const onPick = (to: string) => {
     if (to === 'pending') setSnoozeOpen(true);
-    else if (to === 'closed') confirmClose();
+    else if (to === 'resolved') {
+      setResolveAndClose(false);
+      setResolveOpen(true);
+    } else if (to === 'closed') confirmClose();
     else doChange(to);
+  };
+
+  const submitResolve = () => {
+    // Tick "close too" → jump straight to Closed (In Progress → Closed is legal);
+    // otherwise just mark Resolved.
+    doChange(resolveAndClose ? 'closed' : 'resolved');
+    setResolveOpen(false);
   };
 
   const menuItems: MenuProps['items'] = next.map((s) => ({
@@ -115,6 +131,24 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
         </Checkbox>
       )}
 
+      {/* Mark resolved → confirm, with a "close it too" tickbox for the frequent
+          resolve-and-close in a single action. */}
+      <Modal
+        open={resolveOpen}
+        title={t('lifecycle.resolveTitle')}
+        okText={t('lifecycle.confirm')}
+        okButtonProps={{ loading: changeStatus.isPending }}
+        onOk={submitResolve}
+        onCancel={() => setResolveOpen(false)}
+      >
+        <Checkbox checked={resolveAndClose} onChange={(e) => setResolveAndClose(e.target.checked)}>
+          {t('lifecycle.resolveAndClose')}
+        </Checkbox>
+        <div style={{ marginTop: 6, color: '#8c94a3', fontSize: 12 }}>
+          {t('lifecycle.resolveAndCloseHint')}
+        </div>
+      </Modal>
+
       {/* Pending: a future date is mandatory (server 422s otherwise). Native date
           input — the app deliberately avoids dayjs (AntD DatePicker dep). */}
       <Modal
@@ -128,6 +162,7 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
         <Space direction="vertical" style={{ width: '100%' }}>
           <Input
             type="date"
+            min={new Date().toISOString().slice(0, 10)}
             value={snoozeDate}
             onChange={(e) => setSnoozeDate(e.target.value)}
             aria-label={t('lifecycle.snoozeUntil')}

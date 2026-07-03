@@ -8,6 +8,7 @@ export interface AdminUser {
   role: string;
   disabled: boolean;
   projectId: number | null;
+  otpEnabled?: boolean;
   awayFrom?: string | null;
   awayTo?: string | null;
   lastLoginAt?: string | null;
@@ -21,6 +22,7 @@ export function createUser(input: {
   name: string;
   role: AssignableRole;
   categoryIds?: number[];
+  projectId?: number; // SSA only — which project the new user belongs to
 }): Promise<{ id: string; tempPassword: string }> {
   return api('/admin/users', { method: 'POST', body: JSON.stringify(input) });
 }
@@ -29,6 +31,14 @@ export function setUserRole(id: string, role: AssignableRole): Promise<{ ok: tru
 }
 export function setUserDisabled(id: string, disabled: boolean): Promise<{ ok: true }> {
   return api(`/admin/users/${id}/disabled`, { method: 'PATCH', body: JSON.stringify({ disabled }) });
+}
+export function updateUser(id: string, input: { email?: string; name?: string }): Promise<{ ok: true }> {
+  return api(`/admin/users/${id}/profile`, { method: 'PATCH', body: JSON.stringify(input) });
+}
+/** Move a user to another project (SSA only). Clears their groups + frees their open
+ *  tickets in the old project; the user must re-login. */
+export function moveUserProject(id: string, projectId: number): Promise<{ ok: true }> {
+  return api(`/admin/users/${id}/project`, { method: 'PATCH', body: JSON.stringify({ projectId }) });
 }
 
 export interface AutoAssignMember {

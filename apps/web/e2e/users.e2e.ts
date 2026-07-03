@@ -54,16 +54,17 @@ test('9.2 user admin: create → promote → disable', async ({ page }) => {
   const row = page.locator('.ant-table-row', { hasText: email });
   await expect(row).toBeVisible({ timeout: 10000 });
 
-  // Promote Member → Team Lead via the inline role Select.
+  // Promote Member → Team Lead via the inline role Select (now confirmed).
   await row.locator('.ant-select').click();
   await page.locator('.ant-select-item-option', { hasText: 'Trưởng nhóm' }).click();
+  await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'OK' }).click();
   await expect(page.locator('.ant-message')).toContainText('Đã đổi vai trò', { timeout: 10000 });
 
-  // Disable the user (Popconfirm → OK).
-  await row.getByRole('button', { name: 'Khóa' }).click();
-  await page.locator('.ant-popconfirm-buttons').getByRole('button', { name: 'OK' }).click();
-  await expect(page.locator('.ant-message')).toContainText('Đã khóa', { timeout: 10000 });
-  await expect(row).toContainText('Đã khóa');
+  // Disable the user — flip the status Switch, confirm.
+  await row.locator('.ant-switch').click();
+  await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'Vô hiệu hóa' }).click();
+  await expect(page.locator('.ant-message')).toContainText('Đã vô hiệu hóa', { timeout: 10000 });
+  await expect(row.locator('.ant-switch')).not.toHaveClass(/ant-switch-checked/);
 
   expect(fatal, fatal.join('\n')).toEqual([]);
 });

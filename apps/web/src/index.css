@@ -1,0 +1,278 @@
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* Segoe UI-led system stack — full Vietnamese + Latin, no web-font download (offline-safe). */
+  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue',
+    'Noto Sans', Arial, sans-serif;
+  background: #f5f6f8;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code,
+kbd,
+pre,
+.mono {
+  font-family: 'Cascadia Code', Consolas, 'SFMono-Regular', 'JetBrains Mono', monospace;
+}
+
+/* Login (v1 redesign) — a 6/4 brand+form split on laptop/desktop that, on tablet &
+   phone, swaps the big brand panel for a compact navy top bar so branding never just
+   disappears. The brand panel is layered (gradient + gold glow + dotted texture +
+   concentric rings) for depth without being flashy. */
+.login-root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.login-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 6fr 4fr;
+}
+/* Compact brand bar — only shown on tablet/phone (hidden where the full panel shows). */
+.login-mobilebar {
+  display: none;
+}
+.login-brand {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 28px;
+  padding: clamp(32px, 5vw, 64px);
+  color: #fff;
+  background:
+    radial-gradient(120% 80% at 86% 12%, rgba(232, 177, 28, 0.12), transparent 58%),
+    linear-gradient(150deg, #0e1c30 0%, #1b3257 55%, #24446f 100%);
+}
+/* faint dotted texture, faded out toward the lower-left so it never competes with text */
+.login-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+  -webkit-mask-image: linear-gradient(160deg, #000 18%, transparent 72%);
+  mask-image: linear-gradient(160deg, #000 18%, transparent 72%);
+  pointer-events: none;
+}
+/* gold concentric rings, lower-right */
+.login-brand::after {
+  content: '';
+  position: absolute;
+  width: 460px;
+  height: 460px;
+  right: -150px;
+  bottom: -170px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(232, 177, 28, 0.22);
+  box-shadow:
+    0 0 0 38px rgba(232, 177, 28, 0.05),
+    inset 0 0 0 64px rgba(255, 255, 255, 0.02);
+  pointer-events: none;
+}
+/* keep real content above the decorative pseudo-elements */
+.login-brand > * {
+  position: relative;
+  z-index: 1;
+}
+.login-brand__title {
+  color: #fff !important;
+  margin: 0 0 14px !important;
+  font-size: clamp(24px, 2.4vw, 34px) !important;
+  line-height: 1.25 !important;
+  letter-spacing: -0.01em;
+}
+.login-brand__tagline {
+  display: block;
+  max-width: 30rem;
+  color: #b9c6dc;
+  font-size: clamp(14px, 1.1vw, 16px);
+  line-height: 1.6;
+}
+.login-brand__points {
+  list-style: none;
+  margin: 30px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-brand__points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #d7e0ee;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.login-brand__points .anticon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #e8b11c;
+  font-size: 17px;
+}
+.login-brand__foot {
+  color: #6f82a0;
+  font-size: 12px;
+}
+/* Form side: a soft tinted canvas (not a glaring full-white wall) with the form
+   floating on a white card for depth. */
+.login-form {
+  display: grid;
+  place-items: center;
+  padding: clamp(20px, 4vw, 40px);
+  background:
+    radial-gradient(120% 70% at 50% -10%, #eef2f9, transparent 70%),
+    #f4f6fb;
+}
+.login-card {
+  width: 380px;
+  max-width: 100%;
+  padding: clamp(22px, 3vw, 34px);
+  background: #fff;
+  border: 1px solid #e9edf4;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(15, 27, 51, 0.08);
+}
+@media (max-width: 992px) {
+  .login-split {
+    grid-template-columns: 1fr;
+  }
+  .login-brand {
+    display: none;
+  }
+  .login-mobilebar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    color: #fff;
+    background: linear-gradient(120deg, #13243d, #24446f);
+  }
+  .login-mobilebar img {
+    height: 34px;
+    padding: 5px;
+    background: #fff;
+    border-radius: 8px;
+  }
+  .login-mobilebar__title {
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.3;
+  }
+}
+/* Phone: tighten the card so it never crowds small screens. */
+@media (max-width: 480px) {
+  .login-card {
+    border: none;
+    box-shadow: none;
+    padding: 4px;
+  }
+  .login-form {
+    place-items: start center;
+    padding-top: 28px;
+  }
+}
+
+/* Group membership rows (/admin/groups) — a clear hover so it's obvious a row is
+   interactive, and a stronger "lift" on the draggable in-group rows. */
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #eaedf3;
+  border-radius: 8px;
+  background: #fff;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.group-row:hover {
+  background: #f0f4fa;
+  border-color: #c7d6ec;
+}
+.group-row--drag {
+  cursor: grab;
+}
+.group-row--drag:hover {
+  border-color: #1f3a5f;
+  box-shadow: 0 3px 10px rgba(31, 58, 95, 0.14);
+}
+.group-row--drag:active {
+  cursor: grabbing;
+}
+.group-row .drag-handle {
+  color: #c0c7d2;
+  transition: color 0.12s;
+}
+.group-row--drag:hover .drag-handle {
+  color: #1f3a5f;
+}
+
+/* Zebra striping for the ticket worklist — odd rows get a faint tint so the eye can
+   track across columns. Overdue rows keep their soft-red inline background (it wins). */
+.row-zebra > td.ant-table-cell {
+  background: #f7f9fc;
+}
+
+/* Junk / spam-thread tickets read as "set aside": the whole row is dimmed (the Rác/Spam
+   tag in the subject cell stays the recognisable marker). Hover lifts it back to readable. */
+.row-muted > td.ant-table-cell {
+  opacity: 0.5;
+}
+.row-muted:hover > td.ant-table-cell {
+  opacity: 0.82;
+}
+
+/* Unread (never-opened) tickets read like an unread email: a blue accent bar on the
+   left edge + slightly stronger text. The faint blue row background is set inline (so
+   overdue's red can win). Reading the ticket stamps first_read_at → the row drops back
+   to normal weight on the next list load. */
+.row-unread > td.ant-table-cell {
+  font-weight: 700;
+}
+.row-unread > td.ant-table-cell:first-child {
+  box-shadow: inset 4px 0 0 #2f6bff;
+}
+
+/* Email quote chains — Gmail-style left bars (│ │ │ when nested). Inbound mail loses
+   its inline border style to the server sanitizer's typography whitelist, so the bars
+   are (re)applied here uniformly for every client's quoting markup. */
+.email-body blockquote {
+  margin: 4px 0 4px 0.8ex;
+  border-left: 2px solid #cfd4dd;
+  padding-left: 1ex;
+  color: #5f6368;
+}
+
+/* Refined, unobtrusive scrollbars (WebKit) — a small premium detail. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cfd4dd;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #b6bcc8;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

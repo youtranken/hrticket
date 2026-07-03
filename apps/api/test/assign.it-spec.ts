@@ -207,4 +207,27 @@ describe('IT-ASSIGN: auto-assign round-robin / least-load', () => {
     expect(t!.assigneeId).toBeNull();
     expect(t!.status).toBe('open');
   });
+
+  it('IT-ASSIGN-004: AUTO_ASSIGN_ENABLED=false kill-switch → everything pools', async () => {
+    if (!ready) return;
+    const Payroll = cat.get('Payroll')!;
+    // A fully-configured, all-available roster that WOULD assign when the feature is on.
+    await configure(Payroll, 'round_robin', [A, B, C]);
+
+    const prev = process.env.AUTO_ASSIGN_ENABLED;
+    process.env.AUTO_ASSIGN_ENABLED = 'false';
+    try {
+      const ticketId = await makePooled(Payroll);
+      const res = await assignOne(ticketId, Payroll);
+      expect(res.assigneeId).toBeNull();
+      expect(res.reason).toBe('pool_feature_disabled');
+      const [t] = await harness!.db.select().from(tickets).where(eq(tickets.id, ticketId));
+      expect(t!.assigneeId).toBeNull(); // untouched → stays pooled
+      expect(t!.status).toBe('open');
+    } finally {
+      // Restore so the default-on behaviour of the other suites is never affected.
+      if (prev === undefined) delete process.env.AUTO_ASSIGN_ENABLED;
+      else process.env.AUTO_ASSIGN_ENABLED = prev;
+    }
+  });
 });

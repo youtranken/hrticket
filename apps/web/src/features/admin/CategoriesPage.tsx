@@ -11,20 +11,23 @@ import {
   Input,
   Select,
   Radio,
+  ColorPicker,
   Space,
   Tabs,
   Popconfirm,
+  Tooltip,
   Typography,
   App as AntApp,
 } from 'antd';
+import { SafetyCertificateOutlined, PlusOutlined } from '@ant-design/icons';
+import { PageHeader } from '../../components/PageHeader';
+import { palette } from '../../theme';
 import {
   useAdminCategories,
-  useAdminUsers,
   useAdminTags,
   createCategory,
   updateCategory,
   deleteCategory,
-  putAutoAssign,
   createTag,
   updateTag,
   deleteTag,
@@ -38,14 +41,17 @@ const { Text } = Typography;
 export function CategoriesPage() {
   const { t } = useTranslation();
   return (
-    <Card title={t('admin.categoriesTitle')}>
-      <Tabs
-        items={[
-          { key: 'cat', label: t('admin.tabCategories'), children: <CategoriesTab /> },
-          { key: 'tag', label: t('admin.tabTags'), children: <TagsTab /> },
-        ]}
-      />
-    </Card>
+    <div>
+      <PageHeader title={t('admin.categoriesTitle')} subtitle={t('admin.categoriesSubtitle')} />
+      <Card>
+        <Tabs
+          items={[
+            { key: 'cat', label: t('admin.tabCategories'), children: <CategoriesTab /> },
+            { key: 'tag', label: t('admin.tabTags'), children: <TagsTab /> },
+          ]}
+        />
+      </Card>
+    </div>
   );
 }
 
@@ -54,7 +60,6 @@ function CategoriesTab() {
   const qc = useQueryClient();
   const { message } = AntApp.useApp();
   const { data: cats = [], isLoading } = useAdminCategories();
-  const { data: users = [] } = useAdminUsers();
   const [editing, setEditing] = useState<AdminCategory | 'new' | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin', 'categories'] });
 
@@ -68,11 +73,26 @@ function CategoriesTab() {
     }
   };
 
+  // Disable Pool (đơn 4): stop the pool without deleting it — intake classification
+  // skips disabled categories, so new mail falls back to "Khác"; existing tickets
+  // stay untouched and finish out where they are.
+  const onToggleDisabled = async (c: AdminCategory) => {
+    try {
+      await updateCategory(c.id, { disabled: !c.disabled });
+      message.success(t('admin.saved'));
+      refresh();
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
+
   return (
     <>
-      <Button type="primary" style={{ marginBottom: 12 }} onClick={() => setEditing('new')}>
-        {t('admin.addCategory')}
-      </Button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
+          {t('admin.addCategory')}
+        </Button>
+      </div>
       <Table<AdminCategory>
         rowKey="id"
         loading={isLoading}
@@ -96,13 +116,14 @@ function CategoriesTab() {
             title: t('admin.sensitive'),
             dataIndex: 'isSensitive',
             width: 110,
-            render: (s: boolean) => (s ? <Tag color="red">{t('admin.sensitive')}</Tag> : '—'),
-          },
-          {
-            title: t('admin.autoAssign'),
-            dataIndex: 'autoAssign',
-            render: (a: AdminCategory['autoAssign']) =>
-              a ? `${t(`admin.${a.strategy}`)} · ${a.members.length}` : '—',
+            render: (s: boolean) =>
+              s ? (
+                <Tag color="red" icon={<SafetyCertificateOutlined />}>
+                  {t('admin.sensitive')}
+                </Tag>
+              ) : (
+                '—'
+              ),
           },
           {
             title: t('ticket.status'),
@@ -116,7 +137,8 @@ function CategoriesTab() {
               ),
           },
           {
-            title: '',
+            title: t('common.actions'),
+            width: 240,
             render: (_: unknown, c: AdminCategory) =>
               c.isSystem ? null : (
                 <Space>
@@ -124,13 +146,34 @@ function CategoriesTab() {
                     {t('common.edit')}
                   </Button>
                   <Popconfirm
-                    title={c.ticketCount > 0 ? t('admin.hasTicketsDisable') : t('admin.confirmDelete')}
-                    onConfirm={() => onDelete(c)}
+                    title={c.disabled ? t('admin.confirmEnablePool') : t('admin.confirmDisablePool')}
+                    onConfirm={() => onToggleDisabled(c)}
                   >
-                    <Button size="small" danger>
-                      {t('common.delete')}
-                    </Button>
+                    <Switch
+                      size="small"
+                      checked={!c.disabled}
+                      checkedChildren={t('admin.active')}
+                      unCheckedChildren={t('admin.disabled')}
+                    />
                   </Popconfirm>
+                  {/* With live tickets the BE refuses the delete anyway — a disabled
+                      button + tooltip beats a confirm that only leads to an error. */}
+                  {c.ticketCount > 0 ? (
+                    <Tooltip title={t('admin.hasTicketsDisable')}>
+                      <Button size="small" danger disabled>
+                        {t('common.delete')}
+                      </Button>
+                    </Tooltip>
+                  ) : (
+                    <Popconfirm
+                      title={t('admin.confirmDelete', { name: c.nameVi })}
+                      onConfirm={() => onDelete(c)}
+                    >
+                      <Button size="small" danger>
+                        {t('common.delete')}
+                      </Button>
+                    </Popconfirm>
+                  )}
                 </Space>
               ),
           },
@@ -139,7 +182,6 @@ function CategoriesTab() {
       {editing && (
         <CategoryDrawer
           value={editing}
-          users={users.filter((u) => !u.disabled)}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -153,12 +195,10 @@ function CategoriesTab() {
 
 function CategoryDrawer({
   value,
-  users,
   onClose,
   onSaved,
 }: {
   value: AdminCategory | 'new';
-  users: { id: string; name: string }[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -170,23 +210,18 @@ function CategoryDrawer({
   const [nameEn, setNameEn] = useState(cat?.nameEn ?? '');
   const [sensitive, setSensitive] = useState(cat?.isSensitive ?? false);
   const [keywords, setKeywords] = useState<string[]>(cat?.keywords ?? []);
-  const [strategy, setStrategy] = useState<'round_robin' | 'least_load'>(
-    (cat?.autoAssign?.strategy as 'round_robin' | 'least_load') ?? 'round_robin',
-  );
-  const [members, setMembers] = useState<string[]>(cat?.autoAssign?.members.map((m) => m.userId) ?? []);
   const [saving, setSaving] = useState(false);
 
+  // Categories are pure taxonomy now — name, keywords, sensitivity. People & work
+  // distribution (membership + auto-assign rotation) live together in /admin/groups.
   const save = async () => {
     setSaving(true);
     try {
-      let id = cat?.id;
       if (isNew) {
-        const res = await createCategory({ nameVi, nameEn, isSensitive: sensitive, keywords });
-        id = res.id;
+        await createCategory({ nameVi, nameEn, isSensitive: sensitive, keywords });
       } else {
         await updateCategory(cat!.id, { nameVi, nameEn, isSensitive: sensitive, keywords });
       }
-      if (id) await putAutoAssign(id, { strategy, members });
       message.success(t('admin.saved'));
       onSaved();
     } catch (e) {
@@ -203,7 +238,7 @@ function CategoryDrawer({
       title={isNew ? t('admin.addCategory') : t('admin.editCategory')}
       onClose={onClose}
       extra={
-        <Button type="primary" loading={saving} onClick={save}>
+        <Button type="primary" loading={saving} disabled={!nameVi.trim() || !nameEn.trim()} onClick={save}>
           {t('common.save')}
         </Button>
       }
@@ -232,25 +267,6 @@ function CategoryDrawer({
             tokenSeparators={[',']}
           />
         </div>
-        <div>
-          <Text strong>{t('admin.autoAssign')}</Text>
-          <div style={{ marginTop: 4 }}>
-            <Radio.Group value={strategy} onChange={(e) => setStrategy(e.target.value)}>
-              <Radio value="round_robin">{t('admin.round_robin')}</Radio>
-              <Radio value="least_load">{t('admin.least_load')}</Radio>
-            </Radio.Group>
-          </div>
-          <Select
-            mode="multiple"
-            style={{ width: '100%', marginTop: 8 }}
-            value={members}
-            onChange={setMembers}
-            placeholder={t('admin.pickMembers')}
-            optionFilterProp="label"
-            options={users.map((u) => ({ value: u.id, label: u.name }))}
-          />
-          <Text type="secondary">{t('admin.orderHint')}</Text>
-        </div>
       </Space>
     </Drawer>
   );
@@ -259,7 +275,7 @@ function CategoryDrawer({
 function TagsTab() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const { data: tags = [], isLoading } = useAdminTags();
   const [editing, setEditing] = useState<AdminTag | 'new' | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin', 'tags'] });
@@ -268,9 +284,19 @@ function TagsTab() {
     try {
       const res = await deleteTag(tag.id, false);
       if ('needsConfirm' in res) {
-        const ok = window.confirm(t('admin.tagAttached', { n: res.attachedTo }));
-        if (!ok) return;
-        await deleteTag(tag.id, true);
+        // A styled confirm (the static window.confirm is unlocalized + ugly) showing how
+        // many tickets still carry the tag before a forced delete.
+        modal.confirm({
+          title: t('admin.confirmDelete', { name: tag.name }),
+          content: t('admin.tagAttached', { n: res.attachedTo }),
+          okButtonProps: { danger: true },
+          onOk: async () => {
+            await deleteTag(tag.id, true);
+            message.success(t('admin.deleted'));
+            refresh();
+          },
+        });
+        return;
       }
       message.success(t('admin.deleted'));
       refresh();
@@ -281,9 +307,11 @@ function TagsTab() {
 
   return (
     <>
-      <Button type="primary" style={{ marginBottom: 12 }} onClick={() => setEditing('new')}>
-        {t('admin.addTag')}
-      </Button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>
+          {t('admin.addTag')}
+        </Button>
+      </div>
       <Table<AdminTag>
         rowKey="id"
         loading={isLoading}
@@ -308,7 +336,8 @@ function TagsTab() {
           },
           { title: t('admin.usedBy'), dataIndex: 'ticketCount', width: 90 },
           {
-            title: '',
+            title: t('common.actions'),
+            width: 150,
             render: (_: unknown, tg: AdminTag) =>
               tg.kind === 'auto' ? (
                 <Tag color="gold">{t('admin.autoTag')}</Tag>
@@ -367,7 +396,7 @@ function TagDrawer({ value, onClose, onSaved }: { value: AdminTag | 'new'; onClo
       title={isNew ? t('admin.addTag') : t('admin.editTag')}
       onClose={onClose}
       extra={
-        <Button type="primary" loading={saving} onClick={save}>
+        <Button type="primary" loading={saving} disabled={!name.trim()} onClick={save}>
           {t('common.save')}
         </Button>
       }
@@ -387,8 +416,19 @@ function TagDrawer({ value, onClose, onSaved }: { value: AdminTag | 'new'; onClo
           </div>
         )}
         <div>
-          <Text>{t('admin.color')}</Text>
-          <Input value={color} onChange={(e) => setColor(e.target.value)} placeholder="#f5222d" />
+          <Text style={{ display: 'block', marginBottom: 4 }}>{t('admin.color')}</Text>
+          <ColorPicker
+            value={color || '#f5222d'}
+            onChange={(_, hex) => setColor(hex)}
+            showText
+            format="hex"
+            presets={[
+              {
+                label: t('admin.color'),
+                colors: ['#D14343', '#D97706', '#E8B11C', '#1F9D6B', '#0E7490', palette.primary, '#7C3AED', '#8C95A8'],
+              },
+            ]}
+          />
         </div>
         {priority && (
           <div>

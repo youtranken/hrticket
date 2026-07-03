@@ -26,6 +26,11 @@ export interface AuditRow {
   objectId: string | null;
   oldValue: unknown;
   newValue: unknown;
+  /** Human-readable object: ticket → "#code · subject", user → "name (email)".
+   *  Null when the object isn't enrichable (the FE falls back to type:id). */
+  objectLabel: string | null;
+  /** Ticket code when objectType='ticket' (lets the FE link + show #code distinctly). */
+  ticketCode: string | null;
 }
 
 export interface ViewLogFilters {
@@ -120,7 +125,49 @@ export class AuditService {
         objectId: (r.object_id as string) ?? null,
         oldValue: r.old_value ?? null,
         newValue: r.new_value ?? null,
+        objectLabel: null,
+        ticketCode: null,
       }));
+
+      // Enrich the object column so it reads as "what", not a raw uid: resolve ticket
+      // objects to "#code · subject" and user objects to "name (email)" in two batched
+      // lookups for the page. Anything else keeps its type:id (the FE fallback).
+      const ticketIds = [
+        ...new Set(items.filter((r) => r.objectType === 'ticket' && r.objectId).map((r) => r.objectId!)),
+      ];
+      const userIds = [
+        ...new Set(items.filter((r) => r.objectType === 'user' && r.objectId).map((r) => r.objectId!)),
+      ];
+      const ticketMap = new Map<string, { code: string; subject: string }>();
+      if (ticketIds.length > 0) {
+        const trows = await tx
+          .select({ id: tickets.id, code: tickets.ticketCode, subject: tickets.subject })
+          .from(tickets)
+          .where(inArray(tickets.id, ticketIds));
+        for (const t of trows) ticketMap.set(t.id, { code: t.code, subject: t.subject });
+      }
+      const userMap = new Map<string, string>();
+      if (userIds.length > 0) {
+        const urows = await tx
+          .select({ id: users.id, email: users.email, name: users.name })
+          .from(users)
+          .where(inArray(users.id, userIds));
+        for (const u of urows) userMap.set(u.id, u.name ? `${u.name} (${u.email})` : u.email);
+      }
+      for (const r of items) {
+        if (r.objectType === 'ticket' && r.objectId) {
+          const t = ticketMap.get(r.objectId);
+          if (t) {
+            r.ticketCode = t.code;
+            r.objectLabel = `${t.code} · ${t.subject}`;
+          }
+        } else if (r.objectType === 'user' && r.objectId) {
+          // Prefer the live name/email; fall back to whatever the event captured (a since-
+          // deleted user, or the email actually changed by this very row).
+          const fromValue = (r.newValue as { email?: string })?.email ?? (r.oldValue as { email?: string })?.email;
+          r.objectLabel = userMap.get(r.objectId) ?? fromValue ?? null;
+        }
+      }
       return { items, total: Number(countRows[0]?.n ?? 0), page: f.page, pageSize: f.pageSize };
     });
   }

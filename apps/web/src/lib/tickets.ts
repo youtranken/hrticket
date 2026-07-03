@@ -4,6 +4,8 @@ import { api } from './apiClient';
 export interface TicketAssignee {
   id: string;
   name: string;
+  /** Holder's role — only the ticket detail provides it (drives claim-over gating). */
+  role?: 'member' | 'team_lead' | 'admin' | 'ssa';
   awayFrom: string | null;
   awayTo: string | null;
 }
@@ -17,17 +19,22 @@ export interface TicketListItem {
   status: string;
   category: { vi: string; en: string } | null;
   assignee: TicketAssignee | null;
-  tags: { name: string; color: string | null }[];
+  tags: { name: string; color: string | null; kind?: string }[];
   createdAt: string;
   isOverdue: boolean;
   overdueDays: number;
   snoozeUntil: string | null;
   snoozeDue: boolean;
+  reopenCount: number;
   categorySensitive?: boolean;
+  isJunk?: boolean;
+  isSpamThread?: boolean;
+  /** First staff read (ISO) or null = unread. "Mới" shows only while unread AND unassigned. */
+  firstReadAt?: string | null;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine' | 'pending';
-export type TicketSort = 'worklist' | 'created' | 'status' | 'snooze';
+export type TicketSort = 'worklist' | 'created' | 'status' | 'snooze' | 'category' | 'assignee';
 export type SortDir = 'asc' | 'desc';
 
 /** Filter bar state (Story 10.1, FR79). Mirrors the BE Zod `ticketListQuerySchema`;
@@ -78,9 +85,39 @@ export function useTickets(page: number, pageSize: number, filters: TicketFilter
   });
 }
 
+/** Lightweight poll (1 row) for the live total of the current filter — drives the
+ *  "N new tickets" pill without disturbing the displayed page. */
+export function useTicketTotal(filters: TicketFilters, refetchInterval: number) {
+  return useQuery<TicketListResult>({
+    queryKey: ['tickets-poll', filters],
+    queryFn: () => api(`/tickets?${ticketListQueryString(1, 1, filters)}`),
+    refetchInterval,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Always-visible tab-bar "folder counts" (mine / pool / pending). Polled so a user on
+ *  /inbox still sees what's waiting elsewhere; kept fresh by claim/assign/status mutations
+ *  invalidating ['ticket-counts']. */
+export interface TicketCounts {
+  mine: number;
+  pool: number;
+  pending: number;
+}
+export function useTicketCounts(refetchInterval = 20_000) {
+  return useQuery<TicketCounts>({
+    queryKey: ['ticket-counts'],
+    queryFn: () => api('/tickets/counts'),
+    refetchInterval,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export interface FilterOptions {
   categories: { id: number; nameVi: string; nameEn: string }[];
-  assignees: { id: string; name: string }[];
+  // `disabled` flags ex-assignees who are turned off: the FILTER bar still lists them
+  // (so historical tickets stay filterable), but assignment pickers exclude them.
+  assignees: { id: string; name: string; disabled: boolean }[];
   tags: { id: number; name: string; color: string | null }[];
 }
 
@@ -90,6 +127,15 @@ export function useFilterOptions() {
     queryKey: ['ticket-filter-options'],
     queryFn: () => api('/tickets/filter-options'),
   });
+}
+
+// Imperative manual-tag add/remove for the inline worklist picker (FR33). The hook
+// form (useTicketTags / useToggleTag) lives further down for the ticket-detail page.
+export function addTicketTag(ticketId: string, tagId: number): Promise<{ ok: true }> {
+  return api(`/tickets/${ticketId}/tags`, { method: 'POST', body: JSON.stringify({ tagId }) });
+}
+export function removeTicketTag(ticketId: string, tagId: number): Promise<{ ok: true }> {
+  return api(`/tickets/${ticketId}/tags/${tagId}`, { method: 'DELETE' });
 }
 
 // ── Full-text search (Story 10.2, FR81) ─────────────────────────────────────
@@ -141,6 +187,9 @@ export interface TicketMessage {
   isAutoReply: boolean;
   isInternal: boolean;
   createdAt: string;
+  /** Cross-post merge: which project's ticket this message belongs to (a sibling's
+   *  message carries the OTHER project key → the bubble shows an origin tag). */
+  fromProjectKey?: string | null;
 }
 
 export interface TicketParticipant {
@@ -161,6 +210,8 @@ export interface TicketDetail {
     category: { vi: string; en: string } | null;
     categoryId: number | null;
     categorySensitive?: boolean;
+    /** True for the system "Khác"/Other bucket — gates claim-from-Khác UX (đơn 5). */
+    categoryIsSystem?: boolean;
     assignee: TicketAssignee | null;
     createdAt: string;
     snoozeUntil: string | null;
@@ -175,7 +226,7 @@ export interface TicketDetail {
   messages: TicketMessage[];
   participants: TicketParticipant[];
   tags: { name: string; color: string | null }[];
-  attachments: { id: string; fileName: string; mimeType: string; size: number; status: string }[];
+  attachments: { id: string; messageId: string | null; fileName: string; mimeType: string; size: number; status: string }[];
   links: { id: string; ticketCode: string; projectKey: string; kind: string }[];
 }
 
@@ -208,6 +259,8 @@ export function displayCode(code: string, projectKey: string, ssa: boolean): str
 export interface ReplyDefaults {
   to: string[];
   cc: string[];
+  /** Only populated when WE sent the latest mail (an inbound's BCC is invisible). */
+  bcc: string[];
   subject: string;
   isSensitive: boolean;
 }
@@ -228,9 +281,12 @@ export interface ReplyPayload {
   attachmentIds?: string[];
   confirmNewRecipients?: boolean;
   closeAfter?: boolean;
+  /** Send-with-status (đơn 6): snooze (needs snoozeUntil) or resolve in one action. */
+  statusAfter?: 'pending' | 'resolved';
+  snoozeUntil?: string;
 }
 export type ReplyResponse =
-  | { ticketMessageId: string; messageId: string; closed: boolean }
+  | { ticketMessageId: string; messageId: string; closed: boolean; status?: string }
   | { needsConfirm: true; newRecipients: string[] };
 
 export function useReply(ticketId: string) {
@@ -239,7 +295,40 @@ export function useReply(ticketId: string) {
     mutationFn: (payload) =>
       api(`/tickets/${ticketId}/replies`, { method: 'POST', body: JSON.stringify(payload) }),
     onSuccess: (res) => {
-      if (!('needsConfirm' in res)) qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      if (!('needsConfirm' in res)) {
+        qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+        // Send-with-status moves the ticket between tabs — keep lists/badges honest.
+        qc.invalidateQueries({ queryKey: ['tickets'] });
+        qc.invalidateQueries({ queryKey: ['tickets-poll'] });
+        qc.invalidateQueries({ queryKey: ['ticket-counts'] });
+      }
+    },
+  });
+}
+
+export interface ForwardPayload {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  body?: string;
+  ticketMessageId: string;
+  confirmNewRecipients?: boolean;
+}
+export type ForwardResponse =
+  | { ticketMessageId: string; messageId: string }
+  | { needsConfirm: true; newRecipients: string[] };
+
+export function useForward(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<ForwardResponse, Error, ForwardPayload>({
+    mutationFn: (payload) =>
+      api(`/tickets/${ticketId}/forward`, { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: (res) => {
+      if (!('needsConfirm' in res)) {
+        qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+        // The forward is now the LATEST mail → the reply-all suggestion follows it.
+        qc.invalidateQueries({ queryKey: ['reply-defaults', ticketId] });
+      }
     },
   });
 }
@@ -307,16 +396,53 @@ export async function uploadAttachment(
   return body as unknown as UploadedAttachment;
 }
 
+// ── Manual ticket: create an internal ticket + send the opening mail (multipart) ──
+
+export interface ManualTicketPayload {
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  categoryId?: number;
+  assigneeId?: string;
+  files: File[];
+}
+
+/** Multipart POST (fields + attachments in one request) — bypasses the JSON api()
+ *  wrapper, like uploadAttachment. The BE derives the project from the session. */
+export async function createManualTicket(
+  p: ManualTicketPayload,
+): Promise<{ ticketId: string; ticketCode: string }> {
+  const form = new FormData();
+  form.append('recipientEmail', p.recipientEmail);
+  form.append('subject', p.subject);
+  form.append('body', p.body);
+  if (p.categoryId != null) form.append('categoryId', String(p.categoryId));
+  if (p.assigneeId) form.append('assigneeId', p.assigneeId);
+  for (const f of p.files) form.append('files', f);
+  const res = await fetch('/api/tickets/manual', { method: 'POST', credentials: 'include', body: form });
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error((body.message as string) ?? 'Create failed');
+  return body as { ticketId: string; ticketCode: string };
+}
+
 // ── Routing & assignment: claim (4.4) / assign + reclassify (4.5) / tags (4.1) ──
+
+export type ClaimResponse =
+  | { assigneeId: string; from: string | null }
+  // Member claiming from "Khác" with several groups → must pick the destination (đơn 5).
+  | { needsCategory: true; options: CategoryOption[] };
 
 export function useClaim(ticketId: string) {
   const qc = useQueryClient();
-  return useMutation<{ assigneeId: string; from: string | null }, Error, { over?: boolean }>({
+  return useMutation<ClaimResponse, Error, { over?: boolean; categoryId?: number }>({
     mutationFn: (vars) =>
       api(`/tickets/${ticketId}/claim`, { method: 'POST', body: JSON.stringify(vars) }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      if ('needsCategory' in res) return; // nothing changed yet — the picker retries
       qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
       qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['tickets-poll'] }); // keep the "N new" pill honest
+      qc.invalidateQueries({ queryKey: ['ticket-counts'] }); // refresh tab badges
     },
   });
 }
@@ -354,6 +480,8 @@ export function useAssign(ticketId: string) {
       if (!('needsCategory' in res)) {
         qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
         qc.invalidateQueries({ queryKey: ['tickets'] });
+        qc.invalidateQueries({ queryKey: ['tickets-poll'] });
+        qc.invalidateQueries({ queryKey: ['ticket-counts'] });
       }
     },
   });
@@ -381,6 +509,7 @@ export function useChangeCategory(ticketId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
       qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['tickets-poll'] });
     },
   });
 }
@@ -429,6 +558,8 @@ export function useChangeStatus(ticketId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
       qc.invalidateQueries({ queryKey: ['tickets'] });
+      qc.invalidateQueries({ queryKey: ['tickets-poll'] });
+      qc.invalidateQueries({ queryKey: ['ticket-counts'] });
     },
   });
 }

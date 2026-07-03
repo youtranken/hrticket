@@ -12,6 +12,9 @@
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.2.5",
+    "@fontsource/be-vietnam-pro": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@hris/shared": "workspace:*",
     "@tanstack/react-query": "^5.62.7",
     "antd": "^5.22.5",
@@ -29,15 +32,15 @@
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
+    "@types/nodemailer": "^6.4.17",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^6.0.2",
     "jsdom": "^25.0.1",
+    "nodemailer": "^6.9.16",
+    "postgres": "^3.4.5",
     "typescript": "^5.7.2",
     "vite": "^8.0.16",
-    "vitest": "^4.1.8",
-    "nodemailer": "^6.9.16",
-    "@types/nodemailer": "^6.4.17",
-    "postgres": "^3.4.5"
+    "vitest": "^4.1.8"
   }
 }

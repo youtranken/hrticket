@@ -29,15 +29,12 @@ function trackPageErrors(page: Page): string[] {
   return fatal;
 }
 
-/** Move the row for `name` between Transfer columns, then prove which side it sits on. */
-async function moveInTransfer(page: Page, fromList: 0 | 1): Promise<void> {
-  const list = page.locator('.ant-transfer-list').nth(fromList);
-  await list.locator('.ant-transfer-list-content-item', { hasText: MEMBER }).click();
-  // The single enabled operation arrow moves the checked item to the other column.
-  await page.locator('.ant-transfer-operation button:not([disabled])').first().click();
-}
+/** Dual-pane membership editor: tick the available row (left) then click the → arrow to
+ *  move it into "Trong nhóm" (right). Removal is the ✕ on the in-group row. */
+const availRow = (page: Page) => page.locator('.group-row:not(.group-row--drag)', { hasText: MEMBER });
+const inGroupRow = (page: Page) => page.locator('.group-row--drag', { hasText: MEMBER });
 
-test('9.1 group membership: admin grants a member into a group via the transfer list', async ({ page }) => {
+test('9.1 group membership: admin grants a member into a group via the dual-pane list', async ({ page }) => {
   const fatal = trackPageErrors(page);
   await login(page, 'admin@dev.local');
 
@@ -48,16 +45,17 @@ test('9.1 group membership: admin grants a member into a group via the transfer 
   await expect(page.getByRole('tab', { name: 'Theo nhóm' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Theo người dùng' })).toBeVisible();
 
-  // Pick the 0-member group → its row shows the warning, and the transfer list opens.
+  // Pick the 0-member group → its row shows the warning, and the dual-pane editor opens.
   const groupRow = page.locator('.ant-table-row', { hasText: GROUP });
   await expect(groupRow).toContainText('0 thành viên');
   await groupRow.click();
-  await expect(page.locator('.ant-transfer')).toBeVisible();
+  await expect(availRow(page)).toBeVisible(); // "Ngoài nhóm" pane lists Dev Member
   await page.screenshot({ path: `${SHOTS}/9.1-groups-transfer.png`, fullPage: true });
 
-  // Grant: move Dev Member from "Ngoài nhóm" (left) → "Trong nhóm" (right), then save.
-  await moveInTransfer(page, 0);
-  await expect(page.locator('.ant-transfer-list').nth(1)).toContainText(MEMBER);
+  // Grant: tick Dev Member in "Ngoài nhóm" → → arrow moves it to "Trong nhóm", then save.
+  await availRow(page).click();
+  await page.locator('button:has(.anticon-right)').click();
+  await expect(inGroupRow(page)).toBeVisible();
   await page.getByRole('button', { name: 'Lưu' }).click();
   await expect(page.locator('.ant-message')).toContainText('Đã lưu', { timeout: 10000 });
 
@@ -66,10 +64,10 @@ test('9.1 group membership: admin grants a member into a group via the transfer 
     timeout: 10000,
   });
 
-  // Restore: move the member back out and save, so re-runs start clean.
+  // Restore: re-open, remove the member via the ✕, save — so re-runs start clean.
   await page.locator('.ant-table-row', { hasText: GROUP }).click();
-  await expect(page.locator('.ant-transfer-list').nth(1)).toContainText(MEMBER);
-  await moveInTransfer(page, 1);
+  await expect(inGroupRow(page)).toBeVisible();
+  await inGroupRow(page).locator('.anticon-close').click();
   await page.getByRole('button', { name: 'Lưu' }).click();
   await expect(page.locator('.ant-message')).toContainText('Đã lưu', { timeout: 10000 });
   await expect(page.locator('.ant-table-row', { hasText: GROUP })).toContainText('0 thành viên', {

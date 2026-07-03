@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { WarningOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -60,7 +61,7 @@ export function AttachmentConfigPage() {
     save.mutate(
       { allowedExtensions: extensions, capMb, diskAlertPct, autotag },
       {
-        onSuccess: () => message.success(t('common.save')),
+        onSuccess: () => message.success(t('common.saved')),
         onError: (e) => message.error(e.message),
       },
     );
@@ -95,8 +96,8 @@ export function AttachmentConfigPage() {
           {extensions.map((e) =>
             knownWarning.has(e) ? (
               <Tooltip key={e} title={t('files.cfg.noSignature')}>
-                <Tag color="warning" closable onClose={() => removeExt(e)}>
-                  ⚠ {e}
+                <Tag color="warning" icon={<WarningOutlined />} closable onClose={() => removeExt(e)}>
+                  {e}
                 </Tag>
               </Tooltip>
             ) : (
@@ -114,7 +115,7 @@ export function AttachmentConfigPage() {
             onPressEnter={addExt}
             style={{ width: 160 }}
           />
-          <Button onClick={addExt}>{t('common.save')}</Button>
+          <Button onClick={addExt}>{t('common.add')}</Button>
         </Space>
       </Card>
 

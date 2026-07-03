@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Card, Table, Button, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
+import { Card, Table, Button, Empty, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
+import { TicketsTabBar } from '../inbox/TicketsTabBar';
 import { useJunkTickets, useReleaseJunk, type JunkTicket } from '../../lib/junk';
 import { useAddBlock } from '../../lib/blocklist';
 import { useMe } from '../../lib/auth';
@@ -40,15 +41,23 @@ export function JunkPage() {
   };
 
   return (
-    <Card title={t('junk.title')}>
-      <Text type="secondary">{t('junk.hint')}</Text>
+    <>
+      <TicketsTabBar />
+      <Card title={t('junk.title')}>
+        <Text type="secondary">{t('junk.hint')}</Text>
       <Table<JunkTicket>
         rowKey="id"
         style={{ marginTop: 12 }}
         loading={isLoading}
         dataSource={rows}
         scroll={{ x: 900 }}
-        pagination={false}
+        locale={{ emptyText: <Empty description={t('junk.empty')} /> }}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: [20, 50, 100],
+          showTotal: (total) => t('common.totalRows', { total }),
+        }}
         columns={[
           { title: t('junk.colCode'), dataIndex: 'ticketCode', width: 90 },
           { title: t('junk.colSubject'), dataIndex: 'subject', width: 280, ellipsis: true },
@@ -69,7 +78,8 @@ export function JunkPage() {
             title: t('junk.colReceived'),
             dataIndex: 'createdAt',
             width: 170,
-            render: (d: string) => new Date(d).toLocaleString(),
+            render: (d: string) =>
+              new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }),
           },
           {
             title: '',
@@ -89,6 +99,7 @@ export function JunkPage() {
           },
         ]}
       />
-    </Card>
+      </Card>
+    </>
   );
 }

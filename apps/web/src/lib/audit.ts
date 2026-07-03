@@ -11,6 +11,10 @@ export interface AuditRow {
   objectId: string | null;
   oldValue: unknown;
   newValue: unknown;
+  /** Human-readable object ("#code · subject" / "name (email)"); null → fall back to type:id. */
+  objectLabel: string | null;
+  /** Ticket code when objectType='ticket' (for a distinct #code + link). */
+  ticketCode: string | null;
 }
 
 export interface ViewLogRow {

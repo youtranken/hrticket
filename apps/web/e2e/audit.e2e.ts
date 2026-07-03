@@ -16,7 +16,7 @@ let ticketId = '';
 
 function psql(sql: string): string {
   const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(`docker compose exec -T postgres psql -U hris -d hris -t -A -c "${oneLine}"`, { cwd: '../..' })
+  return execSync(`${process.env.E2E_COMPOSE ?? 'docker compose'} exec -T postgres psql -U hris -d hris -t -A -c "${oneLine}"`, { cwd: '../..' })
     .toString()
     .trim();
 }
@@ -75,8 +75,10 @@ test('9.5 audit viewer: admin reads the log + view-log; member is blocked', asyn
   await page.goto(`/audit?ticketId=${ticketId}`);
   await expect(page.locator('.ant-card-head-title')).toHaveText('Nhật ký', { timeout: 15000 });
 
-  // Action log shows the two seeded rows for this ticket.
-  const assignedRow = page.locator('.ant-table-row', { hasText: 'ticket.assigned' });
+  // Action log shows the two seeded rows for this ticket. The action column is localized
+  // (i18n key `auditAction.ticket.assigned` → "Gán người xử lý"); `ticket.created` has no
+  // key yet so it renders raw — assert each by what is actually displayed.
+  const assignedRow = page.locator('.ant-table-row', { hasText: 'Giao người xử lý' });
   await expect(assignedRow).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ant-table-row', { hasText: 'ticket.created' })).toBeVisible();
 
@@ -86,7 +88,7 @@ test('9.5 audit viewer: admin reads the log + view-log; member is blocked', asyn
   await page.screenshot({ path: `${SHOTS}/9.5-audit-log.png`, fullPage: true });
 
   // View-log tab → the file download row + filename.
-  await page.getByRole('tab', { name: 'View-log nhạy cảm' }).click();
+  await page.getByRole('tab', { name: 'Xem dữ liệu nhạy cảm' }).click();
   await expect(page.locator('.ant-table-row', { hasText: 'payslip-e2e.pdf' })).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ant-table-row', { hasText: 'Tải tệp' })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/9.5-viewlog.png`, fullPage: true });

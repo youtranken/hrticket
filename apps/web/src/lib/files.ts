@@ -1,4 +1,20 @@
+import { useQuery } from '@tanstack/react-query';
 import { api } from './apiClient';
+
+/** Upload gate the admin edits in /admin/attachments — FE pickers must read it from
+ *  here, never hardcode a copy (the server re-enforces on every store). */
+export interface UploadPolicy {
+  allowedExtensions: string[];
+  capMb: number;
+}
+
+export function useUploadPolicy() {
+  return useQuery<UploadPolicy>({
+    queryKey: ['upload-policy'],
+    queryFn: () => api('/upload-policy'),
+    staleTime: 5 * 60_000,
+  });
+}
 
 /**
  * Fixed preview thresholds (NFR1 exception, Story 8.2). These are a pure FRONT-END

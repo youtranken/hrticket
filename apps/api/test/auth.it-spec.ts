@@ -130,6 +130,22 @@ describe('auth integration', () => {
       .expect(400);
   });
 
+  // ── IT-AUTH-011: /upload-policy (UX #65 — FE reads the attachment gate) ──────
+  // Deliberately open to EVERY authenticated role (member included): the compose /
+  // manual-ticket pickers need the limits, while /admin/attachment-config stays the
+  // admin-only WRITE surface. Guards: no session → 401.
+  it('IT-AUTH-011: any authenticated role reads /upload-policy; anonymous → 401', async () => {
+    if (!ready) return;
+    await request(server()).get('/api/upload-policy').expect(401);
+
+    await makeUser(harness!.db, { projectId: 1, email: 'pol@test.local', role: 'member' });
+    const cookie = await loginCookie('pol@test.local');
+    const res = await request(server()).get('/api/upload-policy').set('Cookie', cookie).expect(200);
+    expect(Array.isArray(res.body.allowedExtensions)).toBe(true);
+    expect(typeof res.body.capMb).toBe('number');
+    expect(res.body.capMb).toBeGreaterThan(0);
+  });
+
   // Runs LAST: it locks the shared source IP (127.0.0.1), which would 429 any
   // login in a later test. A successful login resets the counter, so order matters.
   it('IT-AUTH-001: locks out after repeated failures', async () => {

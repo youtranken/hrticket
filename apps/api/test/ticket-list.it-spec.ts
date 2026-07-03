@@ -147,7 +147,10 @@ describe('IT-LIST: worklist ordering + filters + pending', () => {
     const D = await mk({ status: 'assigned', assigneeId: assigneeX, assignedDaysAgo: 0, ageDays: 0 });
     const E = await mk({ status: 'in_progress', assigneeId: assigneeX, assignedDaysAgo: 1, ageDays: 1 });
 
-    const res = await read.list(adminU, q({ pageSize: 100 }));
+    // Explicit sort=worklist: this test validates the PRIORITY worklist spec (FR106)
+    // shared with the digest. The list's DEFAULT order is now the band order (closed at
+    // the bottom); the worklist order stays available on request and is what we assert here.
+    const res = await read.list(adminU, q({ sort: 'worklist', pageSize: 100 }));
     const order = res.items.map((i) => i.id);
     expect(order).toEqual([A, B, C, D, E]);
 
@@ -231,5 +234,58 @@ describe('IT-LIST: worklist ordering + filters + pending', () => {
     const memberCatIds = memberOpts.categories.map((c) => c.id);
     expect(memberCatIds).toContain(Payroll);
     expect(memberCatIds).not.toContain(Insurance);
+  });
+
+  // ── IT-LIST-005: manual column sorts by category / assignee (UX P0 #5) ───────
+  // Collation-agnostic assertions: we don't re-implement Postgres' Vietnamese
+  // ordering in JS — we assert direction flip + NULLS LAST in both directions.
+
+  it('IT-LIST-005a: sort=category — direction flips, uncategorised sinks last both ways', async () => {
+    if (!ready) return;
+    const tPay = await mk({ categoryId: Payroll });
+    const tIns = await mk({ categoryId: Insurance });
+    // Uncategorised ticket (mk() defaults null → Payroll, so insert directly).
+    seq += 1;
+    const [noCat] = await harness!.db
+      .insert(tickets)
+      .values({
+        projectId: HRIS,
+        ticketCode: `#L${String(seq).padStart(5, '0')}`,
+        subject: `list ${seq}`,
+        requesterEmail: 'r@x.com',
+        mailbox: 'hris@test.local',
+        categoryId: null,
+        status: 'in_progress',
+        lastOpenedAt: new Date(Date.now() - DAY),
+      })
+      .returning({ id: tickets.id });
+
+    const ids = (r: Awaited<ReturnType<TicketsReadService['list']>>) => r.items.map((i) => i.id);
+    const asc = ids(await read.list(adminU, q({ sort: 'category', dir: 'asc', pageSize: 100 })));
+    const desc = ids(await read.list(adminU, q({ sort: 'category', dir: 'desc', pageSize: 100 })));
+
+    expect(asc).toHaveLength(3);
+    expect(asc[2]).toBe(noCat!.id); // NULLS LAST, ascending
+    expect(desc[2]).toBe(noCat!.id); // NULLS LAST, descending too
+    expect(desc.slice(0, 2)).toEqual([...asc.slice(0, 2)].reverse()); // direction flips
+    expect(asc.slice(0, 2).sort()).toEqual([tPay, tIns].sort()); // both categorised rows present
+  });
+
+  it('IT-LIST-005b: sort=assignee — direction flips, pool (no assignee) sinks last both ways', async () => {
+    if (!ready) return;
+    const y = (await makeUser(harness!.db, { projectId: HRIS, email: 'y-list@t.local' }))!;
+    const tX = await mk({ assigneeId: assigneeX, assignedDaysAgo: 1 });
+    const tY = await mk({ assigneeId: y.id, assignedDaysAgo: 1 });
+    const tPool = await mk({ assigneeId: null });
+
+    const ids = (r: Awaited<ReturnType<TicketsReadService['list']>>) => r.items.map((i) => i.id);
+    const asc = ids(await read.list(adminU, q({ sort: 'assignee', dir: 'asc', pageSize: 100 })));
+    const desc = ids(await read.list(adminU, q({ sort: 'assignee', dir: 'desc', pageSize: 100 })));
+
+    expect(asc).toHaveLength(3);
+    expect(asc[2]).toBe(tPool);
+    expect(desc[2]).toBe(tPool);
+    expect(desc.slice(0, 2)).toEqual([...asc.slice(0, 2)].reverse());
+    expect(asc.slice(0, 2).sort()).toEqual([tX, tY].sort());
   });
 });

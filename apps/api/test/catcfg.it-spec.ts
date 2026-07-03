@@ -3,7 +3,7 @@ import type { ItHarness } from './setup.it';
 import { startHarness } from './setup.it';
 import { makeUser } from './factories/user.factory';
 import { withActor, systemActor } from '../src/infra/db/with-actor';
-import { categories, tickets, assignCursors } from '../src/infra/db/schema';
+import { categories, tickets, assignCursors, userGroupMembership } from '../src/infra/db/schema';
 import { AdminConfigService } from '../src/modules/admin/admin-config.service';
 import { classifyTicket } from '../src/modules/routing/classify.service';
 import { autoAssign } from '../src/modules/routing/auto-assign.service';
@@ -48,6 +48,12 @@ describe('IT-CATCFG: category + auto-assign config', () => {
       A = (await makeUser(harness.db, { projectId: 1, email: 'cfg-a@x.com' }))!.id;
       B = (await makeUser(harness.db, { projectId: 1, email: 'cfg-b@x.com' }))!.id;
       C = (await makeUser(harness.db, { projectId: 1, email: 'cfg-c@x.com' }))!.id;
+      // Auto-assign roster ⊆ group members → A/B/C must be in the Payroll group first.
+      await harness.db.insert(userGroupMembership).values([
+        { userId: A, categoryId: Payroll },
+        { userId: B, categoryId: Payroll },
+        { userId: C, categoryId: Payroll },
+      ]);
       ready = true;
     } catch (e) {
       console.warn('[IT-CATCFG] Docker unavailable, skipping:', (e as Error)?.message);

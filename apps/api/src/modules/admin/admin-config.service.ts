@@ -217,14 +217,20 @@ export class AdminConfigService {
         throw new UnprocessableEntityException('Auto-assign needs at least one member');
       }
 
-      // Members must be real users in this project.
-      if (input.members.length) {
-        const valid = await tx
-          .select({ id: users.id })
-          .from(users)
-          .where(and(inArray(users.id, input.members), eq(users.projectId, projectId)));
-        if (valid.length !== new Set(input.members).size) {
-          throw new UnprocessableEntityException('A member is not in this project');
+      // Members must belong to THIS category's group (user_group_membership): the
+      // auto-assign rotation is a SUBSET of the group, never a separate list. Only people
+      // who can already see/handle the category may be auto-assigned its tickets —
+      // otherwise a non-member would receive (and, via the assignee RLS carve-out, read)
+      // tickets they have no need-to-know for, esp. sensitive ones. Add people to the
+      // group in /admin/groups first.
+      const groupRows = await tx
+        .select({ userId: userGroupMembership.userId })
+        .from(userGroupMembership)
+        .where(eq(userGroupMembership.categoryId, categoryId));
+      const groupSet = new Set(groupRows.map((r) => r.userId));
+      for (const id of input.members) {
+        if (!groupSet.has(id)) {
+          throw new UnprocessableEntityException('Auto-assign members must belong to the category group');
         }
       }
 

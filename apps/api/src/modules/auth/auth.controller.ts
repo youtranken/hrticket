@@ -23,6 +23,7 @@ import type { SessionUser } from './session.service';
 
 const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
 const otpVerifySchema = z.object({ preAuthToken: z.string().min(1), code: z.string().length(6) });
+const otpResendSchema = z.object({ preAuthToken: z.string().min(1) });
 const otpToggleSchema = z.object({ enabled: z.boolean(), password: z.string().min(1) });
 const languageSchema = z.object({ language: z.enum(['vi', 'en']) });
 const forgotSchema = z.object({ email: z.string().email() });
@@ -53,6 +54,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly reset: PasswordResetService,
+    private readonly otp: OtpService,
   ) {}
 
   @Post('login')
@@ -79,6 +81,15 @@ export class AuthController {
     const sid = await this.auth.verifyOtp(parsed.data.preAuthToken, parsed.data.code);
     setSessionCookie(res, sid);
     return { ok: true };
+  }
+
+  /** Re-issue the login code (the FE "Gửi lại mã" button) — rate-limited per user. */
+  @Post('otp/resend')
+  async otpResend(@Body() body: unknown) {
+    const parsed = otpResendSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid OTP payload');
+    const preAuthToken = await this.otp.resend(parsed.data.preAuthToken);
+    return { preAuthToken };
   }
 
   @Post('logout')
@@ -145,13 +156,18 @@ export class MeController {
 
   @Post('me/change-password')
   @UseGuards(SessionGuard)
-  async changePassword(@CurrentUser() user: SessionUser, @Body() body: unknown) {
+  async changePassword(
+    @CurrentUser() user: SessionUser,
+    @Req() req: AuthedRequest,
+    @Body() body: unknown,
+  ) {
     const parsed = changePasswordSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
     const ok = await this.auth.changePassword(
       user.id,
       parsed.data.currentPassword,
       parsed.data.newPassword,
+      req.sessionId,
     );
     if (!ok) throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
     return { ok: true };

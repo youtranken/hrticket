@@ -26,12 +26,20 @@ export class NotificationsController {
     const since = ifModifiedSince ? new Date(ifModifiedSince) : undefined;
     const result = await this.svc.list(user, since);
 
+    // `no-store`, not `no-cache`: the 304 watermark is max(createdAt), which does NOT
+    // move when a notification is marked read. With `no-cache` the browser would store
+    // the 200 body and, on a hard refresh, auto-revalidate (If-Modified-Since), get a
+    // 304, and serve the STALE cached body — showing read items as unread again. With
+    // `no-store` the browser never caches, so a refresh always fetches the true read
+    // state; the explicit 15s poll still gets a cheap 304 because the JS sets the header
+    // itself.
+    res.setHeader('Cache-Control', 'no-store');
+
     if (since && (!result.latest || Math.floor(result.latest.getTime() / 1000) <= Math.floor(since.getTime() / 1000))) {
       res.status(304);
       return; // nothing new — empty body
     }
     if (result.latest) res.setHeader('Last-Modified', result.latest.toUTCString());
-    res.setHeader('Cache-Control', 'no-cache');
     return { items: result.items, unreadCount: result.unreadCount };
   }
 

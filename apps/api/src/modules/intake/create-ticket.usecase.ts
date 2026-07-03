@@ -9,6 +9,7 @@ import { classifyTicket, otherCategoryId } from '../routing/classify.service';
 import { applyAutoTags } from '../routing/auto-tag.service';
 import { autoAssign } from '../routing/auto-assign.service';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
+import { systemMailboxAddresses } from '../email-engine/mailbox-addresses';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface CreateTicketInput {
@@ -108,9 +109,16 @@ export async function createTicketFromMail(
     .set({ bodyHtmlSafe: sanitizeEmailHtml(parsed.bodyHtml, cidMap) })
     .where(eq(ticketMessages.id, message!.id));
 
-  // Participants: requester + CC, all active. Dedup against the unique (ticket,email).
+  // Participants: requester + To + CC, all active — reply-all parity with Gmail
+  // (the sender's To-recipients are part of the conversation too, FR9). Our own
+  // project mailboxes are excluded: a cross-post lists BOTH mailboxes in To, and
+  // admitting the sibling would loop every reply-all back into ingest.
+  const ownMailboxes = await systemMailboxAddresses(tx, mailbox);
   const people = new Set<string>(
-    [parsed.from, ...parsed.cc].filter(Boolean).map((a) => (a as { address: string }).address),
+    [parsed.from, ...parsed.to, ...parsed.cc]
+      .filter(Boolean)
+      .map((a) => (a as { address: string }).address)
+      .filter((e) => !ownMailboxes.has(e.toLowerCase())),
   );
   for (const email of people) {
     await tx
@@ -149,6 +157,14 @@ export async function createTicketFromMail(
     .set({ status: 'processed', ticketId })
     .where(eq(inboxMessages.id, input.inboxMessageId));
 
+  // Đơn 15 (3/7/2026): the ack additionally requires OUR mailbox to be a direct
+  // To recipient. A mail that merely Cc's us (the requester addressed someone
+  // else) still becomes a ticket for tracking, but stays SILENT toward the
+  // requester — the To'd party is the one expected to answer.
+  const mailboxInTo = parsed.to.some(
+    (a) => (a.address ?? '').toLowerCase() === mailbox.toLowerCase(),
+  );
+
   await writeAudit(tx, {
     projectId,
     actorLabel: 'system:intake',
@@ -159,6 +175,7 @@ export async function createTicketFromMail(
       ticketCode,
       requesterEmail,
       mailbox,
+      mailboxInTo, // false = cc-only → auto-ack suppressed (đơn 15)
       categoryId,
       isJunk,
       classifyReason: classified?.reason ?? null,
@@ -180,6 +197,7 @@ export async function createTicketFromMail(
     inboundMessageId: parsed.messageId,
     isAutoReply: input.isAutoReply ?? false,
     isJunk,
+    ccOnly: !mailboxInTo,
   });
 
   return { ticketId, ticketCode, messageId: message!.id };

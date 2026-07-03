@@ -35,14 +35,14 @@ describe('FileCard (Story 8.2)', () => {
   });
 
   it.each([
-    ['image/png', '🖼'],
-    ['application/pdf', '📄'],
-    ['audio/mpeg', '🎵'],
-    ['video/mp4', '🎬'],
-    ['application/octet-stream', '📎'],
-  ])('renders the kind glyph for %s', (mime, glyph) => {
-    renderCard({ ...base, mimeType: mime });
-    expect(screen.getByText(glyph)).toBeTruthy();
+    ['image/png', '.anticon-file-image'],
+    ['application/pdf', '.anticon-file-pdf'],
+    ['audio/mpeg', '.anticon-sound'],
+    ['video/mp4', '.anticon-video-camera'],
+    ['application/octet-stream', '.anticon-paper-clip'],
+  ])('renders the kind icon for %s', (mime, iconClass) => {
+    const { container } = renderCard({ ...base, mimeType: mime });
+    expect(container.querySelector(iconClass)).toBeTruthy();
   });
 
   it('shows the original filename and human size for a stored file', () => {
@@ -59,8 +59,9 @@ describe('FileCard (Story 8.2)', () => {
 
   it('blocked_unsafe → greyed warning glyph, not clickable, no mint on click', () => {
     const spy = vi.spyOn(filesLib, 'mintAccessUrl');
-    renderCard({ ...base, status: 'blocked_unsafe' });
-    expect(screen.getByText('⚠')).toBeTruthy();
+    const { container } = renderCard({ ...base, status: 'blocked_unsafe' });
+    // The warning glyph is now an AntD icon, not a "⚠" text node.
+    expect(container.querySelector('.anticon-warning')).toBeTruthy();
     // clicking a blocked card must not open the viewer / mint a URL
     fireEvent.click(screen.getByText('doc.pdf'));
     expect(spy).not.toHaveBeenCalled();

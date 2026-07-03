@@ -20,6 +20,8 @@ export interface Me {
   /** Per-account UI language (Story 11.2) — applied on login from any machine. */
   language: string;
   availability: { awayFrom: string | null; awayTo: string | null };
+  /** Whether OTP 2FA is on — drives the Profile security switch. */
+  otpEnabled: boolean;
 }
 
 /** Loads the current user; null when unauthenticated. */
@@ -49,6 +51,15 @@ export async function verifyOtp(preAuthToken: string, code: string): Promise<voi
     method: 'POST',
     body: JSON.stringify({ preAuthToken, code }),
   });
+}
+
+/** Re-issue the login code; returns a FRESH pre-auth token the next verify must use. */
+export async function resendOtp(preAuthToken: string): Promise<string> {
+  const res = await api<{ preAuthToken: string }>('/auth/otp/resend', {
+    method: 'POST',
+    body: JSON.stringify({ preAuthToken }),
+  });
+  return res.preAuthToken;
 }
 
 export async function forgotPassword(email: string): Promise<void> {

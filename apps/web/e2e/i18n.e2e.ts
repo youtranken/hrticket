@@ -49,16 +49,20 @@ test('11.2: language switch is live, persisted server-side, and reaches AntD int
   const errors = trackConsoleErrors(page);
   await login(page, 'admin@dev.local');
   const sider = page.locator('.ant-layout-sider');
+  // The sidebar is a permanent icons-only rail (no expand toggle); each menu item's text
+  // content is its (localized) label, so assert the language switch on the item rows.
 
   // Default Vietnamese chrome.
-  await expect(sider.getByText('Hộp thư', { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Hộp thư$/ })).toBeVisible({ timeout: 15000 });
 
-  // Live switch to EN — no reload (i18next).
-  await page.locator('.ant-segmented').getByText('EN', { exact: true }).click();
-  await expect(sider.getByText('Inbox', { exact: true })).toBeVisible();
-  await expect(sider.getByText('Hộp thư', { exact: true })).toHaveCount(0);
-  await expect(sider.getByText('Email connection')).toBeVisible();
-  await expect(sider.getByText('Settings', { exact: true })).toBeVisible();
+  // Live switch to EN via the avatar menu (the VI/EN toggle moved into it) — no reload.
+  await page.getByRole('button', { name: /Dev Admin/ }).click();
+  await page.getByText('English', { exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Inbox$/ })).toBeVisible();
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Hộp thư$/ })).toHaveCount(0);
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Reports$/ })).toBeVisible();
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Settings$/ })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/11.2-en-sidebar.png`, fullPage: true });
 
   // No raw i18n key (e.g. "menu.inbox") leaks into the rendered chrome.
@@ -78,8 +82,9 @@ test('11.2: language switch is live, persisted server-side, and reaches AntD int
   const page2 = await ctx2.newPage();
   await login(page2, 'admin@dev.local');
   const sider2 = page2.locator('.ant-layout-sider');
-  await expect(sider2.getByText('Inbox', { exact: true })).toBeVisible();
-  await expect(sider2.getByText('Hộp thư', { exact: true })).toHaveCount(0);
+  // Permanent icons-only rail — assert the localized label on the menu item rows.
+  await expect(sider2.locator('.ant-menu-item', { hasText: /^Inbox$/ })).toBeVisible();
+  await expect(sider2.locator('.ant-menu-item', { hasText: /^Hộp thư$/ })).toHaveCount(0);
   await ctx2.close();
 
   expect(errors).toEqual([]);

@@ -1,21 +1,21 @@
 import { useTranslation } from 'react-i18next';
-import { Select, Input, Button, Space, Segmented } from 'antd';
+import { Select, Input, Button, Space, Tag, Typography } from 'antd';
 import { useMe } from '../../lib/auth';
 import { useFilterOptions, type TicketFilters } from '../../lib/tickets';
 import i18n from '../../i18n';
 
+const { Text } = Typography;
 const STATUSES = ['open', 'assigned', 'in_progress', 'pending', 'resolved', 'closed'] as const;
 
 /**
- * Filter bar for the worklist (Story 10.1, FR79). State lives in the URL (the
- * parent owns `value`/`onChange` against searchParams) so links are shareable.
- * Options come from the RLS-scoped `/tickets/filter-options` endpoint, so a user
- * can only ever filter by categories/assignees/tags they can already see.
- *
- * Date range uses native `<input type="date">` — the app deliberately avoids
- * dayjs / AntD DatePicker (same call as the snooze + availability inputs).
+ * Worklist filters (Story 10.1, FR79) — v2 layout: the fields live in a persistent
+ * RIGHT COLUMN (hr-1 style) that the inbox shows beside the list and pushes the table
+ * left, instead of an overlay popup. The toggle button + Export sit in the toolbar;
+ * removable chips render above the list. State still lives in the URL (parent owns
+ * value/onChange) so links stay shareable; options come RLS-scoped from
+ * /tickets/filter-options. Dates use native inputs (the app avoids dayjs/DatePicker).
  */
-export function TicketFilterBar({
+export function TicketFilterPanel({
   value,
   onChange,
   onReset,
@@ -31,96 +31,177 @@ export function TicketFilterBar({
   const { data: opts } = useFilterOptions();
   const lang = i18n.language === 'en' ? 'en' : 'vi';
   const ssa = me?.role === 'ssa';
-
   const set = (patch: Partial<TicketFilters>) => onChange({ ...value, ...patch });
+  const active = hasActiveFilters(value);
+
+  const field = (label: string, control: React.ReactNode) => (
+    <div>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+        {label}
+      </Text>
+      {control}
+    </div>
+  );
 
   return (
-    <Space wrap size={[8, 8]} style={{ marginBottom: 12, width: '100%' }}>
-      <Segmented
-        value={value.view ?? 'all'}
-        onChange={(v) => set({ view: v as TicketFilters['view'] })}
-        options={[
-          { label: t('reports.filter.viewAll'), value: 'all' },
-          { label: t('reports.filter.viewMine'), value: 'mine' },
-          { label: t('reports.filter.viewPool'), value: 'pool' },
-        ]}
-      />
-      <Select
-        mode="multiple"
-        allowClear
-        placeholder={t('reports.filter.status')}
-        style={{ minWidth: 180 }}
-        maxTagCount="responsive"
-        value={value.status ?? []}
-        onChange={(v: string[]) => set({ status: v.length ? v : undefined })}
-        options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
-      />
-      <Select
-        mode="multiple"
-        allowClear
-        placeholder={t('reports.filter.category')}
-        style={{ minWidth: 180 }}
-        maxTagCount="responsive"
-        value={value.categoryId ?? []}
-        onChange={(v: number[]) => set({ categoryId: v.length ? v : undefined })}
-        options={(opts?.categories ?? []).map((c) => ({ value: c.id, label: lang === 'en' ? c.nameEn : c.nameVi }))}
-      />
-      <Select
-        mode="multiple"
-        allowClear
-        placeholder={t('reports.filter.tag')}
-        style={{ minWidth: 160 }}
-        maxTagCount="responsive"
-        value={value.tagId ?? []}
-        onChange={(v: number[]) => set({ tagId: v.length ? v : undefined })}
-        options={(opts?.tags ?? []).map((tg) => ({ value: tg.id, label: tg.name }))}
-      />
-      <Select
-        mode="multiple"
-        allowClear
-        placeholder={t('reports.filter.assignee')}
-        style={{ minWidth: 180 }}
-        maxTagCount="responsive"
-        value={value.assigneeId ?? []}
-        onChange={(v: string[]) => set({ assigneeId: v.length ? v : undefined })}
-        options={(opts?.assignees ?? []).map((a) => ({ value: a.id, label: a.name }))}
-      />
-      {ssa && (
+    <div
+      style={{
+        width: 300,
+        flexShrink: 0,
+        alignSelf: 'stretch',
+        // Full-height column even when the list is empty/short (so it reads as a fixed
+        // side rail, not a floating box).
+        minHeight: 'calc(100vh - 210px)',
+        background: '#fff',
+        border: '1px solid #EAEDF3',
+        borderRadius: 12,
+        padding: 16,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text strong>{t('reports.filter.button')}</Text>
+        {(active || !isWorklistOrder) && (
+          <Button type="link" size="small" style={{ padding: 0 }} onClick={onReset}>
+            {t('reports.filter.clear')}
+          </Button>
+        )}
+      </div>
+      {field(
+        t('reports.filter.status'),
         <Select
+          mode="multiple"
           allowClear
-          placeholder={t('reports.filter.project')}
-          style={{ minWidth: 140 }}
-          value={value.projectId}
-          onChange={(v?: number) => set({ projectId: v })}
-          options={(me?.projects ?? []).map((p) => ({ value: p.id, label: p.name }))}
-        />
+          style={{ width: '100%' }}
+          maxTagCount="responsive"
+          value={value.status ?? []}
+          onChange={(v: string[]) => set({ status: v.length ? v : undefined })}
+          options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
+        />,
       )}
-      <Space size={4}>
-        <Input
-          type="date"
-          aria-label={t('reports.filter.createdFrom')}
-          style={{ width: 150 }}
-          value={value.createdFrom ?? ''}
-          onChange={(e) => set({ createdFrom: e.target.value || undefined })}
-        />
-        <span>–</span>
-        <Input
-          type="date"
-          aria-label={t('reports.filter.createdTo')}
-          style={{ width: 150 }}
-          value={value.createdTo ?? ''}
-          onChange={(e) => set({ createdTo: e.target.value || undefined })}
-        />
-      </Space>
-      <Button onClick={onReset} disabled={isWorklistOrder && !hasActiveFilters(value)}>
-        {t('reports.worklist.resetOrder')}
-      </Button>
+      {field(
+        t('reports.filter.category'),
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: '100%' }}
+          maxTagCount="responsive"
+          value={value.categoryId ?? []}
+          onChange={(v: number[]) => set({ categoryId: v.length ? v : undefined })}
+          options={(opts?.categories ?? []).map((c) => ({ value: c.id, label: lang === 'en' ? c.nameEn : c.nameVi }))}
+        />,
+      )}
+      {field(
+        t('reports.filter.tag'),
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: '100%' }}
+          maxTagCount="responsive"
+          value={value.tagId ?? []}
+          onChange={(v: number[]) => set({ tagId: v.length ? v : undefined })}
+          options={(opts?.tags ?? []).map((tg) => ({ value: tg.id, label: tg.name }))}
+        />,
+      )}
+      {field(
+        t('reports.filter.assignee'),
+        <Select
+          mode="multiple"
+          allowClear
+          style={{ width: '100%' }}
+          maxTagCount="responsive"
+          value={value.assigneeId ?? []}
+          onChange={(v: string[]) => set({ assigneeId: v.length ? v : undefined })}
+          options={(opts?.assignees ?? []).map((a) => ({ value: a.id, label: a.name }))}
+        />,
+      )}
+      {ssa &&
+        field(
+          t('reports.filter.project'),
+          <Select
+            allowClear
+            style={{ width: '100%' }}
+            value={value.projectId}
+            onChange={(v?: number) => set({ projectId: v })}
+            options={(me?.projects ?? []).map((p) => ({ value: p.id, label: p.name }))}
+          />,
+        )}
+      {field(
+        t('reports.filter.createdFrom') + ' – ' + t('reports.filter.createdTo'),
+        <Space size={4}>
+          <Input
+            type="date"
+            aria-label={t('reports.filter.createdFrom')}
+            style={{ width: 124 }}
+            value={value.createdFrom ?? ''}
+            onChange={(e) => set({ createdFrom: e.target.value || undefined })}
+          />
+          <span>–</span>
+          <Input
+            type="date"
+            aria-label={t('reports.filter.createdTo')}
+            style={{ width: 124 }}
+            value={value.createdTo ?? ''}
+            onChange={(e) => set({ createdTo: e.target.value || undefined })}
+          />
+        </Space>,
+      )}
+    </div>
+  );
+}
+
+/** Removable active-filter chips — shown above the list so applied filters stay visible
+ *  even when the filter panel is closed. */
+export function TicketFilterChips({
+  value,
+  onChange,
+}: {
+  value: TicketFilters;
+  onChange: (next: TicketFilters) => void;
+}) {
+  const { t } = useTranslation();
+  const set = (patch: Partial<TicketFilters>) => onChange({ ...value, ...patch });
+  if (!hasActiveFilters(value)) return null;
+  return (
+    <Space wrap size={[8, 8]} style={{ marginBottom: 12 }}>
+      {value.status?.length ? (
+        <Tag closable onClose={() => set({ status: undefined })}>
+          {t('reports.filter.status')}: {value.status.length}
+        </Tag>
+      ) : null}
+      {value.categoryId?.length ? (
+        <Tag closable onClose={() => set({ categoryId: undefined })}>
+          {t('reports.filter.category')}: {value.categoryId.length}
+        </Tag>
+      ) : null}
+      {value.tagId?.length ? (
+        <Tag closable onClose={() => set({ tagId: undefined })}>
+          {t('reports.filter.tag')}: {value.tagId.length}
+        </Tag>
+      ) : null}
+      {value.assigneeId?.length ? (
+        <Tag closable onClose={() => set({ assigneeId: undefined })}>
+          {t('reports.filter.assignee')}: {value.assigneeId.length}
+        </Tag>
+      ) : null}
+      {value.projectId !== undefined ? (
+        <Tag closable onClose={() => set({ projectId: undefined })}>
+          {t('reports.filter.project')}
+        </Tag>
+      ) : null}
+      {value.createdFrom || value.createdTo ? (
+        <Tag closable onClose={() => set({ createdFrom: undefined, createdTo: undefined })}>
+          {value.createdFrom ?? '…'} – {value.createdTo ?? '…'}
+        </Tag>
+      ) : null}
     </Space>
   );
 }
 
-/** Any filter or non-default ordering applied? Drives the reset button state. */
-function hasActiveFilters(f: TicketFilters): boolean {
+/** Any filter or non-default ordering applied? */
+export function hasActiveFilters(f: TicketFilters): boolean {
   return Boolean(
     f.status?.length ||
       f.categoryId?.length ||
@@ -131,4 +212,16 @@ function hasActiveFilters(f: TicketFilters): boolean {
       f.createdTo ||
       (f.view && f.view !== 'all'),
   );
+}
+
+/** Number of active filter groups (drives the toolbar badge). */
+export function activeCount(f: TicketFilters): number {
+  let n = 0;
+  if (f.status?.length) n++;
+  if (f.categoryId?.length) n++;
+  if (f.tagId?.length) n++;
+  if (f.assigneeId?.length) n++;
+  if (f.projectId !== undefined) n++;
+  if (f.createdFrom || f.createdTo) n++;
+  return n;
 }

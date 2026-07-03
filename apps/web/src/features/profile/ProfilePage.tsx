@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Descriptions, Switch, Modal, Input, Typography, App as AntApp, Divider } from 'antd';
-import { useMe, toggleOtp, setServerLanguage } from '../../lib/auth';
+import { useMe, toggleOtp } from '../../lib/auth';
 import { ChangePasswordPage } from '../auth/ChangePasswordPage';
-import { setLanguage } from '../../i18n';
-import i18n from '../../i18n';
 
 const { Title } = Typography;
 
-/** Profile (Story 1.5/S3): info, security (OTP + password), language. */
-export function ProfilePage() {
+/**
+ * Profile content (Story 1.5/S3): info + security (OTP + password). Language is NOT
+ * here — it lives in the header avatar menu, so duplicating it would be confusing.
+ * Rendered both as a full page (/profile) and inside the header popup (ProfileModal).
+ */
+export function ProfileContent() {
   const { t } = useTranslation();
   const { data: me, refetch } = useMe();
   const { message } = AntApp.useApp();
@@ -31,50 +33,64 @@ export function ProfilePage() {
   };
 
   return (
-    <div style={{ maxWidth: 720 }}>
-      <Card>
-        <Title level={4}>{t('menu.profile')}</Title>
-        <Descriptions column={1} bordered size="small">
-          <Descriptions.Item label={t('common.email')}>{me.user.email}</Descriptions.Item>
-          <Descriptions.Item label={t('common.name')}>{me.user.name}</Descriptions.Item>
-          <Descriptions.Item label={t('common.role')}>{me.role}</Descriptions.Item>
-        </Descriptions>
+    <>
+      <Descriptions column={1} bordered size="small">
+        <Descriptions.Item label={t('common.email')}>{me.user.email}</Descriptions.Item>
+        <Descriptions.Item label={t('common.name')}>{me.user.name}</Descriptions.Item>
+        <Descriptions.Item label={t('common.role')}>{me.role}</Descriptions.Item>
+      </Descriptions>
 
-        <Divider>{t('profile.security')}</Divider>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {t('profile.otp2fa')}
-          <Switch
-            onChange={(v) => {
-              setNextEnabled(v);
-              setPwModal(true);
-            }}
-          />
-        </div>
-
-        <Divider>{t('common.language')}</Divider>
+      <Divider>{t('profile.security')}</Divider>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {t('profile.otp2fa')}
+        {/* Controlled by the server state: the switch only flips after the password
+            confirm succeeds and /me refetches — cancelling leaves it untouched. */}
         <Switch
-          checkedChildren="EN"
-          unCheckedChildren="VI"
-          defaultChecked={i18n.language === 'en'}
+          checked={me.otpEnabled}
           onChange={(v) => {
-            const lng = v ? 'en' : 'vi';
-            setLanguage(lng); // immediate (i18next)
-            void setServerLanguage(lng).catch(() => undefined); // persist to the account so it survives reload
+            setNextEnabled(v);
+            setPwModal(true);
           }}
         />
+      </div>
 
-        <Divider>{t('common.password')}</Divider>
-        <ChangePasswordPage />
-      </Card>
+      <Divider>{t('common.password')}</Divider>
+      <ChangePasswordPage />
 
       <Modal
         open={pwModal}
         title={t('profile.confirmPassword')}
         onOk={confirmToggle}
-        onCancel={() => setPwModal(false)}
+        onCancel={() => {
+          setPwModal(false);
+          setPw('');
+        }}
       >
         <Input.Password value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('common.password')} />
       </Modal>
+    </>
+  );
+}
+
+/** Header avatar menu opens this popup instead of routing to a separate page. */
+export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Modal open={open} onCancel={onClose} footer={null} title={t('menu.profile')} width={560}>
+      <ProfileContent />
+    </Modal>
+  );
+}
+
+/** Standalone /profile route (kept for deep links). */
+export function ProfilePage() {
+  const { t } = useTranslation();
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <Card>
+        <Title level={4}>{t('menu.profile')}</Title>
+        <ProfileContent />
+      </Card>
     </div>
   );
 }

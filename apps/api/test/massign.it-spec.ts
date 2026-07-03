@@ -184,4 +184,24 @@ describe('IT-MASSIGN: manual assign + reclassify', () => {
     expect(chain).toContain(t1);
     expect(chain[chain.length - 1]).toBe(t2);
   });
+
+  it('IT-MASSIGN-004 (CR-4): PENDING is reassignable — status + snooze kept; terminal still 409', async () => {
+    if (!ready) return;
+    // A snoozed ticket whose holder went on leave: the TL hands it to a teammate.
+    const tk = await mkTicket(Payroll, t1);
+    await harness!.db
+      .update(tickets)
+      .set({ status: 'pending', snoozeUntil: '2027-01-15' })
+      .where(eq(tickets.id, tk));
+
+    await expect(svc.assign(tlPay, tk, { assigneeId: t2 })).resolves.toMatchObject({ assigneeId: t2 });
+    const [row] = await harness!.db.select().from(tickets).where(eq(tickets.id, tk));
+    expect(row!.assigneeId).toBe(t2);
+    expect(row!.status).toBe('pending'); // NOT forced to in_progress
+    expect(row!.snoozeUntil).toBe('2027-01-15'); // follow-up date inherited
+
+    // Terminal states stay rejected.
+    await harness!.db.update(tickets).set({ status: 'resolved' }).where(eq(tickets.id, tk));
+    await expect(svc.assign(tlPay, tk, { assigneeId: t1 })).rejects.toThrow('INVALID_TRANSITION');
+  });
 });

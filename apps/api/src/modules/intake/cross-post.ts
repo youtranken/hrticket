@@ -1,6 +1,6 @@
-import { and, eq, ne, or, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, isNotNull } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
-import { inboxMessages, ticketLink } from '../../infra/db/schema';
+import { inboxMessages, ticketLink, tickets } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { AUTO_TAG, ensureTag, addTicketTag } from '../routing/auto-tag.service';
 
@@ -45,13 +45,24 @@ export async function linkCrossPost(
       await tx
         .insert(ticketLink)
         .values({ ticketA: opts.ticketId, ticketB: sib.ticketId, kind: 'cross_post' });
+
+      // A cross-post is the SAME request reaching two projects — only one should handle
+      // it. Undo any auto-assignment so BOTH siblings sit in their project pool (or, for
+      // a "Khác" side, stay admin-only). Whichever side is claimed first then LOCKS the
+      // other (getCrossPostLock). Only revert FRESH tickets (open/assigned) — never yank a
+      // ticket someone already started working (in_progress/pending/resolved/closed).
+      await tx
+        .update(tickets)
+        .set({ assigneeId: null, assignedAt: null, status: 'open' })
+        .where(and(inArray(tickets.id, [opts.ticketId, sib.ticketId]), inArray(tickets.status, ['open', 'assigned'])));
+
       await writeAudit(tx, {
         projectId: opts.projectId,
         actorLabel: 'system:intake',
         action: 'ticket.cross_post_linked',
         objectType: 'ticket',
         objectId: opts.ticketId,
-        newValue: { linkedTo: sib.ticketId },
+        newValue: { linkedTo: sib.ticketId, pooledBoth: true },
       });
     }
   }

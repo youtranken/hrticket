@@ -19,8 +19,10 @@ export class AssignmentController {
 
   @Post('claim')
   async claim(@CurrentUser() user: SessionUser, @Param('id') id: string, @Body() body: unknown) {
-    const over = !!(body as { over?: boolean })?.over;
-    return this.assignment.claim(user, id, { over });
+    const { over, categoryId } = z
+      .object({ over: z.boolean().optional(), categoryId: z.number().int().positive().optional() })
+      .parse(body ?? {});
+    return this.assignment.claim(user, id, { over: over ?? false, categoryId });
   }
 
   /** Candidate assignees for the modal (group members, or project for "Khác"). */

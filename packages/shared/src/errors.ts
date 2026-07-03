@@ -12,6 +12,8 @@ export enum ErrorCode {
   INTERNAL = 'INTERNAL',
   // Data access gateway (invariant #1)
   MISSING_ACTOR = 'MISSING_ACTOR',
+  // Auth / session
+  PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED',
   // Ticket lifecycle (Epic 5)
   INVALID_TRANSITION = 'INVALID_TRANSITION',
   PENDING_REQUIRES_SNOOZE = 'PENDING_REQUIRES_SNOOZE',

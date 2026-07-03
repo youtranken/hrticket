@@ -11,6 +11,7 @@ import { createTicketFromMail } from './create-ticket.usecase';
 import { appendMessageToTicket } from './append-message.usecase';
 import { linkCrossPost } from './cross-post';
 import { isBlocked } from './blocklist';
+import { isAllowlisted } from './allowlist';
 import { checkMailBomb } from './mail-bomb';
 import { matchJunkRule } from './junk-rules';
 
@@ -83,7 +84,25 @@ export class IntakeService {
         }
 
         const parsed = await parseMail(row.raw);
-        const autoReply = isAutoSubmitted(parsed.headers);
+        // Allowlist (escape hatch): a trusted sender's mail ALWAYS opens a ticket, even
+        // when it carries list/bulk/auto-submitted headers (e.g. an HR announcement sent
+        // via a Google Group). It only relaxes the auto-submitted drop below — blocklist,
+        // mail-bomb and junk still apply. Exact-address, per project (twin of blocklist).
+        const fromForAllow = parsed.from?.address;
+        const machineMail = isAutoSubmitted(parsed.headers);
+        const allowlisted =
+          machineMail && fromForAllow ? await isAllowlisted(tx, row.projectId, fromForAllow) : false;
+        const autoReply = machineMail && !allowlisted;
+        if (allowlisted) {
+          await writeAudit(tx, {
+            projectId: row.projectId,
+            actorLabel: 'system:intake',
+            action: 'inbox.allowlisted',
+            objectType: 'inbox_message',
+            objectId: row.id,
+            newValue: { from: fromForAllow, messageId: row.messageId, subject: parsed.subject },
+          });
+        }
 
         // FIXED pipeline — dedupe is enforced by the (message_id, mailbox) unique at
         // poll time; blocklist (Story 7.1) gates the create branch below; mail-bomb /

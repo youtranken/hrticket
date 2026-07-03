@@ -60,4 +60,8 @@ describe('manualNextStates — only human-pickable edges (5.1 AC3)', () => {
     expect(manualNextStates('open')).toEqual([]);
     expect(manualNextStates('closed')).toEqual([]);
   });
+  it('pending offers nothing (resume is reply-driven), resolved offers only close', () => {
+    expect(manualNextStates('pending')).toEqual([]);
+    expect(manualNextStates('resolved')).toEqual(['closed']);
+  });
 });

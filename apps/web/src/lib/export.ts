@@ -44,10 +44,10 @@ export function exportTickets(filter: TicketFilters, format: ExportFormat): Prom
   return downloadPost('/export/tickets', { format, lang: lang(), filter });
 }
 
-/** Export one report table (matches the 10.3 dashboard). */
+/** Export one report table (matches the 10.3 dashboard, incl. đơn 13 slicing). */
 export function exportReport(
   kind: 'by-time' | 'by-category' | 'by-staff',
-  range: { from?: string; to?: string },
+  range: { from?: string; to?: string; granularity?: 'week' | 'month' | 'year'; assigneeId?: string },
   format: ExportFormat,
 ): Promise<void> {
   return downloadPost('/export/report', { format, lang: lang(), kind, ...range });

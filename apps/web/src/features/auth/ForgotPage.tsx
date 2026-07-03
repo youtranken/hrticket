@@ -8,14 +8,15 @@ const { Title } = Typography;
 export function ForgotPage() {
   const { t } = useTranslation();
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   if (sent) {
     return (
       <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}>
         <Result
           status="info"
-          title="Đã gửi (nếu email tồn tại)"
-          subTitle="Kiểm tra hộp thư để đặt lại mật khẩu."
+          title={t('login.forgotSentTitle')}
+          subTitle={t('login.forgotSentDesc')}
         />
       </div>
     );
@@ -28,15 +29,20 @@ export function ForgotPage() {
         <Form
           layout="vertical"
           onFinish={async (v: { email: string }) => {
-            await forgotPassword(v.email);
-            setSent(true);
+            setLoading(true);
+            try {
+              await forgotPassword(v.email);
+              setSent(true);
+            } finally {
+              setLoading(false);
+            }
           }}
         >
           <Form.Item name="email" label={t('common.email')} rules={[{ required: true, type: 'email' }]}>
-            <Input />
+            <Input autoFocus type="email" />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>
-            {t('common.save')}
+          <Button type="primary" htmlType="submit" block loading={loading}>
+            {t('login.forgotSubmit')}
           </Button>
         </Form>
       </Card>

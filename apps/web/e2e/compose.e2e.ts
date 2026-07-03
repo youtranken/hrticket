@@ -22,33 +22,39 @@ test.afterAll(async () => {
   await sql.end();
 });
 
-async function injectMail(subject: string, messageId: string): Promise<void> {
-  const t = nodemailer.createTransport({ host: 'localhost', port: 3025, secure: false, tls: { rejectUnauthorized: false } });
-  await t.sendMail({ from: 'requester@company.com', to: 'hris@test.local', subject, text: 'Body for compose e2e.', messageId });
+async function injectMail(subject: string, messageId: string, sender: string): Promise<void> {
+  const t = nodemailer.createTransport({ host: 'localhost', port: Number(process.env.E2E_SMTP_PORT ?? 3025), secure: false, tls: { rejectUnauthorized: false } });
+  await t.sendMail({ from: sender, to: 'hris@test.local', subject, text: 'Body for compose e2e.', messageId });
   t.close();
 }
 
 async function login(page: Page): Promise<void> {
   await page.goto('/login');
-  await page.locator('input[autocomplete="username"]').fill('admin@dev.local');
+  // The handler (a Member) is who replies — Admin/SSA are administrative and the reply tab
+  // is hidden for them (model: ComposeBox canReply). So drive the compose flow as a member.
+  await page.locator('input[autocomplete="username"]').fill('member@dev.local');
   await page.locator('input[autocomplete="current-password"]').fill(DEV_PW);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/inbox');
 }
 
-/** Inject a mail, wait for the worker to make a ticket, open it. Returns the ticket id. */
+/** Inject a mail, wait for the worker to make a ticket, ASSIGN it to the member (so the
+ *  assignee may reply + sees it via the RLS carve-out), then open it. Returns the id. */
 async function openFreshTicket(page: Page, tag: string): Promise<string> {
   const stamp = `${Date.now()}-${tag}`;
   const subject = `E2E compose ${stamp}`;
-  await injectMail(subject, `<e2e-compose-${stamp}@company.com>`);
+  await injectMail(subject, `<e2e-compose-${stamp}@company.com>`, `req-${stamp}@company.com`);
+  let ticketId = '';
   await expect(async () => {
-    await page.reload();
-    await expect(page.getByText(subject)).toBeVisible({ timeout: 2000 });
+    const rows = await sql<{ id: string }[]>`SELECT id FROM tickets WHERE subject = ${subject} LIMIT 1`;
+    expect(rows.length).toBe(1);
+    ticketId = rows[0]!.id;
   }).toPass({ timeout: 40_000 });
+  await sql`UPDATE tickets SET assignee_id = (SELECT id FROM users WHERE email = 'member@dev.local'), status = 'in_progress', assigned_at = now() WHERE id = ${ticketId}`;
   const defaultsLoaded = page.waitForResponse((r) => r.url().includes('/reply-defaults') && r.status() === 200);
-  await page.getByText(subject).click();
+  await page.goto(`/tickets/${ticketId}`);
   await defaultsLoaded;
-  return page.url().split('/tickets/')[1]!;
+  return ticketId;
 }
 
 test('Epic 3.5: a reply draft autosaves and survives a reload', async ({ page }) => {

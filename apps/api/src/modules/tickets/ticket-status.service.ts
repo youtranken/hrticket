@@ -12,7 +12,8 @@ import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
 import { emitNotification } from '../notifications/emit';
-import { canTransition, assertCanActOnTicket, type TransitionReason } from './ticket.state-machine';
+import { canTransition, assertCanChangeStatus, type TransitionReason } from './ticket.state-machine';
+import { autoCloseLockedSiblings } from './cross-post-lock';
 
 interface StatusTicketRow {
   id: string;
@@ -68,12 +69,12 @@ export class TicketStatusService {
     input: ChangeStatusInput,
   ): Promise<{ status: TicketStatus }> {
     const actor = await actorForUser(user);
-    const groups = actor.kind === 'user' ? actor.groups : [];
-    return withActor(actor, async (tx) => {
+    const out = await withActor(actor, async (tx) => {
       // Serialize concurrent status changes on the same ticket.
       await tx.select({ id: tickets.id }).from(tickets).where(eq(tickets.id, ticketId)).for('update');
       const t = await this.load(tx, ticketId);
-      assertCanActOnTicket(user, groups, t);
+      // Only the handler (assignee) or an Admin/SSA may change status — a TL coordinates.
+      assertCanChangeStatus(user, t);
 
       const from = t.status;
       const to = input.to;
@@ -152,7 +153,17 @@ export class TicketStatusService {
         newValue: { status: to, snoozeUntil: snoozeDate, reason: input.reason },
       });
 
-      return { status: to };
+      return { status: to, ticketCode: t.ticketCode };
     });
+
+    // Cross-post: handling this side to completion settles the shared request, so the
+    // LOCKED sibling (pooled, no assignee) is auto-closed. Runs AFTER the main change
+    // committed, under the SYSTEM actor — the sibling is in the other project, beyond
+    // this user's RLS scope (a user-scoped query would never see it).
+    if (out.status === 'resolved' || out.status === 'closed') {
+      await autoCloseLockedSiblings(ticketId, out.ticketCode, { id: user.id, email: user.email });
+    }
+
+    return { status: out.status };
   }
 }

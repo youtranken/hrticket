@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Headers,
   HttpException,
   HttpStatus,
@@ -21,7 +20,8 @@ import { ErrorCode } from '@hris/shared';
 /**
  * Export endpoints (Story 10.4, FR84). Ticket export rides on the worklist's RLS
  * (any session user; only their visible tickets land in the file). Report export
- * is TL/admin/ssa only (mirrors 10.3). Over 10k rows → 422, no partial file.
+ * mirrors 10.3 + đơn 13: any role, but a member's export is pinned to self by
+ * the reporting service. Over 10k rows → 422, no partial file.
  */
 @Controller('api/export')
 @UseGuards(SessionGuard)
@@ -55,14 +55,13 @@ export class ExportController {
     @Res() res: Response,
   ): Promise<void> {
     const parsed = exportReportSchema.parse(body);
-    if (user.role === 'member') throw new ForbiddenException();
     const project = await this.projectCtx.resolveEffective(user, xp);
     try {
       const table = await this.svc.reportTable(
         user,
         project.id,
         parsed.kind,
-        { from: parsed.from, to: parsed.to },
+        { from: parsed.from, to: parsed.to, granularity: parsed.granularity, assigneeId: parsed.assigneeId },
         parsed.lang,
       );
       await this.send(res, table, parsed.format);

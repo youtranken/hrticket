@@ -1,11 +1,12 @@
 import { and, eq } from 'drizzle-orm';
 import type { DbTx } from '../../infra/db/with-actor';
-import { ticketMessages, participants, attachments, inboxMessages } from '../../infra/db/schema';
+import { tickets, ticketMessages, participants, attachments, inboxMessages } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { ingestAttachments } from './attachments';
 import { applyAutoTags } from '../routing/auto-tag.service';
 import { handleReplyTransition } from './reopen.usecase';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
+import { systemMailboxAddresses } from '../email-engine/mailbox-addresses';
 import type { ParsedMail } from '../email-engine/parser';
 
 export interface AppendInput {
@@ -19,15 +20,17 @@ export interface AppendInput {
 
 export interface AppendResult {
   messageId: string;
-  /** New addresses parked as pending_approval (FR3) — the "stranger" warning. */
+  /** Addresses first seen on this mail — admitted ACTIVE immediately (approval removed). */
   strangers: string[];
 }
 
 /**
- * Append an inbound mail to an existing ticket (Story 2.3). Known participants stay
- * active (FR5); a new address is parked `pending_approval` and kept OUT of the
- * default reply-all until a human approves it (FR3). Appending to a Closed ticket
- * records the message but does NOT change status (reopen is Epic 5).
+ * Append an inbound mail to an existing ticket (Story 2.3). Every address on the
+ * mail (From/To/CC) joins the thread as an ACTIVE participant immediately — the
+ * old `pending_approval` gate (FR3) was removed by request: reply-all now follows
+ * the latest mail without a human approving newcomers first. The one guard kept:
+ * a first-seen SENDER still can't reopen/wake a ticket (see below). Appending to
+ * a Closed ticket records the message but does NOT change status (reopen: Epic 5).
  */
 export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promise<AppendResult> {
   const { ticketId, parsed } = input;
@@ -64,19 +67,43 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
     .where(eq(ticketMessages.id, message!.id));
 
   const strangers: string[] = [];
+  // From + To + CC of the reply are all thread members (reply-all parity) — minus our
+  // own project mailboxes (the reply's To always contains US; cross-post also lists
+  // the sibling mailbox — admitting either would loop replies back into ingest).
+  const [tRow] = await tx
+    .select({ mailbox: tickets.mailbox })
+    .from(tickets)
+    .where(eq(tickets.id, ticketId));
+  const ownMailboxes = await systemMailboxAddresses(tx, tRow?.mailbox ?? '');
   const addresses = new Set(
-    [parsed.from, ...parsed.cc].filter(Boolean).map((a) => (a as { address: string }).address),
+    [parsed.from, ...parsed.to, ...parsed.cc]
+      .filter(Boolean)
+      .map((a) => (a as { address: string }).address)
+      .filter((e) => !ownMailboxes.has(e.toLowerCase())),
   );
+  // Reopen/wake guard input — captured BEFORE admission so a first-seen sender is
+  // still treated as an outsider for lifecycle transitions (anti-abuse), even though
+  // they now join the reply-all immediately.
+  const fromAddr = parsed.from?.address;
+  let fromWasActive = false;
+  if (fromAddr) {
+    const [p] = await tx
+      .select({ status: participants.status })
+      .from(participants)
+      .where(and(eq(participants.ticketId, ticketId), eq(participants.email, fromAddr)));
+    fromWasActive = p?.status === 'active';
+  }
   for (const email of addresses) {
     const [existing] = await tx
       .select({ id: participants.id })
       .from(participants)
       .where(and(eq(participants.ticketId, ticketId), eq(participants.email, email)));
     if (!existing) {
-      // New address on an existing thread → stranger, needs approval before reply-all.
+      // New address on an existing thread → ACTIVE right away (approval removed):
+      // the next reply-all includes them without a human in the loop.
       await tx
         .insert(participants)
-        .values({ ticketId, email, status: 'pending_approval' })
+        .values({ ticketId, email, status: 'active' })
         .onConflictDoNothing({ target: [participants.ticketId, participants.email] });
       strangers.push(email);
     }
@@ -118,23 +145,15 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
     },
   });
 
-  // Lifecycle reaction (Epic 5): reopen a Closed ticket / wake a Pending one when an
-  // active participant replies; locked/junk/spam append-only; auto-reply & strangers
-  // never drive a transition. The new message is already persisted above.
-  const from = parsed.from?.address;
-  let fromIsActiveParticipant = false;
-  if (from) {
-    const [p] = await tx
-      .select({ status: participants.status })
-      .from(participants)
-      .where(and(eq(participants.ticketId, ticketId), eq(participants.email, from)));
-    fromIsActiveParticipant = p?.status === 'active';
-  }
+  // Lifecycle reaction (Epic 5): reopen a Closed ticket / wake a Pending one when a
+  // KNOWN participant replies; locked/junk/spam append-only; auto-reply & first-seen
+  // senders never drive a transition (fromWasActive was captured BEFORE this mail's
+  // admission — post-admission everyone is active, which would void the guard).
   await handleReplyTransition(tx, {
     ticketId,
     projectId: input.projectId,
-    fromAddr: from ?? 'unknown@unknown',
-    fromIsActiveParticipant,
+    fromAddr: fromAddr ?? 'unknown@unknown',
+    fromIsActiveParticipant: fromWasActive,
     isAutoReply: input.isAutoReply ?? false,
   });
 

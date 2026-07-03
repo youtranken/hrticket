@@ -52,9 +52,9 @@ const TEMPLATES: Array<{
     subjectVi: '[{{ticketCode}}] Đã tiếp nhận yêu cầu của bạn',
     subjectEn: '[{{ticketCode}}] We have received your request',
     bodyVi:
-      'Chào {{requesterName}},\n\nChúng tôi đã tiếp nhận yêu cầu "{{subject}}" và tạo phiếu mã {{ticketCode}}.\nVui lòng trả lời ngay trên email này (giữ nguyên mã {{ticketCode}} ở tiêu đề) nếu cần bổ sung thông tin.\n\nTrân trọng,\nBộ phận Nhân sự',
+      'Chào {{requesterName}},\n\nChúng tôi đã tiếp nhận yêu cầu "{{subject}}" và tạo phiếu mã {{ticketCode}}.\nVui lòng trả lời ngay trên email này nếu cần bổ sung thông tin.\n\nTrân trọng,\nBộ phận Nhân sự',
     bodyEn:
-      'Hi {{requesterName}},\n\nWe have received your request "{{subject}}" and opened ticket {{ticketCode}}.\nPlease reply directly to this email (keep {{ticketCode}} in the subject) if you have anything to add.\n\nBest regards,\nHR Team',
+      'Hi {{requesterName}},\n\nWe have received your request "{{subject}}" and opened ticket {{ticketCode}}.\nPlease reply directly to this email if you have anything to add.\n\nBest regards,\nHR Team',
   },
   {
     key: 'reopen_locked_notice',
@@ -228,7 +228,11 @@ export async function seedOnce(): Promise<void> {
     // Gated so production seed never creates them. Ready-to-login (no forced change).
     if (process.env.SEED_DEV_USERS === 'true') {
       const devPassword = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+      // The dev SSA keeps a SEPARATE password (the e2e suite logs SSA in with SSA_PW, not
+      // DEV_PW) so the role-permission/project-switcher specs work without an env override.
+      const ssaDevPassword = process.env.SEED_SSA_DEV_PASSWORD ?? 'Pmh@1234';
       const devHash = await argon2.hash(devPassword, { type: argon2.argon2id });
+      const ssaDevHash = await argon2.hash(ssaDevPassword, { type: argon2.argon2id });
       const devUsers: Array<{ email: string; name: string; role: s.Role }> = [
         { email: 'member@dev.local', name: 'Dev Member', role: 'member' },
         { email: 'lead@dev.local', name: 'Dev Team Lead', role: 'team_lead' },
@@ -242,7 +246,7 @@ export async function seedOnce(): Promise<void> {
             projectId: byKey.get('hris')!,
             email: u.email,
             name: u.name,
-            passwordHash: devHash,
+            passwordHash: u.role === 'ssa' ? ssaDevHash : devHash,
             role: u.role,
             mustChangePassword: false,
           })

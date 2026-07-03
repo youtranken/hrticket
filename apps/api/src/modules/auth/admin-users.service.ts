@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, asc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, notInArray } from 'drizzle-orm';
 import { withActor, systemActor, type DbTx } from '../../infra/db/with-actor';
-import { users, userGroupMembership, categories } from '../../infra/db/schema';
+import { users, userGroupMembership, categories, projects, tickets } from '../../infra/db/schema';
 import type { Role } from '../../infra/db/schema';
 import { generateTempPassword, hashPassword } from '../../infra/crypto/password';
 import { writeAudit } from '../../infra/audit/audit';
@@ -20,6 +20,7 @@ export interface AdminUserView {
   role: string;
   disabled: boolean;
   projectId: number | null;
+  otpEnabled: boolean;
   awayFrom: string | null;
   awayTo: string | null;
   lastLoginAt: string | null;
@@ -53,6 +54,7 @@ export class AdminUsersService {
           role: users.role,
           disabled: users.disabled,
           projectId: users.projectId,
+          otpEnabled: users.otpEnabled,
           awayFrom: users.awayFrom,
           awayTo: users.awayTo,
           lastLoginAt: users.lastLoginAt,
@@ -150,6 +152,39 @@ export class AdminUsersService {
     });
   }
 
+  /** Edit a user's email and/or name (FR89). Same admin scope as role/disable; email
+   *  is normalised + kept unique. */
+  async updateProfile(
+    actor: SessionUser,
+    projectId: number,
+    targetId: string,
+    input: { email?: string; name?: string },
+  ): Promise<{ ok: true }> {
+    return withActor(systemActor, async (tx) => {
+      const target = await this.loadTarget(tx, targetId);
+      this.assertScope(actor, projectId, target);
+      const patch: { email?: string; name?: string } = {};
+      if (input.name !== undefined && input.name.trim()) patch.name = input.name.trim();
+      if (input.email !== undefined) {
+        const email = input.email.trim().toLowerCase();
+        const [dup] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.email, email), ne(users.id, targetId)));
+        if (dup) throw new ConflictException('A user with that email already exists');
+        patch.email = email;
+      }
+      if (Object.keys(patch).length === 0) return { ok: true as const };
+      const [old] = await tx
+        .select({ email: users.email, name: users.name })
+        .from(users)
+        .where(eq(users.id, targetId));
+      await tx.update(users).set(patch).where(eq(users.id, targetId));
+      await this.audit(tx, actor, projectId, 'user.profile_updated', targetId, old, patch);
+      return { ok: true as const };
+    });
+  }
+
   async setRole(
     actor: SessionUser,
     projectId: number,
@@ -167,6 +202,68 @@ export class AdminUsersService {
       }
       await tx.update(users).set({ role }).where(eq(users.id, targetId));
       await this.audit(tx, actor, projectId, 'user.role_changed', targetId, { role: target.role }, { role });
+      return { ok: true as const };
+    });
+  }
+
+  /**
+   * Move a user to another project (SSA-only, FR — cross-project relocation). Categories
+   * are project-scoped, so the user's group memberships are cleared; any non-closed ticket
+   * they were assigned in the OLD project is returned to its pool (RLS pins visibility to
+   * the user's project, so a kept assignment would strand the ticket). Sessions are revoked
+   * so the next login resolves the new project. Never strands the old project's last admin.
+   */
+  async moveToProject(
+    actor: SessionUser,
+    targetId: string,
+    newProjectId: number,
+  ): Promise<{ ok: true }> {
+    if (actor.role !== 'ssa') throw new ForbiddenException('Only SSA may move users between projects');
+    if (targetId === actor.id) throw new ForbiddenException('You cannot move your own account');
+    return withActor(systemActor, async (tx) => {
+      const target = await this.loadTarget(tx, targetId);
+      if (target.role === 'ssa') throw new ForbiddenException('SSA is global, not project-bound');
+      if (target.projectId === newProjectId) {
+        throw new ConflictException('User is already in that project');
+      }
+      const [proj] = await tx.select({ id: projects.id }).from(projects).where(eq(projects.id, newProjectId));
+      if (!proj) throw new NotFoundException('Project not found');
+      // Moving the last admin out would orphan the old project.
+      if (target.role === 'admin') await this.assertNotLastAdmin(tx, target.projectId, targetId);
+
+      // Group memberships point at the OLD project's categories — clear them.
+      await tx.delete(userGroupMembership).where(eq(userGroupMembership.userId, targetId));
+
+      // Return their still-open tickets in the OLD project to the pool, else they'd be
+      // assigned to someone who can no longer see them (RLS) — a stranded ticket.
+      let unassigned = 0;
+      if (target.projectId !== null) {
+        const moved = await tx
+          .update(tickets)
+          .set({ assigneeId: null, assignedAt: null })
+          .where(
+            and(
+              eq(tickets.assigneeId, targetId),
+              eq(tickets.projectId, target.projectId),
+              notInArray(tickets.status, ['closed', 'resolved']),
+            ),
+          )
+          .returning({ id: tickets.id });
+        unassigned = moved.length;
+      }
+
+      await tx.update(users).set({ projectId: newProjectId }).where(eq(users.id, targetId));
+      await this.audit(
+        tx,
+        actor,
+        newProjectId,
+        'user.project_moved',
+        targetId,
+        { projectId: target.projectId },
+        { projectId: newProjectId, unassignedTickets: unassigned },
+      );
+      // Force re-login so the session resolves the new project context cleanly.
+      await this.sessions.revokeAllForUser(targetId);
       return { ok: true as const };
     });
   }

@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, Table, Switch, Button, Tooltip, Typography, Space, Popconfirm, App as AntApp } from 'antd';
+import { LockOutlined } from '@ant-design/icons';
+import { PeopleTabBar } from './PeopleTabBar';
 import {
   useRoleCapabilities,
   setCapabilityCell,
@@ -17,7 +19,7 @@ const { Text } = Typography;
 export function RolesPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const { data, isLoading } = useRoleCapabilities();
   const roles: CapRole[] = data?.roles ?? ['member', 'team_lead', 'admin', 'ssa'];
 
@@ -31,6 +33,20 @@ export function RolesPage() {
     } catch (e) {
       message.error((e as Error).message);
     }
+  };
+
+  // Each cell saves IMMEDIATELY — granting is easy to undo, but REVOKING kicks in on
+  // that role's next /me (≤60s) and can strip menus mid-shift, so it confirms first.
+  const onCellChange = (role: CapRole, capability: string, allowed: boolean) => {
+    if (allowed) {
+      void toggle(role, capability, allowed);
+      return;
+    }
+    modal.confirm({
+      title: t('caps.confirmRevoke', { role: t(`role.${role}`) }),
+      okButtonProps: { danger: true },
+      onOk: () => toggle(role, capability, allowed),
+    });
   };
 
   const reset = async () => {
@@ -55,13 +71,14 @@ export function RolesPage() {
         <Switch
           checked={cell.allowed}
           disabled={cell.locked}
-          onChange={(v) => toggle(role, row.capability, v)}
+          onChange={(v) => onCellChange(role, row.capability, v)}
         />
       );
       return cell.locked ? (
         <Tooltip title={t('caps.locked')}>
-          <span>
-            🔒 {sw}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <LockOutlined style={{ color: '#8c8c8c' }} />
+            {sw}
           </span>
         </Tooltip>
       ) : (
@@ -71,14 +88,16 @@ export function RolesPage() {
   }));
 
   return (
-    <Card
-      title={t('caps.title')}
-      extra={
-        <Popconfirm title={t('caps.confirmReset')} onConfirm={reset}>
-          <Button>{t('caps.reset')}</Button>
-        </Popconfirm>
-      }
-    >
+    <>
+      <PeopleTabBar />
+      <Card
+        title={t('caps.title')}
+        extra={
+          <Popconfirm title={t('caps.confirmReset')} onConfirm={reset}>
+            <Button>{t('caps.reset')}</Button>
+          </Popconfirm>
+        }
+      >
       <Table<CapabilityRow>
         rowKey="capability"
         loading={isLoading}
@@ -100,6 +119,7 @@ export function RolesPage() {
           ...roleColumns,
         ]}
       />
-    </Card>
+      </Card>
+    </>
   );
 }

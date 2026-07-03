@@ -24,9 +24,15 @@ const createUser = z.object({
   name: z.string().min(1),
   role: assignableRole,
   categoryIds: z.array(z.number().int().positive()).optional(),
+  // SSA may target a specific project; Admin is always pinned to their own (ignored).
+  projectId: z.number().int().positive().optional(),
 });
 const setRole = z.object({ role: assignableRole });
+const moveProject = z.object({ projectId: z.number().int().positive() });
 const setDisabled = z.object({ disabled: z.boolean() });
+const updateProfile = z
+  .object({ email: z.string().email().optional(), name: z.string().min(1).optional() })
+  .refine((v) => v.email !== undefined || v.name !== undefined, 'Nothing to update');
 
 /** Full user admin (Story 9.2, FR89). Admin → own project; SSA → X-Project / all. */
 @Controller('api/admin/users')
@@ -64,7 +70,12 @@ export class AdminUsersController {
   ) {
     const parsed = createUser.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
-    return this.usersSvc.createUser(actor, await this.project(actor, xp), parsed.data);
+    // SSA may pick the destination project from the form; Admin is pinned to their own.
+    const target =
+      actor.role === 'ssa' && parsed.data.projectId
+        ? parsed.data.projectId
+        : await this.project(actor, xp);
+    return this.usersSvc.createUser(actor, target, parsed.data);
   }
 
   @Patch(':id/role')
@@ -79,6 +90,18 @@ export class AdminUsersController {
     return this.usersSvc.setRole(actor, await this.project(actor, xp), id, parsed.data.role);
   }
 
+  @Patch(':id/profile')
+  async updateProfile(
+    @CurrentUser() actor: SessionUser,
+    @Param('id') id: string,
+    @Body() body: unknown,
+    @Headers('x-project') xp?: string,
+  ) {
+    const parsed = updateProfile.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.usersSvc.updateProfile(actor, await this.project(actor, xp), id, parsed.data);
+  }
+
   @Patch(':id/disabled')
   async setDisabled(
     @CurrentUser() actor: SessionUser,
@@ -89,6 +112,15 @@ export class AdminUsersController {
     const parsed = setDisabled.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
     return this.usersSvc.setDisabled(actor, await this.project(actor, xp), id, parsed.data.disabled);
+  }
+
+  /** Move a user to another project — SSA only (cross-project authority). */
+  @Patch(':id/project')
+  async moveProject(@CurrentUser() actor: SessionUser, @Param('id') id: string, @Body() body: unknown) {
+    if (actor.role !== 'ssa') throw new ForbiddenException();
+    const parsed = moveProject.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.usersSvc.moveToProject(actor, id, parsed.data.projectId);
   }
 
   @Post(':id/reset-password')

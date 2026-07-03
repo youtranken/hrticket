@@ -83,6 +83,8 @@ export class WorkerRunner {
     // Snooze-due reminders are FIXED behaviour — run even when digest is disabled.
     const snz = await this.reminders.runSnoozeReminders();
     if (snz.reminders > 0) this.logger.log(`scheduler: ${snz.reminders} snooze reminder(s)`);
+    // Đơn 12: the TL overdue-escalation mail was retired — assigned-but-slow tickets
+    // ride in section 2 of the admin digest; the in-app red badge covers members/TLs.
 
     // Attachment-repair sweep only ~hourly — it's heavier and rarely finds anything.
     if (this.schedulerTicks % REPAIR_EVERY_TICKS === 0) {

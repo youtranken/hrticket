@@ -1,0 +1,122 @@
+# Standalone compose for the hris-e2e TEST stack on ALTERNATE host ports, so it never
+# collides with the running prod `app` stack (web 8080) or chatpmh_mailpit (8025).
+# Run: docker compose -p hris-e2e -f docker-compose.e2e.yml up -d --build
+# Internal service names/ports are unchanged — only the published host ports differ.
+services:
+  postgres:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: hris
+      POSTGRES_PASSWORD: hris
+      POSTGRES_DB: hris
+    ports:
+      - '15432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U hris -d hris']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - '11025:1025' # SMTP sink
+      - '18025:8025' # Web UI
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://localhost:8025']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  greenmail:
+    image: greenmail/standalone:2.1.0
+    environment:
+      GREENMAIL_OPTS: '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled -Dgreenmail.verbose -Dgreenmail.startup.timeout=30000'
+    ports:
+      - '13025:3025' # SMTP (inject test mail)
+      - '13143:3143' # IMAP (worker polls)
+      - '13080:8080' # REST API
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ['node', 'dist/main.js']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hris:hris@postgres:5432/hris
+      API_PORT: '3000'
+      SMTP_HRIS_HOST: mailpit
+      SMTP_HRIS_PORT: '1025'
+      SMTP_HRIS_SECURE: 'false'
+      SMTP_HRIS_FROM: hris@test.local
+      ATTACHMENT_STORAGE_ROOT: /data/attachments
+    volumes:
+      - ./e2e-attachments:/data/attachments
+    ports:
+      - '13000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ['node', 'dist/worker.js']
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://hris:hris@postgres:5432/hris
+      POLL_INTERVAL_MS: '5000'
+      IMAP_HRIS_HOST: greenmail
+      IMAP_HRIS_PORT: '3143'
+      IMAP_HRIS_USER: hris@test.local
+      IMAP_HRIS_PASSWORD: test
+      IMAP_HRIS_SECURE: 'false'
+      IMAP_CNB_HOST: greenmail
+      IMAP_CNB_PORT: '3143'
+      IMAP_CNB_USER: cnb@test.local
+      IMAP_CNB_PASSWORD: test
+      IMAP_CNB_SECURE: 'false'
+      SMTP_HRIS_HOST: mailpit
+      SMTP_HRIS_PORT: '1025'
+      SMTP_HRIS_SECURE: 'false'
+      SMTP_HRIS_FROM: hris@test.local
+      SMTP_CNB_HOST: mailpit
+      SMTP_CNB_PORT: '1025'
+      SMTP_CNB_SECURE: 'false'
+      SMTP_CNB_FROM: cnb@test.local
+      ATTACHMENT_STORAGE_ROOT: /data/attachments
+    volumes:
+      - ./e2e-attachments:/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: always
+    healthcheck:
+      test: ['CMD', 'node', 'dist/cli/worker-healthcheck.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - '18080:80'
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

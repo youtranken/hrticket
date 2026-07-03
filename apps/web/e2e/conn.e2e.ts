@@ -10,6 +10,8 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  * + independent partial failure.
  */
 const DEV_PW = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+const SSA_PW = process.env.SEED_SSA_DEV_PASSWORD ?? 'Pmh@1234';
+const pwFor = (email: string): string => (email.startsWith('ssa@') ? SSA_PW : DEV_PW);
 const SHOTS = 'e2e/__screenshots__';
 
 const IGNORED = [/\[antd: compatible\]/, /React Router Future Flag/, /Failed to load resource/];
@@ -26,7 +28,7 @@ function trackConsoleErrors(page: Page): string[] {
 async function login(page: Page, email: string): Promise<void> {
   await page.goto('/login');
   await page.locator('input[autocomplete="username"]').fill(email);
-  await page.locator('input[autocomplete="current-password"]').fill(DEV_PW);
+  await page.locator('input[autocomplete="current-password"]').fill(pwFor(email));
   await page.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(/\/(inbox|my-tickets|pool)/, { timeout: 15000 });
 }
@@ -59,18 +61,19 @@ test('11.1: SSA fills the connection, tests it live, and reads partial failure',
   await page.locator('input[aria-label="app-password"]').fill('test');
 
   // Test connection → both legs succeed.
-  await page.getByRole('button', { name: 'Test kết nối' }).click();
+  await page.getByRole('button', { name: 'Kiểm tra kết nối' }).click();
   const result = page.locator('[aria-label="test-result"]');
   await expect(result).toBeVisible({ timeout: 15000 });
-  await expect(result.getByText('✅ IMAP')).toBeVisible();
-  await expect(result.getByText('✅ SMTP')).toBeVisible();
+  // Each leg is a status Tag (success/error) carrying a check/close icon, not an emoji.
+  await expect(result.locator('.ant-tag-success', { hasText: 'IMAP' })).toBeVisible();
+  await expect(result.locator('.ant-tag-success', { hasText: 'SMTP' })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/11.1-test-ok.png`, fullPage: true });
 
-  // Break only the SMTP host → IMAP stays ✅ while SMTP turns ❌ (independent legs).
+  // Break only the SMTP host → IMAP stays success while SMTP turns error (independent legs).
   await page.locator('input[aria-label="smtp-host"]').fill('nonexistent.invalid');
-  await page.getByRole('button', { name: 'Test kết nối' }).click();
-  await expect(result.getByText('❌ SMTP')).toBeVisible({ timeout: 15000 });
-  await expect(result.getByText('✅ IMAP')).toBeVisible();
+  await page.getByRole('button', { name: 'Kiểm tra kết nối' }).click();
+  await expect(result.locator('.ant-tag-error', { hasText: 'SMTP' })).toBeVisible({ timeout: 15000 });
+  await expect(result.locator('.ant-tag-success', { hasText: 'IMAP' })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/11.1-test-partial.png`, fullPage: true });
 
   expect(errors).toEqual([]);

@@ -7,6 +7,9 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  */
 
 const DEV_PW = process.env.SEED_DEV_PASSWORD ?? 'dev-password-123';
+// SSA accounts use a memorable shared password (set out-of-band); dev users keep the seed default.
+const SSA_PW = process.env.SEED_SSA_DEV_PASSWORD ?? 'Pmh@1234';
+const pwFor = (email: string): string => (email.startsWith('ssa@') ? SSA_PW : DEV_PW);
 
 // Ignore non-app console noise: AntD's one-time React-19 compat notice, router
 // future-flag warnings, and the browser's own "Failed to load resource" line for
@@ -26,7 +29,7 @@ function trackConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-async function fillLogin(page: Page, email: string, password = DEV_PW): Promise<void> {
+async function fillLogin(page: Page, email: string, password = pwFor(email)): Promise<void> {
   await page.goto('/login');
   await page.locator('input[autocomplete="username"]').fill(email);
   await page.locator('input[autocomplete="current-password"]').fill(password);
@@ -34,7 +37,7 @@ async function fillLogin(page: Page, email: string, password = DEV_PW): Promise<
 }
 
 /** Logs in a dev user (no forced password change) and waits until the app loads. */
-async function login(page: Page, email: string, password = DEV_PW): Promise<void> {
+async function login(page: Page, email: string, password = pwFor(email)): Promise<void> {
   await fillLogin(page, email, password);
   await page.waitForURL('**/inbox');
 }
@@ -63,19 +66,23 @@ test('1.8 #1: member sidebar omits admin/ssa items', async ({ page }) => {
   const errors = trackConsoleErrors(page);
   await login(page, 'member@dev.local');
   await expect(page).toHaveURL(/\/inbox/);
+  // The sidebar is now a permanent icons-only rail (no expand toggle); each entry is a
+  // menu item whose text content is its label. Assert membership via the item rows.
   const sider = page.locator('.ant-layout-sider');
-  await expect(sider.getByText('Hộp thư')).toBeVisible(); // Inbox
-  await expect(sider.getByText('Cấu hình')).toHaveCount(0); // Settings (admin)
-  await expect(sider.getByText('Quyền vai trò')).toHaveCount(0); // Roles (ssa)
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Hộp thư$/ })).toBeVisible(); // Inbox
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Cấu hình$/ })).toHaveCount(0); // Settings (admin)
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Quyền vai trò$/ })).toHaveCount(0); // Roles (ssa)
   expect(errors).toEqual([]);
 });
 
 test('1.8 #1: admin sidebar shows Settings but not SSA-only Roles', async ({ page }) => {
   await login(page, 'admin@dev.local');
   await expect(page).toHaveURL(/\/inbox/);
+  // Permanent icons-only rail (no expand toggle) — assert via the menu item rows. The
+  // `^…$` anchors keep "Cấu hình" (Settings) distinct from "Cấu hình nhắc/đính kèm".
   const sider = page.locator('.ant-layout-sider');
-  await expect(sider.getByText('Cấu hình', { exact: true })).toBeVisible(); // Settings (not "Cấu hình nhắc/đính kèm")
-  await expect(sider.getByText('Quyền vai trò')).toHaveCount(0); // Roles (ssa only)
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Cấu hình$/ })).toBeVisible(); // Settings
+  await expect(sider.locator('.ant-menu-item', { hasText: /^Quyền vai trò$/ })).toHaveCount(0); // Roles (ssa only)
 });
 
 test('1.8 #2: member hitting /admin/settings gets the 403 page', async ({ page }) => {

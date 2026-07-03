@@ -11,6 +11,10 @@ import { NotesService } from './notes.service';
 import { DraftsService } from './drafts.service';
 import { TicketAttachmentsController } from './ticket-attachments.controller';
 import { UploadService } from './upload.service';
+import { ManualTicketController } from './manual-ticket.controller';
+import { ManualTicketService } from './manual-ticket.service';
+import { ReplyTemplatesController } from './reply-templates.controller';
+import { ReplyTemplatesService } from './reply-templates.service';
 import { TicketTagsController } from './ticket-tags.controller';
 import { TicketTagsService } from './ticket-tags.service';
 import { AssignmentController } from './assignment.controller';
@@ -30,6 +34,8 @@ import { ReopenLockService } from './reopen-lock.service';
     ParticipantsController,
     ComposeController,
     TicketAttachmentsController,
+    ManualTicketController,
+    ReplyTemplatesController,
     TicketTagsController,
     AssignmentController,
     LifecycleController,
@@ -42,6 +48,8 @@ import { ReopenLockService } from './reopen-lock.service';
     NotesService,
     DraftsService,
     UploadService,
+    ManualTicketService,
+    ReplyTemplatesService,
     TicketTagsService,
     AssignmentService,
     TicketStatusService,

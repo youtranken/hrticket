@@ -42,12 +42,14 @@ export function asTicketListQuery(f: ExportTicketsBody['filter']): TicketListQue
   return f;
 }
 
-/** Export a report (matches the 10.3 dashboard tables). */
+/** Export a report (matches the 10.3 dashboard tables + đơn 13 slicing). */
 export const exportReportSchema = z.object({
   format: z.enum(['xlsx', 'csv']).default('xlsx'),
   lang: z.enum(['vi', 'en']).default('vi'),
   kind: z.enum(['by-time', 'by-category', 'by-staff']),
   from: vnDay.optional(),
   to: vnDay.optional(),
+  granularity: z.enum(['week', 'month', 'year']).default('month'),
+  assigneeId: z.string().uuid().optional(),
 });
 export type ExportReportBody = z.infer<typeof exportReportSchema>;

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eq, sql as raw } from 'drizzle-orm';
+import { and, eq, ne, sql as raw } from 'drizzle-orm';
 import { withActor, systemActor } from '../../infra/db/with-actor';
 import { sessions, users } from '../../infra/db/schema';
 
@@ -66,6 +66,15 @@ export class SessionService {
   async revokeAllForUser(userId: string): Promise<void> {
     await withActor(systemActor, async (tx) => {
       await tx.delete(sessions).where(eq(sessions.userId, userId));
+    });
+  }
+
+  /** Revoke every OTHER session of a user, keeping the caller's current one alive —
+   *  used after a self-service password change so a stolen session is killed but the
+   *  user isn't logged out of the device they just changed it on. */
+  async revokeOthersForUser(userId: string, keepSessionId: string): Promise<void> {
+    await withActor(systemActor, async (tx) => {
+      await tx.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, keepSessionId)));
     });
   }
 

@@ -20,8 +20,10 @@ import { AdminReminderService } from './admin-reminder.service';
 const configSchema = z.object({
   overdueDays: z.number().int(),
   digestHour: z.number().int(),
+  digestMinute: z.number().int().optional(), // đơn 12 (default 30 in the service)
   digestEnabled: z.boolean(),
   digestMaxN: z.number().int(),
+  poolUnclaimedDays: z.number().int().optional(), // đơn 12 (default 2 in the service)
 });
 const templateSchema = z.object({
   subjectVi: z.string().min(1),

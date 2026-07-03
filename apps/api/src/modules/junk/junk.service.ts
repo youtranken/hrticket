@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { TicketStatus } from '@hris/shared';
 import { withActor, type DbTx } from '../../infra/db/with-actor';
-import { tickets, categories, ticketMessages } from '../../infra/db/schema';
+import { tickets, categories, ticketMessages, blocklist } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import { actorForUser } from '../tickets/actor';
 import { canActOnTicket } from '../tickets/ticket.state-machine';
@@ -113,11 +113,20 @@ export class JunkService {
           mailbox: tickets.mailbox,
           isJunk: tickets.isJunk,
           junkedFrom: tickets.junkedFromCategoryId,
+          assigneeId: tickets.assigneeId,
+          categoryId: tickets.categoryId,
         })
         .from(tickets)
         .where(eq(tickets.id, ticketId))
         .for('update');
       if (!t || !t.isJunk) throw new NotFoundException('Not a junk ticket');
+      // Authorize the release the same way as marking junk (M1): release restores the
+      // category / pre-close status and can re-trigger an auto-ack, so a non-assignee
+      // member must NOT be able to resurrect someone else's junked ticket via RLS alone.
+      const groups = actor.kind === 'user' ? actor.groups : [];
+      if (!canMarkJunk(user, groups, t)) {
+        throw new ForbiddenException('Not allowed to release this ticket');
+      }
 
       // Manual junk (7.4) carries junked_from_category_id → restore the original
       // category + the pre-close status (read from the marked_junk audit, no schema),
@@ -157,11 +166,16 @@ export class JunkService {
         // Send the ack that was withheld when it was auto-junked (FR103: ack on rescue).
         // Thread it to the original inbound message so a reply lands back on this ticket.
         const [firstInbound] = await tx
-          .select({ messageId: ticketMessages.messageId })
+          .select({ messageId: ticketMessages.messageId, toAddrs: ticketMessages.toAddrs })
           .from(ticketMessages)
           .where(and(eq(ticketMessages.ticketId, ticketId), eq(ticketMessages.direction, 'inbound')))
           .orderBy(ticketMessages.createdAt)
           .limit(1);
+        // Đơn 15: the rescue-ack obeys the same To-gate as intake — a cc-only mail
+        // stays silent even after a rescue (the requester addressed someone else).
+        const ccOnly = !(firstInbound?.toAddrs ?? []).some(
+          (a) => (a ?? '').toLowerCase() === t.mailbox.toLowerCase(),
+        );
         await enqueueAutoAck(tx, {
           projectId: t.projectId,
           ticketId,
@@ -173,8 +187,9 @@ export class JunkService {
           inboundMessageId: firstInbound?.messageId ?? null,
           isAutoReply: false,
           isJunk: false,
+          ccOnly,
         });
-        reAcked = true;
+        reAcked = !ccOnly;
       }
 
       await writeAudit(tx, {
@@ -279,12 +294,15 @@ export class JunkService {
    * (no close, no category change). When on, an inbound reply only appends/logs (no
    * bump/reopen/notify/notice — enforced in reopen.usecase handleReplyTransition).
    * Permission = the standard lifecycle actor set (assignee/TL/Admin/SSA).
+   * Đơn 7: marking spam ALSO blocklists the requester (their next mail is dropped at
+   * the gate, no new ticket); un-marking removes them again — the toggle is the whole
+   * story, no second trip to /admin/mail-protection.
    */
   async toggleSpamThread(
     user: SessionUser,
     ticketId: string,
     on: boolean,
-  ): Promise<{ ok: true; isSpamThread: boolean }> {
+  ): Promise<{ ok: true; isSpamThread: boolean; blocked: boolean }> {
     const actor = await actorForUser(user);
     const groups = actor.kind === 'user' ? actor.groups : [];
     return withActor(actor, async (tx) => {
@@ -295,6 +313,7 @@ export class JunkService {
           assigneeId: tickets.assigneeId,
           categoryId: tickets.categoryId,
           isSpamThread: tickets.isSpamThread,
+          requesterEmail: tickets.requesterEmail,
         })
         .from(tickets)
         .where(eq(tickets.id, ticketId))
@@ -303,7 +322,7 @@ export class JunkService {
       if (!canActOnTicket(user, groups, t)) {
         throw new ForbiddenException('Not allowed to change this ticket');
       }
-      if (t.isSpamThread === on) return { ok: true, isSpamThread: on }; // idempotent
+      if (t.isSpamThread === on) return { ok: true, isSpamThread: on, blocked: on }; // idempotent
 
       await tx.update(tickets).set({ isSpamThread: on }).where(eq(tickets.id, ticketId));
       await writeAudit(tx, {
@@ -315,7 +334,59 @@ export class JunkService {
         objectId: ticketId,
         newValue: { isSpamThread: on },
       });
-      return { ok: true, isSpamThread: on };
+
+      if (on) {
+        await addToBlocklist(tx, {
+          projectId: t.projectId,
+          email: t.requesterEmail,
+          reason: `spam_thread ${ticketId}`,
+          createdBy: user.id,
+          actorLabel: user.email,
+        });
+      } else {
+        // Toggle OFF un-blocks the sender again — but ONLY the row THIS ticket's
+        // spam-mark created (reason pins the ticket id), and only while NO other
+        // still-marked spam thread of the same sender remains. A manual admin block
+        // always survives (different reason) (review #3).
+        const [otherSpam] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(tickets)
+          .where(
+            and(
+              eq(tickets.projectId, t.projectId),
+              sql`lower(${tickets.requesterEmail}) = lower(${t.requesterEmail})`,
+              eq(tickets.isSpamThread, true),
+              sql`${tickets.id} <> ${ticketId}`,
+            ),
+          );
+        const removed =
+          (otherSpam?.n ?? 0) > 0
+            ? []
+            : await tx
+                .delete(blocklist)
+                .where(
+                  and(
+                    eq(blocklist.projectId, t.projectId),
+                    sql`lower(${blocklist.email}) = lower(${t.requesterEmail})`,
+                    // Any spam-thread-created row (the creating ticket may differ when
+                    // several threads shared one row) — manual admin rows never match.
+                    sql`${blocklist.reason} LIKE 'spam_thread %'`,
+                  ),
+                )
+                .returning({ id: blocklist.id });
+        if (removed.length > 0) {
+          await writeAudit(tx, {
+            projectId: t.projectId,
+            actorId: user.id,
+            actorLabel: user.email,
+            action: 'blocklist.removed',
+            objectType: 'blocklist',
+            objectId: String(removed[0]!.id),
+            newValue: { email: t.requesterEmail, via: 'spam_thread_off' },
+          });
+        }
+      }
+      return { ok: true, isSpamThread: on, blocked: on };
     });
   }
 

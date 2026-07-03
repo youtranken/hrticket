@@ -16,6 +16,7 @@ import { TicketsReadService } from '../src/modules/tickets/tickets-read.service'
 import { TicketSearchService } from '../src/modules/tickets/ticket-search.service';
 import { ReplyService } from '../src/modules/tickets/reply.service';
 import { AuditService } from '../src/modules/audit/audit.service';
+import { ReportingService } from '../src/modules/reporting/reporting.service';
 import { SessionService } from '../src/modules/auth/session.service';
 import { ticketListQuerySchema } from '../src/modules/tickets/dto/ticket-list.query';
 import type { SessionUser } from '../src/modules/auth/session.service';
@@ -37,6 +38,7 @@ describe('IT-VIS: advanced visibility', () => {
   const searchSvc = new TicketSearchService();
   const reply = new ReplyService();
   const auditSvc = new AuditService();
+  const rpt = new ReportingService();
   const sessions = new SessionService();
   const HRIS = 1;
   const CNB = 2;
@@ -232,6 +234,19 @@ describe('IT-VIS: advanced visibility', () => {
       { name: 'reply:defaults', assertBlocked: async (a) => {
         await expect(reply.getDefaults(a, X)).rejects.toMatchObject({ status: 404 });
       } },
+      // Report v2 aggregates (đơn 13 opened them to every role): the sensitive
+      // Payroll ticket must contribute NOTHING — a blocked actor gets no Payroll
+      // row at all. All reporting methods share baseWhere + withActor, so one
+      // category probe covers the family; summary is asserted zero explicitly.
+      { name: 'report:by-category', assertBlocked: async (a) => {
+        const r = await rpt.byCategory(a, HRIS, {});
+        expect(r.categories.some((c) => c.categoryId === Payroll)).toBe(false);
+      } },
+      { name: 'report:summary', assertBlocked: async (a) => {
+        const s = await rpt.summary(a, HRIS, {});
+        expect(s.total).toBe(0); // blocked member profiles hold no HRIS tickets
+        expect(s.quality.junk).toBe(0);
+      } },
     ];
 
     // Control: the in-group member CAN reach X through every reader.
@@ -240,6 +255,12 @@ describe('IT-VIS: advanced visibility', () => {
     expect((await searchSvc.search(session(inGroup.id), TOKEN)).items.some((i) => i.id === X)).toBe(true);
     expect(await fileVisible(session(inGroup.id), att!.id)).toBe(true);
     expect((await reply.getDefaults(session(inGroup.id), X)).isSensitive).toBe(true);
+    // Report control uses a TL (a member is self-pinned and X is unassigned).
+    expect(
+      (await rpt.byCategory(session(inGroup.id, HRIS, 'team_lead'), HRIS, {})).categories.some(
+        (c) => c.categoryId === Payroll && c.created > 0,
+      ),
+    ).toBe(true);
 
     // RLS-boundary profiles: every READER must come back empty/404.
     const blocked: Array<[string, SessionUser]> = [

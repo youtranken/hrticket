@@ -4,8 +4,12 @@ import { api } from './apiClient';
 export interface ReminderConfig {
   overdueDays: number;
   digestHour: number;
+  /** Đơn 12: minute of the send time (08:30 default). */
+  digestMinute: number;
   digestEnabled: boolean;
   digestMaxN: number;
+  /** Đơn 12: pool ticket unclaimed >= this many days → admin digest section 1. */
+  poolUnclaimedDays: number;
 }
 
 export function useReminderConfig() {

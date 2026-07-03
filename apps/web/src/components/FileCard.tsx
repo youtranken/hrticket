@@ -1,25 +1,33 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, Space, Typography, Tooltip } from 'antd';
+import {
+  FileImageOutlined,
+  FilePdfOutlined,
+  SoundOutlined,
+  VideoCameraOutlined,
+  PaperClipOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
 import { type AttachmentMeta, fileKind, humanSize } from '../lib/files';
 import { FileViewer } from './FileViewer';
+import { palette } from '../theme';
 
 const { Text } = Typography;
 
-/** Emoji glyph per kind — consistent with the project's emoji badge vocabulary
- *  (CONVENTIONS §9), no icon dependency. */
-function kindGlyph(mimeType: string): string {
+/** An AntD icon per file kind (no emoji — consistent rendering across OS/browsers). */
+function kindGlyph(mimeType: string): React.ReactNode {
   switch (fileKind(mimeType)) {
     case 'image':
-      return '🖼';
+      return <FileImageOutlined />;
     case 'pdf':
-      return '📄';
+      return <FilePdfOutlined />;
     case 'audio':
-      return '🎵';
+      return <SoundOutlined />;
     case 'video':
-      return '🎬';
+      return <VideoCameraOutlined />;
     default:
-      return '📎';
+      return <PaperClipOutlined />;
   }
 }
 
@@ -52,7 +60,9 @@ export function FileCard({ attachment }: Props) {
       styles={{ body: { padding: '10px 12px' } }}
     >
       <Space align="start">
-        <span style={{ fontSize: 22, lineHeight: 1 }}>{blocked ? '⚠' : kindGlyph(attachment.mimeType)}</span>
+        <span style={{ fontSize: 20, lineHeight: 1, color: blocked ? '#D14343' : palette.primary }}>
+          {blocked ? <WarningOutlined /> : kindGlyph(attachment.mimeType)}
+        </span>
         <Space direction="vertical" size={0} style={{ minWidth: 0 }}>
           <Text
             strong

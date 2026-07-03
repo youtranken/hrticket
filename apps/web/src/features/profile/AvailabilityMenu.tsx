@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Input, Tag, Space, Switch, App as AntApp } from 'antd';
+import { Button, Modal, Input, Badge, Space, Switch, App as AntApp } from 'antd';
 import { useMe } from '../../lib/auth';
 import { setMyAvailability, isAwayNow } from '../../lib/tickets';
 
@@ -58,13 +58,20 @@ export function AvailabilityMenu() {
 
   return (
     <>
-      <Button size="small" type={awayNow ? 'default' : 'text'} aria-label={t('availability.title')} onClick={openModal}>
+      {/* A status chip with a coloured dot (green = ready, amber = away) so the current
+          availability reads at a glance in the header. */}
+      <Button size="small" type="text" aria-label={t('availability.title')} onClick={openModal}>
         {awayNow ? (
-          <Tag color="orange" style={{ margin: 0 }}>
-            {me.availability.awayTo ? t('availability.awayUntil', { date: ddmm(me.availability.awayTo) }) : t('availability.away')}
-          </Tag>
+          <Badge
+            status="warning"
+            text={
+              me.availability.awayTo
+                ? t('availability.awayUntil', { date: ddmm(me.availability.awayTo) })
+                : t('availability.away')
+            }
+          />
         ) : (
-          t('availability.available')
+          <Badge status="success" text={t('availability.available')} />
         )}
       </Button>
       <Modal open={open} title={t('availability.title')} onOk={save} onCancel={() => setOpen(false)} confirmLoading={saving}>

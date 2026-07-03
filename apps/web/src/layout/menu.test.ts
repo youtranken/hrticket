@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { menuForRole } from './menu';
+import { activeMenuKey, menuForRole } from './menu';
 import type { Me } from '../lib/auth';
 
 const base: Omit<Me, 'role'> = {
@@ -12,6 +12,7 @@ const base: Omit<Me, 'role'> = {
   mustChangePassword: false,
   language: 'vi',
   availability: { awayFrom: null, awayTo: null },
+  otpEnabled: false,
 };
 
 // Default capability matrix (PRD §2 seed) per role — what /me returns out of the box.
@@ -27,8 +28,9 @@ function keys(role: Me['role'], capabilities: string[] = DEFAULT_CAPS[role]): st
 }
 
 describe('menuForRole (v1 redesign — consolidated grouped sidebar)', () => {
-  it('member sees only the single ticket workspace entry', () => {
-    expect(keys('member')).toEqual(['inbox']); // my/pool/pending/junk live in the in-page tab bar
+  it('member sees the ticket workspace + self report (đơn 13), no audit', () => {
+    expect(keys('member')).toEqual(['inbox', 'reports']); // my/pool/pending/junk live in the in-page tab bar
+    expect(keys('member')).not.toContain('audit');
   });
   it('team_lead adds reports + audit', () => {
     expect(keys('team_lead')).toContain('reports');
@@ -53,5 +55,40 @@ describe('menuForRole (v1 redesign — consolidated grouped sidebar)', () => {
     expect(keys('team_lead', ['log.read_group', 'config.manage'])).toContain('settings');
     // Admin granted role.edit_capabilities gains the roles editor.
     expect(keys('admin', ['config.manage', 'role.edit_capabilities'])).toContain('roles');
+  });
+});
+
+describe('activeMenuKey (prefix-resolved sidebar highlight)', () => {
+  const groups = (role: Me['role']) =>
+    menuForRole({ ...base, role, capabilities: DEFAULT_CAPS[role] });
+
+  it('exact item paths highlight themselves', () => {
+    expect(activeMenuKey('/inbox', groups('admin'))).toBe('/inbox');
+    expect(activeMenuKey('/reports', groups('admin'))).toBe('/reports');
+    expect(activeMenuKey('/admin/settings', groups('admin'))).toBe('/admin/settings');
+  });
+
+  it('ticket-workspace children light up Inbox', () => {
+    for (const p of ['/tickets/123', '/my-tickets', '/pool', '/pending', '/junk', '/search']) {
+      expect(activeMenuKey(p, groups('admin'))).toBe('/inbox');
+    }
+  });
+
+  it('config child pages light up the Settings hub; roles keeps its own entry', () => {
+    expect(activeMenuKey('/admin/groups', groups('admin'))).toBe('/admin/settings');
+    expect(activeMenuKey('/admin/users', groups('admin'))).toBe('/admin/settings');
+    expect(activeMenuKey('/admin/categories', groups('admin'))).toBe('/admin/settings');
+    const ssa = menuForRole({
+      ...base,
+      role: 'ssa',
+      capabilities: ['role.edit_capabilities', 'config.manage_all'],
+    });
+    expect(activeMenuKey('/admin/roles', ssa)).toBe('/admin/roles');
+    expect(activeMenuKey('/admin/roles/whatever', ssa)).toBe('/admin/roles');
+  });
+
+  it('unknown / profile routes highlight nothing', () => {
+    expect(activeMenuKey('/profile', groups('admin'))).toBeUndefined();
+    expect(activeMenuKey('/nonsense', groups('member'))).toBeUndefined();
   });
 });

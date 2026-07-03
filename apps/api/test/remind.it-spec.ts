@@ -32,7 +32,8 @@ describe('IT-REMIND: snooze reminder + reopen notify', () => {
   const svc = new ReminderService();
   let Payroll: number;
   let A: string; // assignee, active + in group
-  let M: string; // group member (for pool reopen fan-out)
+  let M: string; // plain group member (must NOT be spammed on a pool reopen)
+  let L: string; // team lead in the group (escalation target when the assignee is gone)
 
   beforeAll(async () => {
     try {
@@ -44,9 +45,11 @@ describe('IT-REMIND: snooze reminder + reopen notify', () => {
       Payroll = cats.find((c) => c.nameEn === 'Payroll')!.id;
       A = (await makeUser(harness.db, { projectId: 1, email: 'a-remind@x.com' }))!.id;
       M = (await makeUser(harness.db, { projectId: 1, email: 'm-remind@x.com' }))!.id;
+      L = (await makeUser(harness.db, { projectId: 1, email: 'l-remind@x.com', role: 'team_lead' }))!.id;
       await harness.db.insert(userGroupMembership).values([
         { userId: A, categoryId: Payroll },
         { userId: M, categoryId: Payroll },
+        { userId: L, categoryId: Payroll },
       ]);
       ready = true;
     } catch (e) {
@@ -119,13 +122,18 @@ describe('IT-REMIND: snooze reminder + reopen notify', () => {
     const n1 = await harness!.db.select().from(notifications).where(eq(notifications.actorId, A));
     expect(n1.some((n) => n.type === 'ticket_reopened')).toBe(true);
 
-    // (b) closed, assignee disabled → pool, in-app to the group, NO email.
+    // (b) closed, assignee disabled → pool. Per the reopen-notify model (no group spam):
+    // the previous assignee is skipped (disabled), so it ESCALATES to the group's Team
+    // Leads + the project's Admins/SSA — NOT every member. The TL is notified; the plain
+    // member M is NOT (avoids the "cả nhóm bị loạn" noise). No per-person email either.
     await harness!.db.update(users).set({ disabled: true }).where(eq(users.id, A));
     const t2 = await ticket('closed', { assignee: A });
     await fire(t2);
     expect(await outboxFor(t2)).toHaveLength(0); // no per-person email
+    const nL = await harness!.db.select().from(notifications).where(eq(notifications.actorId, L));
+    expect(nL.some((n) => n.type === 'ticket_reopened_pool')).toBe(true); // escalated to the TL
     const nM = await harness!.db.select().from(notifications).where(eq(notifications.actorId, M));
-    expect(nM.some((n) => n.type === 'ticket_reopened_pool')).toBe(true);
+    expect(nM.some((n) => n.type === 'ticket_reopened_pool')).toBe(false); // plain member untouched
   });
 
   it('IT-REMIND-003: snooze reminders fire even when digest is disabled (FR50 fixed)', async () => {

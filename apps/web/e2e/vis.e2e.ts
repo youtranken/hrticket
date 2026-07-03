@@ -17,7 +17,7 @@ let ticketId = '';
 function psql(sql: string): string {
   // Single-line SQL only — newlines break the `-c` argument through the shell.
   const oneLine = sql.replace(/\s+/g, ' ').trim();
-  return execSync(`docker compose exec -T postgres psql -U hris -d hris -t -A -c "${oneLine}"`, {
+  return execSync(`${process.env.E2E_COMPOSE ?? 'docker compose'} exec -T postgres psql -U hris -d hris -t -A -c "${oneLine}"`, {
     cwd: '../..',
   })
     .toString()
@@ -26,8 +26,11 @@ function psql(sql: string): string {
 
 test.beforeAll(() => {
   // CTE-wrap so only the id row prints (a bare INSERT…RETURNING also emits "INSERT 0 1").
+  // assigned_at = now() (mirrors what a real assign sets) so the ticket sorts to the TOP
+  // of the member's worklist (assigned_at DESC) and is always on page 1 — otherwise a
+  // NULL assigned_at sinks it below accumulated tickets on the shared dev stack.
   ticketId = psql(
-    `WITH ins AS (INSERT INTO tickets (project_id, ticket_code, subject, requester_email, mailbox, category_id, status, assignee_id) SELECT 1, '${CODE}', '${SUBJECT}', 'req@x.com', 'hris@test.local', (SELECT id FROM categories WHERE project_id=1 AND name_en='Payroll'), 'in_progress', (SELECT id FROM users WHERE email='member@dev.local') RETURNING id) SELECT id FROM ins;`,
+    `WITH ins AS (INSERT INTO tickets (project_id, ticket_code, subject, requester_email, mailbox, category_id, status, assignee_id, assigned_at) SELECT 1, '${CODE}', '${SUBJECT}', 'req@x.com', 'hris@test.local', (SELECT id FROM categories WHERE project_id=1 AND name_en='Payroll'), 'in_progress', (SELECT id FROM users WHERE email='member@dev.local'), now() RETURNING id) SELECT id FROM ins;`,
   );
 });
 
@@ -57,11 +60,12 @@ test('9.3 sensitive badge: in-scope member sees 🛡 on worklist + detail', asyn
   const fatal = trackPageErrors(page);
   await login(page, 'member@dev.local');
 
-  // Worklist ("My tickets") — the assigned sensitive ticket carries the 🛡 badge.
+  // Worklist ("My tickets") — the assigned sensitive ticket carries the shield badge
+  // (a SafetyCertificate icon now, not an emoji).
   await page.goto('/my-tickets');
   const row = page.locator('.ant-table-row', { hasText: SUBJECT });
   await expect(row).toBeVisible({ timeout: 15000 });
-  await expect(row).toContainText('🛡');
+  await expect(row.locator('.anticon-safety-certificate')).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/9.3-sensitive-list.png`, fullPage: true });
 
   // Detail — the 🛡 "Nhạy cảm" badge sits in the header.

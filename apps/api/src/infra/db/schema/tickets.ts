@@ -44,10 +44,16 @@ export const tickets = pgTable(
     junkedFromCategoryId: integer('junked_from_category_id').references(() => categories.id),
     snoozeUntil: date('snooze_until'),
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }).notNull().defaultNow(),
+    // First time ANY staff member opened the ticket detail (drives the "Mới"/New badge:
+    // shown only while unread AND unassigned). Null = nobody has read it yet.
+    firstReadAt: timestamp('first_read_at', { withTimezone: true }),
     externalSource: text('external_source'),
     externalId: text('external_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
+    // When the ticket last ENTERED resolved/closed (trigger-stamped, see
+    // rls-and-extras.sql; NULL again after a reopen). Drives avg-handling-time.
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
   },
   (t) => [
     unique('uq_tickets_code_project').on(t.projectId, t.ticketCode),

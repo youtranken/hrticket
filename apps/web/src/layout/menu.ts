@@ -36,9 +36,13 @@ export function menuForRole(me: Me): NavGroup[] {
 
   const groups: NavGroup[] = [{ key: 'work', titleKey: 'menu.group.work', items: work }];
 
-  if (me.role !== 'member') {
-    groups.push({ key: 'reports', titleKey: 'menu.group.reports', items: reports });
-  }
+  // Đơn 13: a member gets the Reports entry too (self report, pinned by the BE)
+  // — but not the audit log, which stays TL/Admin/SSA.
+  groups.push({
+    key: 'reports',
+    titleKey: 'menu.group.reports',
+    items: me.role === 'member' ? reports.filter((i) => i.key === 'reports') : reports,
+  });
 
   // Admin section is CAPABILITY-driven (not role-hardcoded) so the SSA's /admin/roles
   // matrix actually drives the sidebar: toggling config.manage / role.edit_capabilities
@@ -51,4 +55,27 @@ export function menuForRole(me: Me): NavGroup[] {
     groups.push({ key: 'admin', titleKey: 'menu.group.admin', items: adminItems });
   }
   return groups;
+}
+
+/** Ticket-workspace child routes light up the Inbox entry (their views live in the
+ *  in-page tab bar, not the sidebar). */
+const INBOX_CHILD_PREFIXES = ['/tickets', '/my-tickets', '/pool', '/pending', '/junk', '/search'];
+
+/**
+ * Which sidebar entry to highlight for a pathname. Exact-pathname matching loses the
+ * highlight on every child route (/tickets/:id, /admin/groups, …), so resolve by
+ * prefix: ticket-workspace children → Inbox, config children → the Settings hub,
+ * otherwise the longest matching item path.
+ */
+export function activeMenuKey(pathname: string, groups: NavGroup[]): string | undefined {
+  const paths = groups.flatMap((g) => g.items.map((i) => i.path));
+  const starts = (p: string, prefix: string) => p === prefix || p.startsWith(prefix + '/');
+  if (INBOX_CHILD_PREFIXES.some((p) => starts(pathname, p)) && paths.includes('/inbox')) {
+    return '/inbox';
+  }
+  const match = paths.filter((p) => starts(pathname, p)).sort((a, b) => b.length - a.length)[0];
+  if (match) return match;
+  // Any other /admin/* page (users, groups, categories, …) is a child of the hub.
+  if (starts(pathname, '/admin') && paths.includes('/admin/settings')) return '/admin/settings';
+  return undefined;
 }

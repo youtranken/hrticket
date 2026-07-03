@@ -6,6 +6,8 @@ import { AdminReminderController } from './admin-reminder.controller';
 import { AdminReminderService } from './admin-reminder.service';
 import { AdminBlocklistController } from './admin-blocklist.controller';
 import { AdminBlocklistService } from './admin-blocklist.service';
+import { AdminAllowlistController } from './admin-allowlist.controller';
+import { AdminAllowlistService } from './admin-allowlist.service';
 import { AdminMailBombController } from './admin-mailbomb.controller';
 import { AdminMailBombService } from './admin-mailbomb.service';
 import { AttachmentConfigController } from './attachment-config.controller';
@@ -27,6 +29,7 @@ import { EmailConnectionService } from './email-connection.service';
     AdminConfigController,
     AdminReminderController,
     AdminBlocklistController,
+    AdminAllowlistController,
     AdminMailBombController,
     AttachmentConfigController,
     AdminJunkRulesController,
@@ -37,6 +40,7 @@ import { EmailConnectionService } from './email-connection.service';
     AdminConfigService,
     AdminReminderService,
     AdminBlocklistService,
+    AdminAllowlistService,
     AdminMailBombService,
     AttachmentConfigService,
     AdminJunkRulesService,

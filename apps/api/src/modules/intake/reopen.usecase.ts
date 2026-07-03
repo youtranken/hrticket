@@ -259,19 +259,51 @@ export async function handleReplyTransition(
         closedAt: null,
       })
       .where(eq(tickets.id, input.ticketId));
-    if (t.categoryId !== null) {
-      const members = await tx
-        .select({ id: users.id })
-        .from(userGroupMembership)
-        .innerJoin(users, eq(users.id, userGroupMembership.userId))
-        .where(and(eq(userGroupMembership.categoryId, t.categoryId), eq(users.disabled, false)));
-      for (const m of members) {
-        await notify(tx, m.id, 'ticket_reopened_pool', {
-          ticketId: input.ticketId,
-          ticketCode: t.ticketCode,
-          by: input.fromAddr,
-        });
+    // Notify the person who HANDLED it before (FR51) — not the whole group. If that
+    // account is disabled (or the ticket had no assignee), ESCALATE to the group's Team
+    // Leads + the project's Admins/SSA, so it isn't missed yet doesn't spam everyone.
+    let recipients: string[] = [];
+    if (t.assigneeId) {
+      const [pa] = await tx
+        .select({ id: users.id, disabled: users.disabled })
+        .from(users)
+        .where(eq(users.id, t.assigneeId));
+      if (pa && !pa.disabled) recipients = [pa.id];
+    }
+    if (recipients.length === 0) {
+      const esc = new Set<string>();
+      if (t.categoryId !== null) {
+        const tls = await tx
+          .select({ id: users.id })
+          .from(userGroupMembership)
+          .innerJoin(users, eq(users.id, userGroupMembership.userId))
+          .where(
+            and(
+              eq(userGroupMembership.categoryId, t.categoryId),
+              eq(users.role, 'team_lead'),
+              eq(users.disabled, false),
+            ),
+          );
+        for (const r of tls) esc.add(r.id);
       }
+      const admins = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.projectId, input.projectId), eq(users.role, 'admin'), eq(users.disabled, false)));
+      for (const r of admins) esc.add(r.id);
+      const ssas = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.role, 'ssa'), eq(users.disabled, false)));
+      for (const r of ssas) esc.add(r.id);
+      recipients = [...esc];
+    }
+    for (const id of recipients) {
+      await notify(tx, id, 'ticket_reopened_pool', {
+        ticketId: input.ticketId,
+        ticketCode: t.ticketCode,
+        by: input.fromAddr,
+      });
     }
   }
 
