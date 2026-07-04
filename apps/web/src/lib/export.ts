@@ -23,10 +23,13 @@ async function downloadPost(path: string, body: unknown): Promise<void> {
     throw new Error(err.message ?? `Export failed (${res.status})`);
   }
   const blob = await res.blob();
-  // Filename comes from Content-Disposition; fall back to a generic name.
+  // Filename comes from Content-Disposition; the fallback still carries a date and
+  // a real extension (P2 — a bare "export" download was unidentifiable).
   const cd = res.headers.get('Content-Disposition') ?? '';
   const m = /filename="?([^"]+)"?/.exec(cd);
-  const filename = m?.[1] ?? 'export';
+  const ext = res.headers.get('Content-Type')?.includes('text/csv') ? 'csv' : 'xlsx';
+  const filename =
+    m?.[1] ?? `export_${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' })}.${ext}`;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -42,6 +45,22 @@ const lang = (): 'vi' | 'en' => (i18n.language === 'en' ? 'en' : 'vi');
 /** Export the current ticket worklist (same filters as the list). */
 export function exportTickets(filter: TicketFilters, format: ExportFormat): Promise<void> {
   return downloadPost('/export/tickets', { format, lang: lang(), filter });
+}
+
+/** Export the audit log with the reader's current filters (#55). */
+export function exportAudit(
+  filter: {
+    from?: string;
+    to?: string;
+    actorId?: string;
+    action?: string;
+    objectType?: string;
+    ticketId?: string;
+    categoryId?: number;
+  },
+  format: ExportFormat,
+): Promise<void> {
+  return downloadPost('/export/audit', { format, lang: lang(), filter });
 }
 
 /** Export one report table (matches the 10.3 dashboard, incl. đơn 13 slicing). */

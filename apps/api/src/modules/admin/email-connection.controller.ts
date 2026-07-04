@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
@@ -33,7 +34,8 @@ const connectionSchema = z.object({
  * connection". Admin → own project; SSA → any project via X-Project (FR93).
  */
 @Controller('api/admin/email-connection')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('config.manage', 'config.manage_all')
 export class EmailConnectionController {
   constructor(
     private readonly svc: EmailConnectionService,

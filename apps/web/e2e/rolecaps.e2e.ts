@@ -35,26 +35,29 @@ test('9.4 role capabilities: SSA toggles a cell, locked cell is 🔒, admin is b
   await page.goto('/admin/roles');
   await expect(page.locator('.ant-card-head-title')).toHaveText('Quyền vai trò', { timeout: 15000 });
 
-  // The "assign to others" row: Member's switch (1st role column) toggles ON.
-  const assignRow = page.locator('.ant-table-row', { hasText: 'Gán ticket cho người khác' });
-  await expect(assignRow).toBeVisible();
-  const memberSwitch = assignRow.locator('.ant-switch').first();
+  // The "claim from pool" row: Member's switch (1st role column) is LIVE — turn it
+  // OFF (confirm dialog, UX #46) then back ON. (member × assign_others is locked
+  // OFF now — non-applicable cells can't serve as the toggle target.)
+  const claimRow = page.locator('.ant-table-row', { hasText: 'Nhận ticket từ pool' });
+  await expect(claimRow).toBeVisible();
+  const memberSwitch = claimRow.locator('.ant-switch').first();
   const wasOn = (await memberSwitch.getAttribute('aria-checked')) === 'true';
   await memberSwitch.click();
+  await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'OK' }).click();
   await expect(page.locator('.ant-message')).toContainText('Đã lưu', { timeout: 10000 });
   await page.screenshot({ path: `${SHOTS}/9.4-capabilities.png`, fullPage: true });
 
-  // Locked cell: "edit role capabilities" × SSA shows a lock icon + a disabled switch (AC3).
+  // Locked cells: the whole SSA column is locked ON and non-applicable cells are
+  // locked OFF — "edit role capabilities" applies to SSA only, so all 4 switches
+  // in that row are disabled with a lock icon (AC3 extended).
   const lockedRow = page.locator('.ant-table-row', { hasText: 'Sửa định nghĩa quyền vai trò' });
   await expect(lockedRow.locator('.anticon-lock').first()).toBeVisible();
-  await expect(lockedRow.locator('.ant-switch-disabled')).toHaveCount(1);
+  await expect(lockedRow.locator('.ant-switch-disabled')).toHaveCount(4);
 
-  // Restore the toggled cell so the run is idempotent. Turning a capability OFF
-  // now confirms first (UX #46) — accept the revoke dialog before the toast.
+  // Restore the toggled cell so the run is idempotent (granting needs no confirm).
   await memberSwitch.click();
-  await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'OK' }).click();
   await expect(page.locator('.ant-message').last()).toContainText('Đã lưu', { timeout: 10000 });
-  expect(wasOn).toBe(false); // sanity: default is OFF for Member
+  expect(wasOn).toBe(true); // sanity: member claims by default
 
   // A non-SSA (admin) cannot reach the page — RequireRole renders the 403 result.
   const adminCtx = await page.context().browser()!.newContext();

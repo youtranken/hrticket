@@ -25,11 +25,18 @@ export class LockoutService {
   }
 
   async isLocked(ip: string, email: string): Promise<boolean> {
+    return (await this.lockedUntilBoth(ip, email)) !== null;
+  }
+
+  /** The LATER of the two lock windows (ip / account), so the caller can tell the
+   *  user exactly how long to wait (P2 #6 — Retry-After). Null when not locked. */
+  async lockedUntilBoth(ip: string, email: string): Promise<Date | null> {
     const [a, b] = await Promise.all([
       this.lockedUntil('ip', ip),
       this.lockedUntil('account', email),
     ]);
-    return Boolean(a || b);
+    if (a && b) return a > b ? a : b;
+    return a ?? b;
   }
 
   /** Record a failed attempt; escalates the lock window geometrically. */

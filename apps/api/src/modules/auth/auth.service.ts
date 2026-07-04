@@ -42,8 +42,15 @@ export class AuthService {
     // Normalize so stored (lowercased) emails match, and the lockout buckets key on a
     // single canonical form (not per exact-case string).
     const normEmail = email.trim().toLowerCase();
-    if (await this.lockout.isLocked(ip, normEmail)) {
-      throw new HttpException('Too many attempts, try again later', HttpStatus.TOO_MANY_REQUESTS);
+    const lockedUntil = await this.lockout.lockedUntilBoth(ip, normEmail);
+    if (lockedUntil) {
+      // Tell the user HOW LONG (P2 #6) — the FE shows the wait instead of a vague
+      // "try again later".
+      const retryAfterSeconds = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
+      throw new HttpException(
+        { message: 'Too many attempts, try again later', retryAfterSeconds },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const user = await withActor(systemActor, async (tx) => {

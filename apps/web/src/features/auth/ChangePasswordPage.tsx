@@ -3,36 +3,76 @@ import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Card, Form, Input, Typography, Alert, App as AntApp } from 'antd';
 import { changePassword } from '../../lib/auth';
+import { ApiError } from '../../lib/apiClient';
 import { AuthBrandPanel } from './AuthBrandPanel';
+import { PasswordCriteria } from './PasswordCriteria';
 
 const { Title } = Typography;
 
-/** Forced password change (must_change_password) and self-service change. */
+/**
+ * Forced password change (must_change_password) and self-service change (embedded
+ * in the Profile page). Self-service STAYS in place on success (#38 — no hard
+ * navigate('/') context jump); the forced flow continues into the app.
+ */
 export function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { message } = AntApp.useApp();
+  const [antForm] = Form.useForm();
+  const newPw: string = Form.useWatch('newPassword', antForm) ?? '';
 
   const form = (
     <Form
+      form={antForm}
       layout="vertical"
       onFinish={async (v: { currentPassword: string; newPassword: string }) => {
         try {
           await changePassword(v.currentPassword, v.newPassword);
           await qc.invalidateQueries({ queryKey: ['me'] });
           message.success(t('common.saved'));
-          navigate('/');
-        } catch {
-          message.error(t('auth.wrongCurrentPassword'));
+          antForm.resetFields();
+          if (forced) navigate('/');
+        } catch (e) {
+          // Map by status (#37): 401 = wrong current password, 400 = the new one
+          // failed the BE policy — not the same fix, so not the same message.
+          const err = e as ApiError;
+          message.error(
+            err.status === 401
+              ? t('auth.wrongCurrentPassword')
+              : err.status === 400
+                ? t('auth.weakNewPassword')
+                : err.message,
+          );
         }
       }}
     >
       <Form.Item name="currentPassword" label={t('auth.currentPassword')} rules={[{ required: true }]}>
-        <Input.Password size="large" />
+        <Input.Password size="large" autoComplete="current-password" />
       </Form.Item>
-      <Form.Item name="newPassword" label={t('auth.newPassword')} rules={[{ required: true, min: 8 }]}>
-        <Input.Password size="large" />
+      <Form.Item
+        name="newPassword"
+        label={t('auth.newPassword')}
+        rules={[{ required: true, min: 8 }]}
+        extra={<PasswordCriteria value={newPw} />}
+      >
+        <Input.Password size="large" autoComplete="new-password" />
+      </Form.Item>
+      <Form.Item
+        name="confirmPassword"
+        label={t('auth.confirmPassword')}
+        dependencies={['newPassword']}
+        rules={[
+          { required: true },
+          ({ getFieldValue }) => ({
+            validator: (_, value: string) =>
+              !value || getFieldValue('newPassword') === value
+                ? Promise.resolve()
+                : Promise.reject(new Error(t('auth.passwordMismatch'))),
+          }),
+        ]}
+      >
+        <Input.Password size="large" autoComplete="new-password" />
       </Form.Item>
       <Button type="primary" htmlType="submit" block size="large">
         {t('common.save')}

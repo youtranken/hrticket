@@ -47,7 +47,7 @@ export class TicketsController {
   @Get('search')
   async search(@CurrentUser() user: SessionUser, @Query() query: Record<string, unknown>) {
     const q = ticketSearchQuerySchema.parse(query);
-    return this.searchSvc.search(user, q.q, q.page, q.pageSize);
+    return this.searchSvc.search(user, q.q, q.page, q.pageSize, { sort: q.sort, dir: q.dir });
   }
 
   /** Full ticket detail (conversation + participants + tags + attachments + links). */

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Modal, Select, Space, Tag, Typography, App as AntApp } from 'antd';
-import { useMe } from '../../lib/auth';
+import { hasCap, useMe } from '../../lib/auth';
 import {
   useClaim,
   useAssign,
@@ -41,11 +41,14 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
 
   const inGroup = ticket.categoryId !== null && (me?.groups ?? []).includes(ticket.categoryId);
   const isAdmin = me?.role === 'admin' || me?.role === 'ssa';
-  const canAssign = isAdmin || (me?.role === 'team_lead' && inGroup);
+  // Both gates also require the SSA-matrix capability (enforced by CapabilityGuard —
+  // hiding here just avoids dead buttons that would 403).
+  const canAssign =
+    (isAdmin || (me?.role === 'team_lead' && inGroup)) && hasCap(me, 'ticket.assign_others');
   // Claim ("Nhận"/"Nhận thay") — đơn 5 v2: Admin/SSA pick up anywhere in the project;
   // Member and TL claim by GROUP MEMBERSHIP plus the shared "Khác" pool (where the
   // server forces a member to pick a real category). BE enforces (assertCanClaim → 403).
-  const canClaim = isAdmin || inGroup || !!ticket.categoryIsSystem;
+  const canClaim = (isAdmin || inGroup || !!ticket.categoryIsSystem) && hasCap(me, 'ticket.claim');
   const mine = ticket.assignee?.id === me?.user.id;
   // Claim-over rank rule (FR30): a plain Member may take over a peer (Member), but not
   // a ticket held by a Team Lead / Admin / SSA — outranking an assignment is a
@@ -124,6 +127,7 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
           onClick={() =>
             modal.confirm({
               title: t('ticket.claimOverConfirm', { name: ticket.assignee!.name }),
+              content: t('ticket.claimOverHint', { name: ticket.assignee!.name }),
               onOk: () =>
                 claim.mutateAsync({ over: true }).then(
                   (res) => {
@@ -202,8 +206,19 @@ export function AssignControls({ ticket }: { ticket: TicketDetail['ticket'] }) {
           onChange={setPickUser}
           options={(users.data ?? []).map((u) => ({
             value: u.id,
-            label: `${u.name} (${u.email})${isAwayNow(u.awayFrom, u.awayTo) ? ' • ' + t('availability.away') : ''}`,
+            label: `${u.name} (${u.email})`,
+            awayFrom: u.awayFrom,
+            awayTo: u.awayTo,
           }))}
+          // P2: away users get the amber badge, not just a text suffix.
+          optionRender={(opt) => (
+            <span>
+              {opt.data.label}
+              {isAwayNow(opt.data.awayFrom, opt.data.awayTo) && (
+                <AwayBadge awayFrom={opt.data.awayFrom} awayTo={opt.data.awayTo} />
+              )}
+            </span>
+          )}
         />
         {/* Re-classify: the chosen user is in several groups → pick the category. */}
         {categoryChoices && (

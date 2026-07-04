@@ -2,6 +2,11 @@ import * as argon2 from 'argon2';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, sql } from './db';
 import * as s from './schema';
+import {
+  CAP_ROLES,
+  CAPABILITIES as CAP_KEYS,
+  defaultAllowed,
+} from '../../modules/capabilities/capability-catalog';
 
 /**
  * Idempotent seed: 2 projects, 6 default categories/project (bilingual),
@@ -92,18 +97,13 @@ const TEMPLATES: Array<{
   },
 ];
 
-// PRD §2 capability matrix — coarse seed (SSA edits at runtime, Story 9.4).
-const CAPABILITIES: Array<{ role: s.Role; capability: string; allowed: boolean }> = [
-  { role: 'member', capability: 'ticket.reply', allowed: true },
-  { role: 'member', capability: 'ticket.claim', allowed: true },
-  { role: 'member', capability: 'ticket.assign_others', allowed: false },
-  { role: 'team_lead', capability: 'ticket.assign_others', allowed: true },
-  { role: 'team_lead', capability: 'log.read_group', allowed: true },
-  { role: 'admin', capability: 'config.manage', allowed: true },
-  { role: 'admin', capability: 'user.manage', allowed: true },
-  { role: 'ssa', capability: 'role.edit_capabilities', allowed: true },
-  { role: 'ssa', capability: 'config.manage_all', allowed: true },
-];
+// Role × capability matrix — derived from the canonical catalog (Story 9.4/FR55).
+// The FULL grid is seeded (not just the PRD §2 diagonal) because CapabilityGuard
+// enforces these cells at the API; defaults mirror the baseline role model.
+const CAPABILITIES: Array<{ role: s.Role; capability: string; allowed: boolean }> =
+  CAP_ROLES.flatMap((role) =>
+    CAP_KEYS.map((capability) => ({ role, capability, allowed: defaultAllowed(role, capability) })),
+  );
 
 export async function seedOnce(): Promise<void> {
   const projectKeys: Array<{ key: s.ProjectKey; name: string }> = [

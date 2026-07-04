@@ -27,7 +27,7 @@ import { useMe } from '../../lib/auth';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
 
-type PeriodKind = 'year' | 'quarter' | 'month';
+type PeriodKind = 'year' | 'quarter' | 'month' | 'custom';
 
 const C = {
   created: '#3E63DD',
@@ -48,6 +48,17 @@ function vnDay(d: Date): string {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/** Same calendar date one year earlier (Feb-29 clamps to Feb-28). */
+function minusOneYear(d: string): string {
+  const shifted = `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+  return shifted.endsWith('-02-29') ? shifted.replace('-02-29', '-02-28') : shifted;
+}
+
+/** VN 'YYYY-MM-DD' for today minus `n` days. */
+function vnDaysAgo(n: number): string {
+  return vnDay(new Date(Date.now() - n * 86_400_000));
+}
 
 /** [from, to] for the picked year + sub-period. */
 function rangeFor(year: number, kind: PeriodKind, quarter: number, month: number): { from: string; to: string } {
@@ -172,16 +183,29 @@ export function ReportsPage() {
   const [periodKind, setPeriodKind] = useState<PeriodKind>('year');
   const [quarter, setQuarter] = useState(Math.ceil(curMonth / 3));
   const [month, setMonth] = useState(curMonth);
+  // #57: free date range (defaults to the last 30 days when first opened).
+  const [customFrom, setCustomFrom] = useState(() => vnDaysAgo(29));
+  const [customTo, setCustomTo] = useState(today);
   const [granularity, setGranularity] = useState<ReportGranularity>('month');
   const [staffFilter, setStaffFilter] = useState<string | undefined>(undefined);
   const [showTimeTable, setShowTimeTable] = useState(false);
 
-  const range = useMemo(() => rangeFor(year, periodKind, quarter, month), [year, periodKind, quarter, month]);
+  const range = useMemo(() => {
+    if (periodKind !== 'custom') return rangeFor(year, periodKind, quarter, month);
+    // A half-typed inverted range would 500-trap the BE zod guard — swap silently.
+    return customFrom <= customTo
+      ? { from: customFrom, to: customTo }
+      : { from: customTo, to: customFrom };
+  }, [year, periodKind, quarter, month, customFrom, customTo]);
   // "So cùng kỳ": recompute the SAME period for year−1 (not a string shift — that
-  // would clamp Feb to the wrong month-end across leap years, review 3/7).
+  // would clamp Feb to the wrong month-end across leap years, review 3/7). A custom
+  // range shifts both bounds back one year (Feb-29 clamped).
   const prevRange = useMemo(
-    () => rangeFor(year - 1, periodKind, quarter, month),
-    [year, periodKind, quarter, month],
+    () =>
+      periodKind === 'custom'
+        ? { from: minusOneYear(range.from), to: minusOneYear(range.to) }
+        : rangeFor(year - 1, periodKind, quarter, month),
+    [year, periodKind, quarter, month, range.from, range.to],
   );
   const summaryRange: ReportRange = {
     ...range,
@@ -214,12 +238,13 @@ export function ReportsPage() {
     return list;
   }, [s?.minYear, curYear, year]);
 
-  // KPI deltas vs same period last year.
+  // KPI deltas vs same period last year (custom range → same dates a year earlier).
+  const prevYearLabel = periodKind === 'custom' ? Number(range.from.slice(0, 4)) - 1 : year - 1;
   const handledDelta = (() => {
     if (!s?.prev || s.prev.handled === 0) return undefined;
     const pct = Math.round(((s.handled.total - s.prev.handled) / s.prev.handled) * 100);
     return {
-      text: `${pct >= 0 ? '+' : ''}${pct}% ${t('reports.v2.vsPrev', { y: year - 1 })}`,
+      text: `${pct >= 0 ? '+' : ''}${pct}% ${t('reports.v2.vsPrev', { y: prevYearLabel })}`,
       tone: pct >= 0 ? ('up' as const) : ('down' as const),
     };
   })();
@@ -227,7 +252,8 @@ export function ReportsPage() {
     if (s?.resolution.avgDays == null || s.prev?.avgDays == null) return undefined;
     const diff = s.resolution.avgDays - s.prev.avgDays;
     const d = Math.abs(diff).toFixed(1);
-    if (Math.abs(diff) < 0.05) return { text: `≈ ${t('reports.v2.vsPrev', { y: year - 1 })}`, tone: 'flat' as const };
+    if (Math.abs(diff) < 0.05)
+      return { text: `≈ ${t('reports.v2.vsPrev', { y: prevYearLabel })}`, tone: 'flat' as const };
     return diff < 0
       ? { text: t('reports.v2.faster', { d }), tone: 'up' as const }
       : { text: t('reports.v2.slower', { d }), tone: 'down' as const };
@@ -265,6 +291,9 @@ export function ReportsPage() {
   const reopenPct = s && s.total > 0 ? (100 * s.quality.reopenedAll) / s.total : 0;
   const fmtDays = (d: number | null | undefined) =>
     d == null ? '—' : `${d.toFixed(1).replace('.', lang === 'vi' ? ',' : '.')} ${t('reports.v2.days')}`;
+  // P2: thousands grouping on the KPI figures (locale-aware).
+  const nf = new Intl.NumberFormat(lang === 'en' ? 'en-GB' : 'vi-VN');
+  const num = (v: number | undefined): string => (v === undefined ? '…' : nf.format(v));
 
   return (
     <div>
@@ -286,12 +315,14 @@ export function ReportsPage() {
               options={staffOptions}
             />
           )}
-          <Select
-            value={year}
-            onChange={(v) => setYear(v)}
-            style={{ width: 92 }}
-            options={years.map((y) => ({ value: y, label: String(y) }))}
-          />
+          {periodKind !== 'custom' && (
+            <Select
+              value={year}
+              onChange={(v) => setYear(v)}
+              style={{ width: 92 }}
+              options={years.map((y) => ({ value: y, label: String(y) }))}
+            />
+          )}
           <Segmented<PeriodKind>
             value={periodKind}
             onChange={(v) => setPeriodKind(v)}
@@ -299,6 +330,7 @@ export function ReportsPage() {
               { label: t('reports.v2.fullYear'), value: 'year' },
               { label: t('reports.v2.quarter'), value: 'quarter' },
               { label: t('reports.v2.month'), value: 'month' },
+              { label: t('reports.v2.custom'), value: 'custom' },
             ]}
           />
           {periodKind === 'quarter' && (
@@ -320,6 +352,47 @@ export function ReportsPage() {
               }))}
             />
           )}
+          {periodKind === 'custom' && (
+            <>
+              {/* Native date inputs, same convention as the rest of the app (#57). */}
+              <input
+                type="date"
+                className="ant-input"
+                style={{ width: 148, height: 32, padding: '0 8px' }}
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(e) => setCustomFrom(e.target.value)}
+              />
+              <span style={{ color: '#8A94A6' }}>–</span>
+              <input
+                type="date"
+                className="ant-input"
+                style={{ width: 148, height: 32, padding: '0 8px' }}
+                value={customTo}
+                min={customFrom || undefined}
+                max={today}
+                onChange={(e) => setCustomTo(e.target.value)}
+              />
+              <Button
+                size="small"
+                onClick={() => {
+                  setCustomFrom(vnDaysAgo(6));
+                  setCustomTo(today);
+                }}
+              >
+                {t('reports.v2.last7')}
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  setCustomFrom(vnDaysAgo(29));
+                  setCustomTo(today);
+                }}
+              >
+                {t('reports.v2.last30')}
+              </Button>
+            </>
+          )}
         </Space>
       </Space>
 
@@ -331,7 +404,7 @@ export function ReportsPage() {
             tint="#E4F6EE"
             color="#1F9D6B"
             label={t('reports.v2.handled')}
-            value={s?.handled.total ?? '…'}
+            value={num(s?.handled.total)}
             sub={s ? t('reports.v2.handledSub', { r: s.handled.resolved, c: s.handled.closed }) : ''}
             delta={handledDelta}
             spark={buckets.map((b) => b.handled)}
@@ -344,7 +417,7 @@ export function ReportsPage() {
             tint="#E7F0FB"
             color="#3E63DD"
             label={t('reports.v2.active')}
-            value={s?.active.total ?? '…'}
+            value={num(s?.active.total)}
             sub={s ? t('reports.v2.activeSub', { r: s.active.reopened, p: s.active.pending }) : ''}
             spark={buckets.map((b) => b.open)}
             sparkColor={C.created}
@@ -356,7 +429,7 @@ export function ReportsPage() {
             tint="#FBEAEA"
             color="#D64545"
             label={t('reports.metric.overdue')}
-            value={s?.overdue.total ?? '…'}
+            value={num(s?.overdue.total)}
             valueColor={s && s.overdue.total > 0 ? C.overdue : undefined}
             sub={
               s

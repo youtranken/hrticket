@@ -45,16 +45,25 @@ export function LoginPage() {
       const err = e as ApiError;
       // Map by code first so a non-disabled 403 (e.g. PASSWORD_CHANGE_REQUIRED) isn't
       // mislabelled "account disabled" — fall back to the BE's own message for unknowns.
+      if (err.status === 429) {
+        // Lockout says HOW LONG (P2 #6) — fall back to the vague text if the BE
+        // didn't include the window (e.g. OTP resend cap).
+        const wait = Number(err.details?.retryAfterSeconds);
+        message.error(
+          Number.isFinite(wait) && wait > 0
+            ? t('login.error.lockedFor', { s: wait })
+            : t('login.error.locked'),
+        );
+        return;
+      }
       const key =
-        err.status === 429
-          ? 'login.error.locked'
-          : err.code === 'PASSWORD_CHANGE_REQUIRED'
-            ? null
-            : err.status === 403
-              ? 'login.error.disabled'
-              : err.status === 401 || err.status === 400
-                ? 'login.error.invalid'
-                : null;
+        err.code === 'PASSWORD_CHANGE_REQUIRED'
+          ? null
+          : err.status === 403
+            ? 'login.error.disabled'
+            : err.status === 401 || err.status === 400
+              ? 'login.error.invalid'
+              : null;
       message.error(key ? t(key) : err.message);
     } finally {
       setLoading(false);
@@ -116,7 +125,7 @@ export function LoginPage() {
           {mode === 'login' ? (
             <Form layout="vertical" onFinish={onFinish} style={{ marginTop: 16 }}>
               <Form.Item name="email" label={t('common.email')} rules={[{ required: true, type: 'email' }]}>
-                <Input autoComplete="username" size="large" />
+                <Input autoFocus type="email" inputMode="email" autoComplete="username" size="large" />
               </Form.Item>
               <Form.Item name="password" label={t('common.password')} rules={[{ required: true }]}>
                 <Input.Password autoComplete="current-password" size="large" />
@@ -125,7 +134,10 @@ export function LoginPage() {
                 {t('login.submit')}
               </Button>
               <div style={{ marginTop: 12, textAlign: 'center' }}>
-                <a onClick={() => setMode('forgot')}>{t('login.forgot')}</a>
+                {/* Real button, not a bare <a onClick> — reachable by Tab/Enter (#35). */}
+                <Button type="link" size="small" onClick={() => setMode('forgot')}>
+                  {t('login.forgot')}
+                </Button>
               </div>
             </Form>
           ) : forgotSent ? (
@@ -147,16 +159,15 @@ export function LoginPage() {
                 {t('login.forgotHint')}
               </Text>
               <Form.Item name="email" label={t('common.email')} rules={[{ required: true, type: 'email' }]}>
-                <Input autoComplete="username" size="large" />
+                <Input autoFocus type="email" inputMode="email" autoComplete="username" size="large" />
               </Form.Item>
               <Button type="primary" htmlType="submit" block size="large" loading={loading}>
                 {t('login.forgotSubmit')}
               </Button>
               <div style={{ marginTop: 12, textAlign: 'center' }}>
-                <a onClick={backToLogin}>
-                  <ArrowLeftOutlined style={{ marginInlineEnd: 6 }} />
+                <Button type="link" size="small" onClick={backToLogin} icon={<ArrowLeftOutlined />}>
                   {t('login.backToLogin')}
-                </a>
+                </Button>
               </div>
             </Form>
           )}

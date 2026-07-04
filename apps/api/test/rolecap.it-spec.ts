@@ -4,6 +4,7 @@ import { startHarness } from './setup.it';
 import { makeUser } from './factories/user.factory';
 import { RoleCapabilitiesService } from '../src/modules/ssa/role-capabilities.service';
 import { RoleCapabilitiesController } from '../src/modules/ssa/role-capabilities.controller';
+import { CapabilitiesService } from '../src/modules/capabilities/capabilities.service';
 import type { SessionUser } from '../src/modules/auth/session.service';
 
 /**
@@ -15,7 +16,7 @@ import type { SessionUser } from '../src/modules/auth/session.service';
 describe('IT-ROLECAP: runtime role-capability editor', () => {
   let harness: ItHarness | undefined;
   let ready = false;
-  const svc = new RoleCapabilitiesService();
+  const svc = new RoleCapabilitiesService(new CapabilitiesService());
   const controller = new RoleCapabilitiesController(svc);
 
   const session = (id: string, role: SessionUser['role']): SessionUser => ({
@@ -55,22 +56,23 @@ describe('IT-ROLECAP: runtime role-capability editor', () => {
     }
   });
 
-  it('IT-ROLECAP-001: toggle a capability on → effective at once → off; persisted + audited', async () => {
+  it('IT-ROLECAP-001: toggle a capability off → effective at once → on; persisted + audited', async () => {
     if (!ready) return;
-    // Default: Member cannot assign others.
-    expect((await svc.getAllowed('member')).has('ticket.assign_others')).toBe(false);
+    // Default: Member replies (member × ticket.assign_others is LOCKED OFF now —
+    // non-applicable cells can't be toggled, so the test uses a live cell).
+    expect((await svc.getAllowed('member')).has('ticket.reply')).toBe(true);
 
-    // SSA grants it → visible immediately (cache busted on write).
-    await svc.setCapability(SSA, 'member', 'ticket.assign_others', true);
-    expect((await svc.getAllowed('member')).has('ticket.assign_others')).toBe(true);
+    // SSA revokes it → gone immediately (cache busted on write).
+    await svc.setCapability(SSA, 'member', 'ticket.reply', false);
+    expect((await svc.getAllowed('member')).has('ticket.reply')).toBe(false);
     // …and reflected in the editor matrix.
     const matrix = await svc.getMatrix();
-    const row = matrix.rows.find((r) => r.capability === 'ticket.assign_others')!;
-    expect(row.cells.find((c) => c.role === 'member')!.allowed).toBe(true);
+    const row = matrix.rows.find((r) => r.capability === 'ticket.reply')!;
+    expect(row.cells.find((c) => c.role === 'member')!.allowed).toBe(false);
 
-    // SSA revokes it → gone again.
-    await svc.setCapability(SSA, 'member', 'ticket.assign_others', false);
-    expect((await svc.getAllowed('member')).has('ticket.assign_others')).toBe(false);
+    // SSA grants it back → restored.
+    await svc.setCapability(SSA, 'member', 'ticket.reply', true);
+    expect((await svc.getAllowed('member')).has('ticket.reply')).toBe(true);
 
     // Both edits audited old→new (FR72).
     const audits = (await harness!.db.execute(sql`
@@ -78,8 +80,8 @@ describe('IT-ROLECAP: runtime role-capability editor', () => {
       FROM audit_log WHERE action = 'role_capability.changed' ORDER BY id
     `)) as unknown as Array<{ old: string; new: string }>;
     expect(audits).toEqual([
-      { old: 'false', new: 'true' },
       { old: 'true', new: 'false' },
+      { old: 'false', new: 'true' },
     ]);
   });
 
@@ -110,18 +112,22 @@ describe('IT-ROLECAP: runtime role-capability editor', () => {
     await expect(svc.setCapability(SSA, 'member', 'ticket.teleport', true)).rejects.toMatchObject({ status: 422 });
   });
 
-  it('IT-ROLECAP-002b: restore defaults returns to PRD §2 + audits the reset', async () => {
+  it('IT-ROLECAP-002b: restore defaults returns to the catalog grid + audits the reset', async () => {
     if (!ready) return;
-    // Mutate a few cells away from default.
-    await svc.setCapability(SSA, 'member', 'config.manage', true);
+    // Mutate a few LIVE cells away from default (member × config.manage is locked
+    // OFF now — a dead toggle — so it can't serve as the mutation).
+    await svc.setCapability(SSA, 'member', 'ticket.claim', false);
     await svc.setCapability(SSA, 'admin', 'config.manage', false);
-    expect((await svc.getAllowed('member')).has('config.manage')).toBe(true);
+    expect((await svc.getAllowed('member')).has('ticket.claim')).toBe(false);
 
     await svc.restoreDefaults(SSA);
-    // Back to PRD §2: Member has none of config.manage; Admin has it.
-    expect((await svc.getAllowed('member')).has('config.manage')).toBe(false);
+    // Back to the defaults: Member claims again; Admin has config.manage.
+    expect((await svc.getAllowed('member')).has('ticket.claim')).toBe(true);
     expect((await svc.getAllowed('admin')).has('config.manage')).toBe(true);
     expect((await svc.getAllowed('team_lead')).has('ticket.assign_others')).toBe(true);
+    // Locked cells kept their state: SSA full ON, dead cells OFF.
+    expect((await svc.getAllowed('ssa')).has('ticket.reply')).toBe(true);
+    expect((await svc.getAllowed('member')).has('log.read_group')).toBe(false);
 
     const [reset] = (await harness!.db.execute(sql`
       SELECT count(*)::int AS n FROM audit_log WHERE action = 'role_capability.reset'

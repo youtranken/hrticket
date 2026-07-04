@@ -7,6 +7,7 @@ import { tickets, categories, userGroupMembership } from '../src/infra/db/schema
 import { TicketsReadService } from '../src/modules/tickets/tickets-read.service';
 import { ReportingService } from '../src/modules/reporting/reporting.service';
 import { ExportService, ExportTooLargeError } from '../src/modules/export/export.service';
+import { AuditService } from '../src/modules/audit/audit.service';
 import { exportTicketsSchema, asTicketListQuery } from '../src/modules/export/dto/export.body';
 import { ticketListQuerySchema } from '../src/modules/tickets/dto/ticket-list.query';
 import type { SessionUser } from '../src/modules/auth/session.service';
@@ -42,7 +43,7 @@ const Q = (over = {}) => ticketListQuerySchema.parse({ pageSize: 100, ...over })
 describe('IT-EXPORT: Excel / CSV export', () => {
   let harness: ItHarness | undefined;
   let ready = false;
-  const svc = new ExportService(new TicketsReadService(), new ReportingService());
+  const svc = new ExportService(new TicketsReadService(), new ReportingService(), new AuditService());
 
   let Payroll: number;
   let Insurance: number;

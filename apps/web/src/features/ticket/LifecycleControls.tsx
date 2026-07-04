@@ -41,11 +41,14 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
 
   const next = manualNextStates(ticket.status as TicketStatus);
 
-  const doChange = (to: string) =>
+  const doChange = (to: string, onDone?: () => void) =>
     changeStatus.mutate(
       { to },
       {
-        onSuccess: () => message.success(t('lifecycle.changed')),
+        onSuccess: () => {
+          message.success(t('lifecycle.changed'));
+          onDone?.();
+        },
         onError: (e) => message.error(e.message),
       },
     );
@@ -68,9 +71,9 @@ export function LifecycleControls({ ticket }: { ticket: TicketDetail['ticket'] }
 
   const submitResolve = () => {
     // Tick "close too" → jump straight to Closed (In Progress → Closed is legal);
-    // otherwise just mark Resolved.
-    doChange(resolveAndClose ? 'closed' : 'resolved');
-    setResolveOpen(false);
+    // otherwise just mark Resolved. The modal closes on SUCCESS (P2) — an optimistic
+    // close swallowed failures (the snooze modal already behaved correctly).
+    doChange(resolveAndClose ? 'closed' : 'resolved', () => setResolveOpen(false));
   };
 
   const menuItems: MenuProps['items'] = next.map((s) => ({

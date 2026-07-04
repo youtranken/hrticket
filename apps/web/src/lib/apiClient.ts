@@ -3,6 +3,8 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /** Raw error body — extra fields like retryAfterSeconds (lockout 429). */
+    public details?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -35,7 +37,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const message =
       typeof body.message === 'string' ? body.message : `Request failed (${res.status})`;
     const code = typeof body.code === 'string' ? body.code : 'HTTP_ERROR';
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, body);
   }
   return body as T;
 }

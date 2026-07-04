@@ -27,7 +27,7 @@ import {
   CheckCircleOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { useMe } from '../../lib/auth';
+import { hasCap, useMe } from '../../lib/auth';
 import { useTicket, useApproveParticipant, displayCode, type TicketMessage } from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
@@ -40,11 +40,12 @@ import { FileCard } from '../../components/FileCard';
 import { REOPEN_WARN_THRESHOLD } from '@hris/shared';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
+import { fmtDateTime } from '../../lib/datetime';
 
 const { Title, Text } = Typography;
 
 function vnTime(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+  return fmtDateTime(iso);
 }
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY' (string-split so it's timezone-safe for a bare date). */
@@ -329,9 +330,11 @@ export function TicketDetailPage() {
             ownProjectKey={ticket.projectKey}
             onForward={
               // Mirror the server reply gate (review #7): assignee (any role, đơn 5)
-              // or TL of the ticket's group — nobody else gets a dead Forward link.
+              // or TL of the ticket's group, holding the ticket.reply capability —
+              // nobody else gets a dead Forward link.
               ticket.status !== 'closed' &&
               me &&
+              hasCap(me, 'ticket.reply') &&
               (ticket.assignee?.id === me.user.id ||
                 (me.role === 'team_lead' &&
                   ticket.categoryId !== null &&

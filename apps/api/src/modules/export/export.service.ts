@@ -5,6 +5,7 @@ import { writeAudit } from '../../infra/audit/audit';
 import { actorForUser } from '../tickets/actor';
 import { TicketsReadService, type TicketExportRow } from '../tickets/tickets-read.service';
 import { ReportingService } from '../reporting/reporting.service';
+import { AuditService, type AuditFilters } from '../audit/audit.service';
 import type { TicketListQuery } from '../tickets/dto/ticket-list.query';
 import type { SessionUser } from '../auth/session.service';
 
@@ -58,6 +59,7 @@ export class ExportService {
   constructor(
     private readonly ticketsRead: TicketsReadService,
     private readonly reporting: ReportingService,
+    private readonly auditRead: AuditService,
   ) {}
 
   /** Build the ticket-export table (FR84). Reuses the 10.1 RLS+filter path; over
@@ -92,6 +94,40 @@ export class ExportService {
       baseName: `tickets_${todayVn()}`,
       sheetName: 'Tickets',
       rowCount: rows.length,
+    };
+  }
+
+  /** Audit-log export (#55). Same scope rules as the on-screen reader (member 403,
+   *  TL group-scoped, Admin project, SSA active project) — AuditService enforces. */
+  async auditTable(
+    user: SessionUser,
+    projectId: number,
+    filter: Omit<AuditFilters, 'page' | 'pageSize'>,
+    lang: 'vi' | 'en',
+  ): Promise<ExportTable> {
+    const res = await this.auditRead.list(user, projectId, {
+      ...filter,
+      page: 1,
+      pageSize: EXPORT_ROW_CAP,
+    });
+    if (res.total > EXPORT_ROW_CAP) throw new ExportTooLargeError(EXPORT_ROW_CAP);
+    await this.audit(user, 'export.audit', { filter, rowCount: res.items.length });
+
+    const L = labels(lang);
+    const json = (v: unknown) => (v == null ? '' : JSON.stringify(v));
+    return {
+      headers: [L.time, L.actor, L.action, L.object, L.oldValue, L.newValue],
+      rows: res.items.map((r) => [
+        vnDateTime(new Date(r.createdAt)),
+        r.actorLabel ?? '',
+        r.action,
+        r.objectLabel ?? (r.objectType ? `${r.objectType}:${r.objectId ?? ''}` : ''),
+        json(r.oldValue),
+        json(r.newValue),
+      ]),
+      baseName: `audit_${todayVn()}`,
+      sheetName: 'Audit',
+      rowCount: res.items.length,
     };
   }
 
@@ -202,6 +238,7 @@ function labels(lang: 'vi' | 'en') {
         closed: 'Closed', open: 'Open',
         reopened: 'Reopened', handled: 'Handled', uncategorized: '(Uncategorized)', unassigned: '(Unassigned)',
         holding: 'Holding', avgDays: 'Avg handling (days)', onTime: 'On time',
+        time: 'Time', actor: 'Actor', action: 'Action', object: 'Object', oldValue: 'Before', newValue: 'After',
       }
     : {
         code: 'Mã', subject: 'Tiêu đề', category: 'Nhóm', status: 'Trạng thái', requester: 'Người gửi',
@@ -210,5 +247,6 @@ function labels(lang: 'vi' | 'en') {
         closed: 'Đã đóng', open: 'Đang mở',
         reopened: 'Mở lại', handled: 'Đã xử lý', uncategorized: '(Chưa phân nhóm)', unassigned: '(Chưa gán)',
         holding: 'Đang giữ', avgDays: 'TG xử lý TB (ngày)', onTime: 'Đúng hạn',
+        time: 'Thời điểm', actor: 'Người thao tác', action: 'Hành động', object: 'Đối tượng', oldValue: 'Trước', newValue: 'Sau',
       };
 }

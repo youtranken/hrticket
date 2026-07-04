@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { ReplyService } from './reply.service';
 import { NotesService } from './notes.service';
 import { DraftsService } from './drafts.service';
@@ -55,7 +56,7 @@ const draftSchema = z.object({
 /** Compose endpoints on a ticket: reply (3.2), internal note (3.4), draft (3.5).
  *  Reply and note are DELIBERATELY separate routes/handlers (C3). */
 @Controller('api/tickets/:id')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
 export class ComposeController {
   constructor(
     private readonly replies: ReplyService,
@@ -69,6 +70,7 @@ export class ComposeController {
   }
 
   @Post('replies')
+  @RequireCap('ticket.reply')
   async reply(@CurrentUser() user: SessionUser, @Param('id') id: string, @Body() body: unknown) {
     const parsed = replySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
@@ -77,6 +79,7 @@ export class ComposeController {
 
   /** Forward one message of the thread to new recipients (Gmail-style Fwd:). */
   @Post('forward')
+  @RequireCap('ticket.reply')
   async forward(@CurrentUser() user: SessionUser, @Param('id') id: string, @Body() body: unknown) {
     const parsed = forwardSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');

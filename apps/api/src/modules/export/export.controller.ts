@@ -13,8 +13,9 @@ import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { ExportService, ExportTooLargeError, type ExportFormat, type ExportTable } from './export.service';
-import { exportTicketsSchema, exportReportSchema, asTicketListQuery } from './dto/export.body';
+import { exportTicketsSchema, exportReportSchema, exportAuditSchema, asTicketListQuery } from './dto/export.body';
 import { ErrorCode } from '@hris/shared';
 
 /**
@@ -24,7 +25,7 @@ import { ErrorCode } from '@hris/shared';
  * the reporting service. Over 10k rows → 422, no partial file.
  */
 @Controller('api/export')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
 export class ExportController {
   constructor(
     private readonly svc: ExportService,
@@ -64,6 +65,25 @@ export class ExportController {
         { from: parsed.from, to: parsed.to, granularity: parsed.granularity, assigneeId: parsed.assigneeId },
         parsed.lang,
       );
+      await this.send(res, table, parsed.format);
+    } catch (e) {
+      this.mapError(e);
+    }
+  }
+
+  /** Audit-log export (#55): same filters + scope as the on-screen reader. */
+  @Post('audit')
+  @RequireCap('log.read_group')
+  async auditLog(
+    @CurrentUser() user: SessionUser,
+    @Body() body: unknown,
+    @Headers('x-project') xp: string | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    const parsed = exportAuditSchema.parse(body);
+    const project = await this.projectCtx.resolveEffective(user, xp);
+    try {
+      const table = await this.svc.auditTable(user, project.id, parsed.filter, parsed.lang);
       await this.send(res, table, parsed.format);
     } catch (e) {
       this.mapError(e);

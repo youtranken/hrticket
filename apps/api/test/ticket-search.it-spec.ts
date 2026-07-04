@@ -120,6 +120,24 @@ describe('IT-SEARCH: Vietnamese full-text search', () => {
     }
   });
 
+  it('IT-SEARCH-004: manual column sort — created asc/desc override relevance (#20)', async () => {
+    if (!ready) return;
+    const older = await mkTicket({ subject: 'sortprobe alpha' });
+    const newer = await mkTicket({ subject: 'sortprobe beta' });
+    await harness!.db
+      .update(tickets)
+      .set({ createdAt: new Date('2025-01-01T00:00:00Z') })
+      .where(eq(tickets.id, older));
+
+    const asc = await svc.search(adminU, 'sortprobe', 1, 20, { sort: 'created', dir: 'asc' });
+    const ascIds = asc.items.map((i) => i.id);
+    expect(ascIds.indexOf(older)).toBeLessThan(ascIds.indexOf(newer));
+
+    const desc = await svc.search(adminU, 'sortprobe', 1, 20, { sort: 'created', dir: 'desc' });
+    const descIds = desc.items.map((i) => i.id);
+    expect(descIds.indexOf(newer)).toBeLessThan(descIds.indexOf(older));
+  });
+
   it('IT-SEARCH-002: code & people search; out-of-group → no match (AC2/AC3)', async () => {
     if (!ready) return;
     const named = (await makeUser(harness!.db, { projectId: HRIS, email: 'nva@t.local', role: 'member' }))!;

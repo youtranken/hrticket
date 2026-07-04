@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { RoleCapabilitiesService } from './role-capabilities.service';
 
 const setCell = z.object({
@@ -23,7 +24,8 @@ const setCell = z.object({
 /** Story 9.4 — SSA-only role-capability editor. Admin (and below) → 403 at the API,
  *  not just the hidden menu (AC2). */
 @Controller('api/ssa/role-capabilities')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('role.edit_capabilities')
 export class RoleCapabilitiesController {
   constructor(private readonly svc: RoleCapabilitiesService) {}
 

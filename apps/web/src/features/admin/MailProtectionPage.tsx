@@ -43,6 +43,7 @@ import {
   useRemoveJunkRule,
   type JunkRule,
 } from '../../lib/junkRules';
+import { fmtDateTime } from '../../lib/datetime';
 
 const { Text } = Typography;
 
@@ -159,7 +160,7 @@ function BlocklistTab() {
             title: t('spam.blocklist.colDate'),
             dataIndex: 'createdAt',
             width: 170,
-            render: (d: string) => new Date(d).toLocaleString(),
+            render: (d: string) => fmtDateTime(d),
           },
           {
             title: '',
@@ -268,7 +269,7 @@ function AllowlistTab() {
             title: t('spam.allowlist.colDate'),
             dataIndex: 'createdAt',
             width: 170,
-            render: (d: string) => new Date(d).toLocaleString(),
+            render: (d: string) => fmtDateTime(d),
           },
           {
             title: '',
@@ -363,7 +364,7 @@ function HeldMailTab() {
                     title: t('spam.held.colReceived'),
                     dataIndex: 'receivedAt',
                     width: 180,
-                    render: (d: string) => new Date(d).toLocaleString(),
+                    render: (d: string) => fmtDateTime(d),
                   },
                   {
                     title: '',
@@ -484,7 +485,7 @@ function JunkRulesTab() {
         rowKey="id"
         loading={isLoading}
         dataSource={rows}
-        pagination={false}
+        pagination={{ pageSize: 20, hideOnSinglePage: true, showTotal: (total) => t('common.totalRows', { total }) }}
         columns={[
           {
             title: t('spam.junkRules.colKind'),
@@ -497,6 +498,14 @@ function JunkRulesTab() {
             ),
           },
           { title: t('spam.junkRules.colPattern'), dataIndex: 'pattern' },
+          {
+            title: t('spam.junkRules.colCreatedAt'),
+            dataIndex: 'createdAt',
+            width: 170,
+            render: (d: string) => fmtDateTime(d),
+            sorter: (a: JunkRule, b: JunkRule) => a.createdAt.localeCompare(b.createdAt),
+            defaultSortOrder: 'descend',
+          },
           {
             title: '',
             width: 100,

@@ -106,8 +106,10 @@ test('OTP resend: cooldown → fresh code signs in; 2FA restored off afterwards'
     const second = await otpCodeFor(EMAIL, first.id);
     expect(second.code).not.toBe(first.code);
 
-    // 4) The FRESH code + the FRESH pre-auth token sign in.
-    await page.locator('input[inputmode="numeric"]').fill(second.code);
+    // 4) The FRESH code + the FRESH pre-auth token sign in. Input.OTP renders 6
+    //    boxes with auto-advance — type into the first, the rest follow.
+    await page.locator('.ant-otp input').first().click();
+    await page.keyboard.type(second.code);
     await page.getByRole('button', { name: 'Xác nhận' }).click();
     await page.waitForURL('**/inbox');
   } finally {
@@ -119,7 +121,8 @@ test('OTP resend: cooldown → fresh code signs in; 2FA restored off afterwards'
       if (await heading.isVisible().catch(() => false)) {
         const latest = await otpCodeFor(EMAIL).catch(() => undefined);
         if (latest) {
-          await page.locator('input[inputmode="numeric"]').fill(latest.code);
+          await page.locator('.ant-otp input').first().click();
+          await page.keyboard.type(latest.code);
           await page.getByRole('button', { name: 'Xác nhận' }).click();
           await page.waitForURL('**/inbox').catch(() => undefined);
         }

@@ -14,8 +14,9 @@ import {
 const { Text } = Typography;
 
 /** Story 9.4 (FR55) — SSA-only runtime editor for the role × capability matrix.
- *  Toggling a cell takes effect on each user's next request (≤60s). Locked cells (🔒)
- *  are the anti-self-lock guards and can't be changed. */
+ *  Toggling a cell is enforced by CapabilityGuard on the role's very next API
+ *  request (the write busts the guard cache); the user's MENU catches up on their
+ *  next /me fetch. Locked cells (🔒) are the anti-self-lock guards and can't change. */
 export function RolesPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -35,8 +36,8 @@ export function RolesPage() {
     }
   };
 
-  // Each cell saves IMMEDIATELY — granting is easy to undo, but REVOKING kicks in on
-  // that role's next /me (≤60s) and can strip menus mid-shift, so it confirms first.
+  // Each cell saves IMMEDIATELY — granting is easy to undo, but REVOKING blocks the
+  // whole role at the API on their next request (mid-shift!), so it confirms first.
   const onCellChange = (role: CapRole, capability: string, allowed: boolean) => {
     if (allowed) {
       void toggle(role, capability, allowed);
@@ -74,8 +75,10 @@ export function RolesPage() {
           onChange={(v) => onCellChange(role, row.capability, v)}
         />
       );
+      // Two kinds of lock: SSA cells are locked ON (anti-self-lock), non-applicable
+      // cells are locked OFF (the services hard-block that role — a dead toggle).
       return cell.locked ? (
-        <Tooltip title={t('caps.locked')}>
+        <Tooltip title={t(cell.allowed ? 'caps.locked' : 'caps.notApplicable')}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <LockOutlined style={{ color: '#8c8c8c' }} />
             {sw}

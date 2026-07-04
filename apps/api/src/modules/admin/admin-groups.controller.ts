@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
@@ -25,7 +26,8 @@ const setUserGroups = z.object({ categoryIds: z.array(z.number().int().positive(
  * tickets the membership grants; hiding the menu (FE) is only UX.
  */
 @Controller('api/admin/groups')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('config.manage', 'config.manage_all')
 export class AdminGroupsController {
   constructor(
     private readonly groups: AdminGroupsService,

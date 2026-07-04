@@ -15,12 +15,29 @@ const base: Omit<Me, 'role'> = {
   otpEnabled: false,
 };
 
-// Default capability matrix (PRD §2 seed) per role — what /me returns out of the box.
+// Default capability matrix (full-grid catalog, enforced by CapabilityGuard) — what
+// /me returns out of the box. SSA's column is locked ON in its entirety.
 const DEFAULT_CAPS: Record<Me['role'], string[]> = {
   member: ['ticket.reply', 'ticket.claim'],
-  team_lead: ['ticket.assign_others', 'log.read_group'],
-  admin: ['config.manage', 'user.manage'],
-  ssa: ['role.edit_capabilities', 'config.manage_all'],
+  team_lead: ['ticket.reply', 'ticket.claim', 'ticket.assign_others', 'log.read_group'],
+  admin: [
+    'ticket.reply',
+    'ticket.claim',
+    'ticket.assign_others',
+    'log.read_group',
+    'config.manage',
+    'user.manage',
+  ],
+  ssa: [
+    'ticket.reply',
+    'ticket.claim',
+    'ticket.assign_others',
+    'log.read_group',
+    'config.manage',
+    'user.manage',
+    'role.edit_capabilities',
+    'config.manage_all',
+  ],
 };
 
 function keys(role: Me['role'], capabilities: string[] = DEFAULT_CAPS[role]): string[] {
@@ -55,6 +72,14 @@ describe('menuForRole (v1 redesign — consolidated grouped sidebar)', () => {
     expect(keys('team_lead', ['log.read_group', 'config.manage'])).toContain('settings');
     // Admin granted role.edit_capabilities gains the roles editor.
     expect(keys('admin', ['config.manage', 'role.edit_capabilities'])).toContain('roles');
+  });
+
+  it('audit follows log.read_group (enforced) — but a member never sees it', () => {
+    // TL/Admin with log.read_group revoked lose the audit entry too (no dead menu → 403).
+    expect(keys('team_lead', ['ticket.reply', 'ticket.claim'])).not.toContain('audit');
+    expect(keys('admin', ['config.manage', 'user.manage'])).not.toContain('audit');
+    // A member stays excluded even if granted — AuditService hard-blocks members.
+    expect(keys('member', ['ticket.reply', 'log.read_group'])).not.toContain('audit');
   });
 });
 

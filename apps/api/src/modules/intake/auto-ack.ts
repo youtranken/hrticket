@@ -70,19 +70,22 @@ export async function enqueueAutoAck(tx: DbTx, input: AutoAckInput): Promise<voi
   // logging in to see Đã tiếp nhận / Đang xử lý / Hoàn tất. Appended in code so it works
   // regardless of the seeded template wording.
   const statusUrl = `${APP_BASE_URL}/track/${sign(input.ticketId)}`;
+  // The EN half of the mail links with ?lang=en so the public page opens in English
+  // (P2 #4 — the page also has its own VI/EN toggle).
+  const statusUrlEn = `${statusUrl}?lang=en`;
   const trackVi = `Tra cứu tình trạng xử lý yêu cầu của bạn tại: ${statusUrl}`;
-  const trackEn = `Track your request status at: ${statusUrl}`;
+  const trackEn = `Track your request status at: ${statusUrlEn}`;
   const bodyText = `${vi.bodyText}\n\n${trackVi}\n\n———\n\n${en.bodyText}\n\n${trackEn}`;
-  const linkBtn = (label: string) =>
-    `<p style="margin:14px 0 0;"><a href="${statusUrl}" style="display:inline-block;background:#1F3A5F;color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-size:14px;">${label}</a></p>`;
+  const linkBtn = (label: string, url: string) =>
+    `<p style="margin:14px 0 0;"><a href="${url}" style="display:inline-block;background:#1F3A5F;color:#fff;text-decoration:none;padding:9px 18px;border-radius:8px;font-size:14px;">${label}</a></p>`;
   const bodyHtml = emailShell({
     heading: `Đã tiếp nhận yêu cầu ${input.ticketCode} · Request received`,
     bodyHtml:
       `${vi.bodyHtml}` +
-      linkBtn('Tra cứu tình trạng xử lý') +
+      linkBtn('Tra cứu tình trạng xử lý', statusUrl) +
       `<hr style="border:none;border-top:1px solid #eaedf3;margin:22px 0;"/>` +
       `${en.bodyHtml}` +
-      linkBtn('Track your request status'),
+      linkBtn('Track your request status', statusUrlEn),
   });
 
   await sendOutboundMail(tx, {

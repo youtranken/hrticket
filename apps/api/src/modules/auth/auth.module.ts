@@ -12,8 +12,10 @@ import { MeService } from './me.service';
 import { ProjectContextService } from './project-context.service';
 import { SessionGuard } from './session.guard';
 import { Mailer } from '../../infra/mail/mailer';
+import { CapabilitiesModule } from '../capabilities/capabilities.module';
 
 @Module({
+  imports: [CapabilitiesModule], // CapabilityGuard for the user-admin surface
   controllers: [AuthController, MeController, AdminUsersController],
   providers: [
     AuthService,

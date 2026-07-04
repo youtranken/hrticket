@@ -137,7 +137,13 @@ export function GlobalSearch() {
         }
       }}
     >
-      <Input.Search ref={inputRef} allowClear placeholder={t('reports.search.placeholder')} onSearch={goResults} />
+      <Input.Search
+        ref={inputRef}
+        allowClear
+        aria-label={t('reports.search.placeholder')}
+        placeholder={t('reports.search.placeholder')}
+        onSearch={goResults}
+      />
     </AutoComplete>
   );
 }

@@ -1,9 +1,12 @@
 import { useTranslation } from 'react-i18next';
-import { Card, Table, Button, Empty, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
+import { Alert, Card, Table, Button, Empty, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { TicketsTabBar } from '../inbox/TicketsTabBar';
 import { useJunkTickets, useReleaseJunk, type JunkTicket } from '../../lib/junk';
 import { useAddBlock } from '../../lib/blocklist';
 import { useMe } from '../../lib/auth';
+import { fmtDateTime } from '../../lib/datetime';
+import { TableSkeleton } from '../../components/TableSkeleton';
 
 const { Text } = Typography;
 
@@ -15,7 +18,7 @@ export function JunkPage() {
   const { t } = useTranslation();
   const { message, modal } = AntApp.useApp();
   const { data: me } = useMe();
-  const { data: rows = [], isLoading } = useJunkTickets();
+  const { data: rows = [], isLoading, isError, refetch } = useJunkTickets();
   const release = useReleaseJunk();
   const addBlock = useAddBlock();
   const isAdmin = me?.role === 'admin' || me?.role === 'ssa';
@@ -43,8 +46,36 @@ export function JunkPage() {
   return (
     <>
       <TicketsTabBar />
-      <Card title={t('junk.title')}>
+      <Card
+        title={t('junk.title')}
+        extra={
+          <Button
+            icon={<ReloadOutlined />}
+            aria-label={t('common.retry')}
+            loading={isLoading}
+            onClick={() => refetch()}
+          />
+        }
+      >
         <Text type="secondary">{t('junk.hint')}</Text>
+      {isError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginTop: 12 }}
+          message={t('ticket.loadError')}
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              {t('common.retry')}
+            </Button>
+          }
+        />
+      )}
+      {isLoading && rows.length === 0 ? (
+        <div style={{ marginTop: 12 }}>
+          <TableSkeleton />
+        </div>
+      ) : (
       <Table<JunkTicket>
         rowKey="id"
         style={{ marginTop: 12 }}
@@ -59,9 +90,26 @@ export function JunkPage() {
           showTotal: (total) => t('common.totalRows', { total }),
         }}
         columns={[
-          { title: t('junk.colCode'), dataIndex: 'ticketCode', width: 90 },
-          { title: t('junk.colSubject'), dataIndex: 'subject', width: 280, ellipsis: true },
-          { title: t('junk.colCategory'), dataIndex: 'categoryLabel', width: 120 },
+          {
+            title: t('junk.colCode'),
+            dataIndex: 'ticketCode',
+            width: 90,
+            sorter: (a: JunkTicket, b: JunkTicket) => a.ticketCode.localeCompare(b.ticketCode),
+          },
+          {
+            title: t('junk.colSubject'),
+            dataIndex: 'subject',
+            width: 280,
+            ellipsis: true,
+            sorter: (a: JunkTicket, b: JunkTicket) => a.subject.localeCompare(b.subject),
+          },
+          {
+            title: t('junk.colCategory'),
+            dataIndex: 'categoryLabel',
+            width: 120,
+            sorter: (a: JunkTicket, b: JunkTicket) =>
+              (a.categoryLabel ?? '').localeCompare(b.categoryLabel ?? ''),
+          },
           {
             title: t('junk.colCaughtBy'),
             width: 160,
@@ -78,8 +126,10 @@ export function JunkPage() {
             title: t('junk.colReceived'),
             dataIndex: 'createdAt',
             width: 170,
-            render: (d: string) =>
-              new Date(d).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }),
+            render: (d: string) => fmtDateTime(d),
+            // Client sort is exact here — the junk list arrives unpaged (ISO strings).
+            sorter: (a: JunkTicket, b: JunkTicket) => a.createdAt.localeCompare(b.createdAt),
+            defaultSortOrder: 'descend',
           },
           {
             title: '',
@@ -99,6 +149,7 @@ export function JunkPage() {
           },
         ]}
       />
+      )}
       </Card>
     </>
   );

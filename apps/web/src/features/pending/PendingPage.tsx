@@ -1,18 +1,27 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Table, Tag, Empty, Space, Button, Dropdown } from 'antd';
-import { SortAscendingOutlined, DownOutlined } from '@ant-design/icons';
+import { Alert, Table, Tag, Empty, Space, Button, Dropdown } from 'antd';
+import { SortAscendingOutlined, DownOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import type { SorterResult } from 'antd/es/table/interface';
 import { useMe } from '../../lib/auth';
 import { TicketsTabBar } from '../inbox/TicketsTabBar';
-import { useTickets, displayCode, type TicketListItem, type SortDir } from '../../lib/tickets';
+import {
+  useTickets,
+  displayCode,
+  type TicketListItem,
+  type TicketSort,
+  type SortDir,
+} from '../../lib/tickets';
 import { StatusTag } from '../../components/StatusTag';
 import { AwayBadge } from '../../components/AwayBadge';
+import { TableSkeleton } from '../../components/TableSkeleton';
 import i18n from '../../i18n';
+import { fmtDateTime } from '../../lib/datetime';
 
 function vnTime(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+  return fmtDateTime(iso);
 }
 
 /** Today in VN ('YYYY-MM-DD') — to highlight rows whose snooze comes due today. */
@@ -31,8 +40,16 @@ export function PendingPage() {
   const { data: me } = useMe();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  // #20: the snooze dropdown AND the column headers drive the same server sort.
+  const [sort, setSort] = useState<TicketSort>('snooze');
   const [dir, setDir] = useState<SortDir>('asc'); // asc = nearest due first
-  const { data, isLoading } = useTickets(page, pageSize, { view: 'pending', sort: 'snooze', dir });
+  const { data, isLoading, isError, refetch } = useTickets(page, pageSize, {
+    view: 'pending',
+    sort,
+    dir,
+  });
+  const sortOrderFor = (col: TicketSort) =>
+    sort === col ? (dir === 'asc' ? ('ascend' as const) : ('descend' as const)) : null;
   const ssa = me?.role === 'ssa';
   const lang = i18n.language === 'en' ? 'en' : 'vi';
   const today = vnToday();
@@ -68,12 +85,16 @@ export function PendingPage() {
     {
       title: t('ticket.status'),
       dataIndex: 'status',
+      key: 'status',
       width: 120,
       render: (s: string) => <StatusTag status={s} />,
+      sorter: true,
+      sortOrder: sortOrderFor('status'),
     },
     {
       title: t('reports.pending.snoozeUntil'),
       dataIndex: 'snoozeUntil',
+      key: 'snooze',
       width: 160,
       render: (v: string | null, r) =>
         v ? (
@@ -84,9 +105,35 @@ export function PendingPage() {
         ) : (
           '—'
         ),
+      sorter: true,
+      sortOrder: sortOrderFor('snooze'),
     },
-    { title: t('ticket.time'), dataIndex: 'createdAt', width: 160, render: (v: string) => vnTime(v) },
+    {
+      title: t('ticket.time'),
+      dataIndex: 'createdAt',
+      key: 'created',
+      width: 160,
+      render: (v: string) => vnTime(v),
+      sorter: true,
+      sortOrder: sortOrderFor('created'),
+    },
   ];
+
+  const onTableChange = (
+    _p: unknown,
+    _f: unknown,
+    sorter: SorterResult<TicketListItem> | SorterResult<TicketListItem>[],
+  ) => {
+    const s = Array.isArray(sorter) ? sorter[0] : sorter;
+    if (!s?.order) {
+      setSort('snooze');
+      setDir('asc'); // 3rd click → back to the tab's default (nearest due first)
+    } else {
+      setSort((s.columnKey ?? 'snooze') as TicketSort);
+      setDir(s.order === 'ascend' ? 'asc' : 'desc');
+    }
+    setPage(1);
+  };
 
   return (
     <div>
@@ -103,6 +150,13 @@ export function PendingPage() {
         }}
       >
         <TicketsTabBar mb={0} />
+        <Space>
+        <Button
+          icon={<ReloadOutlined />}
+          aria-label={t('common.retry')}
+          loading={isLoading}
+          onClick={() => refetch()}
+        />
         <Dropdown
           trigger={['click']}
           menu={{
@@ -113,6 +167,7 @@ export function PendingPage() {
               { key: 'desc', label: t('reports.pending.sortOldest') },
             ],
             onClick: ({ key }) => {
+              setSort('snooze');
               setDir(key as SortDir);
               setPage(1);
             },
@@ -123,7 +178,24 @@ export function PendingPage() {
             <DownOutlined style={{ fontSize: 10, marginInlineStart: 2 }} />
           </Button>
         </Dropdown>
+        </Space>
       </div>
+      {isError && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={t('ticket.loadError')}
+          action={
+            <Button size="small" onClick={() => refetch()}>
+              {t('common.retry')}
+            </Button>
+          }
+        />
+      )}
+      {isLoading && !data ? (
+        <TableSkeleton />
+      ) : (
       <Table<TicketListItem>
         rowKey="id"
         loading={isLoading}
@@ -131,6 +203,7 @@ export function PendingPage() {
         dataSource={data?.items ?? []}
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: <Empty description={t('reports.pending.empty')} /> }}
+        onChange={onTableChange}
         onRow={(r) => ({
           onClick: () => navigate(`/tickets/${r.id}`),
           // Due-today rows go bold-yellow so they jump out (FR80).
@@ -152,6 +225,7 @@ export function PendingPage() {
           },
         }}
       />
+      )}
     </div>
   );
 }

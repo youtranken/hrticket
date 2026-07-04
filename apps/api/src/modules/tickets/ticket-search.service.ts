@@ -48,7 +48,16 @@ function parseCodeNumber(q: string): number | null {
  */
 @Injectable()
 export class TicketSearchService {
-  async search(user: SessionUser, q: string, page = 1, pageSize = 20): Promise<SearchResult> {
+  async search(
+    user: SessionUser,
+    q: string,
+    page = 1,
+    pageSize = 20,
+    order: { sort: 'relevance' | 'created' | 'status'; dir: 'asc' | 'desc' } = {
+      sort: 'relevance',
+      dir: 'desc',
+    },
+  ): Promise<SearchResult> {
     const actor = await actorForUser(user);
     const offset = (page - 1) * pageSize;
     const assignee = alias(users, 'assignee');
@@ -114,7 +123,7 @@ export class TicketSearchService {
         .leftJoin(categories, sql`${categories.id} = ${tickets.categoryId}`)
         .leftJoin(assignee, sql`${assignee.id} = ${tickets.assigneeId}`)
         .where(where)
-        .orderBy(codeFirst, sql`${rank} DESC`, sql`${tickets.createdAt} DESC`, sql`${tickets.id} ASC`)
+        .orderBy(...orderClauses(order, codeFirst, rank))
         .limit(pageSize)
         .offset(offset);
 
@@ -142,4 +151,21 @@ export class TicketSearchService {
       return { items, total, page, pageSize };
     });
   }
+}
+
+/** ORDER BY for a search (#20): relevance keeps code→ts_rank→newest; the manual
+ *  column sorts keep `id` as the stable final tiebreak so pagination never skips. */
+function orderClauses(
+  order: { sort: 'relevance' | 'created' | 'status'; dir: 'asc' | 'desc' },
+  codeFirst: ReturnType<typeof sql>,
+  rank: ReturnType<typeof sql>,
+): Array<ReturnType<typeof sql>> {
+  const d = order.dir === 'asc' ? sql`ASC` : sql`DESC`;
+  if (order.sort === 'created') {
+    return [sql`${tickets.createdAt} ${d}`, sql`${tickets.id} ASC`];
+  }
+  if (order.sort === 'status') {
+    return [sql`${tickets.status} ${d}`, sql`${tickets.createdAt} DESC`, sql`${tickets.id} ASC`];
+  }
+  return [codeFirst, sql`${rank} DESC`, sql`${tickets.createdAt} DESC`, sql`${tickets.id} ASC`];
 }

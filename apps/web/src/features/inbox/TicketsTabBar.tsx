@@ -63,11 +63,10 @@ export function TicketsTabBar({ activeTotal, mb = 16 }: { activeTotal?: number; 
   });
 
   return (
-    <Segmented
-      options={options}
-      value={active}
-      onChange={(v) => nav(v as string)}
-      style={{ marginBottom: mb }}
-    />
+    // Horizontal scroll on narrow screens — 5 tabs + badges overflow a phone width,
+    // and a clipped Segmented reads as "tabs missing".
+    <div style={{ maxWidth: '100%', overflowX: 'auto', marginBottom: mb }}>
+      <Segmented options={options} value={active} onChange={(v) => nav(v as string)} />
+    </div>
   );
 }

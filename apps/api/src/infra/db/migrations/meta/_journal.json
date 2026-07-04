@@ -113,6 +113,27 @@
       "when": 1783058968546,
       "tag": "0015_resnapshot_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1783100000000,
+      "tag": "0016_capability_matrix_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783100000001,
+      "tag": "0017_ssa_full_locked",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783100000002,
+      "tag": "0018_lock_dead_capability_cells",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CapabilitiesModule } from '../capabilities/capabilities.module';
 import { ParticipantsController } from './participants.controller';
 import { ParticipantsService } from './participants.service';
 import { TicketsController } from './tickets.controller';
@@ -17,7 +18,7 @@ import { ReplyTemplatesController } from './reply-templates.controller';
 import { ReplyTemplatesService } from './reply-templates.service';
 import { TicketTagsController } from './ticket-tags.controller';
 import { TicketTagsService } from './ticket-tags.service';
-import { AssignmentController } from './assignment.controller';
+import { AssignmentController, BulkAssignController } from './assignment.controller';
 import { AssignmentService } from './assignment.service';
 import { LifecycleController } from './lifecycle.controller';
 import { TicketStatusService } from './ticket-status.service';
@@ -28,7 +29,7 @@ import { ReopenLockService } from './reopen-lock.service';
  * + compose (reply 3.2 / note 3.4 / draft 3.5) + attachment upload (3.6).
  */
 @Module({
-  imports: [AuthModule], // SessionGuard
+  imports: [AuthModule, CapabilitiesModule], // SessionGuard + CapabilityGuard
   controllers: [
     TicketsController,
     ParticipantsController,
@@ -38,6 +39,7 @@ import { ReopenLockService } from './reopen-lock.service';
     ReplyTemplatesController,
     TicketTagsController,
     AssignmentController,
+    BulkAssignController,
     LifecycleController,
   ],
   providers: [

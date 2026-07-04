@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Layout, Menu, Dropdown, Segmented, Button, Avatar, Select, Typography, App as AntApp } from 'antd';
+import { Layout, Menu, Drawer, Dropdown, Segmented, Breadcrumb, Button, Avatar, Select, Typography, App as AntApp } from 'antd';
 import {
   InboxOutlined,
   FileTextOutlined,
@@ -15,8 +15,10 @@ import {
   SafetyOutlined,
   UserOutlined,
   LogoutOutlined,
+  MenuOutlined,
 } from '@ant-design/icons';
 import { useMe, logout, setServerLanguage } from '../lib/auth';
+import { useIsMobile } from '../lib/useMediaQuery';
 import { setActiveProject, getActiveProject } from '../lib/activeProject';
 import { activeMenuKey, menuForRole } from './menu';
 import { NotificationBell } from '../features/notifications/NotificationBell';
@@ -42,6 +44,20 @@ const ICONS: Record<string, React.ReactNode> = {
   safety: <SafetyOutlined />,
 };
 
+/** Admin child pages → their title key, for the "Cấu hình / <page>" breadcrumb (P2 #3).
+ *  The hub itself and non-admin routes render no breadcrumb (tabs/back-links suffice). */
+const ADMIN_TITLE_KEYS: Record<string, string> = {
+  '/admin/categories': 'menu.categories',
+  '/admin/reminders': 'menu.reminders',
+  '/admin/reply-templates': 'tpl.title',
+  '/admin/users': 'menu.users',
+  '/admin/groups': 'groups.nav',
+  '/admin/roles': 'menu.roles',
+  '/admin/mail-protection': 'spam.nav.mailProtection',
+  '/admin/attachments': 'files.nav.attachmentConfig',
+  '/admin/email-connection': 'conn.nav',
+};
+
 function initialsOf(name: string): string {
   return name
     .trim()
@@ -60,10 +76,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { message, modal } = AntApp.useApp();
   const { data: me } = useMe();
 
-  // The sidebar is a permanent icons-only rail (no expand/collapse toggle): it keeps
-  // the worklist full-width everywhere and AntD surfaces each item's label as a hover
-  // tooltip in collapsed inline mode, so nothing is lost. Applies to every role.
+  // The DESKTOP sidebar is a permanent icons-only rail (no expand/collapse toggle):
+  // it keeps the worklist full-width and AntD surfaces each label as a hover tooltip.
+  // This is intentional (owner's call) — only PHONE-width viewports differ: the rail
+  // gives way to a hamburger-opened Drawer with the full grouped, labelled menu.
   const collapsed = true;
+  const isMobile = useIsMobile();
+  const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   // Apply the account's saved language on login from any machine (Story 11.2 AC3).
@@ -94,20 +113,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // When collapsed we flatten to a plain icon list (no group titles) so the rail is
   // icons-only; AntD shows each item's label as a hover tooltip in collapsed mode.
   const navGroups = menuForRole(me);
-  const menuItems = collapsed
-    ? navGroups.flatMap((g) =>
-        g.items.map((it) => ({ key: it.path, icon: ICONS[it.icon], label: t(it.labelKey) })),
-      )
-    : navGroups.map((g) => ({
-        type: 'group' as const,
-        key: g.key,
-        label: t(g.titleKey),
-        children: g.items.map((it) => ({
-          key: it.path,
-          icon: ICONS[it.icon],
-          label: t(it.labelKey),
-        })),
-      }));
+  const flatItems = navGroups.flatMap((g) =>
+    g.items.map((it) => ({ key: it.path, icon: ICONS[it.icon], label: t(it.labelKey) })),
+  );
+  // The Drawer (mobile) shows the FULL grouped menu with labels — no tooltips on touch.
+  const groupedItems = navGroups.map((g) => ({
+    type: 'group' as const,
+    key: g.key,
+    label: t(g.titleKey),
+    children: g.items.map((it) => ({
+      key: it.path,
+      icon: ICONS[it.icon],
+      label: t(it.labelKey),
+    })),
+  }));
+  const menuItems = collapsed ? flatItems : groupedItems;
   // Prefix-resolved highlight — child routes (/tickets/:id, /admin/groups, …) keep
   // their parent entry lit instead of dropping the selection entirely.
   const selectedKey = activeMenuKey(location.pathname, navGroups);
@@ -144,49 +164,86 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider
-        breakpoint="lg"
-        collapsedWidth={64}
-        width={232}
-        collapsed={collapsed}
-        // Permanent rail — no trigger, no toggle (hover a row to see its label tooltip).
-        trigger={null}
-      >
-        <div style={{ padding: collapsed ? '14px 8px 6px' : '14px 14px 6px' }}>
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 10,
-              padding: collapsed ? '8px' : '10px 12px',
-              display: 'flex',
-              justifyContent: 'center',
-            }}
-          >
-            <img
-              src="/logo.png"
-              alt="Phú Mỹ Hưng"
-              style={{ height: collapsed ? 28 : 40, maxWidth: '100%', objectFit: 'contain' }}
-            />
+      {!isMobile && (
+        <Sider
+          breakpoint="lg"
+          collapsedWidth={64}
+          width={232}
+          collapsed={collapsed}
+          // Permanent rail — no trigger, no toggle (hover a row to see its label tooltip).
+          trigger={null}
+        >
+          <div style={{ padding: collapsed ? '14px 8px 6px' : '14px 14px 6px' }}>
+            <div
+              style={{
+                background: '#fff',
+                borderRadius: 10,
+                padding: collapsed ? '8px' : '10px 12px',
+                display: 'flex',
+                justifyContent: 'center',
+              }}
+            >
+              <img
+                src="/logo.png"
+                alt="Phú Mỹ Hưng"
+                style={{ height: collapsed ? 28 : 40, maxWidth: '100%', objectFit: 'contain' }}
+              />
+            </div>
           </div>
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={selectedKey ? [selectedKey] : []}
-          items={menuItems}
-          onClick={(e) => navigate(e.key)}
-          style={{ background: 'transparent', borderInlineEnd: 'none' }}
-        />
-      </Sider>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={selectedKey ? [selectedKey] : []}
+            items={menuItems}
+            onClick={(e) => navigate(e.key)}
+            style={{ background: 'transparent', borderInlineEnd: 'none' }}
+          />
+        </Sider>
+      )}
+      {isMobile && (
+        <Drawer
+          open={navOpen}
+          onClose={() => setNavOpen(false)}
+          placement="left"
+          width={248}
+          styles={{ body: { padding: '8px 0', background: palette.siderBg }, header: { display: 'none' } }}
+        >
+          <div style={{ padding: '10px 14px 6px' }}>
+            <div style={{ background: '#fff', borderRadius: 10, padding: '8px 12px', display: 'flex', justifyContent: 'center' }}>
+              <img src="/logo.png" alt="Phú Mỹ Hưng" style={{ height: 32, maxWidth: '100%', objectFit: 'contain' }} />
+            </div>
+          </div>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={selectedKey ? [selectedKey] : []}
+            items={groupedItems}
+            onClick={(e) => {
+              navigate(e.key);
+              setNavOpen(false);
+            }}
+            style={{ background: 'transparent', borderInlineEnd: 'none' }}
+          />
+        </Drawer>
+      )}
       <Layout>
         <Header
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 14,
+            gap: isMobile ? 8 : 14,
+            paddingInline: isMobile ? 12 : undefined,
             borderBottom: '1px solid #EAEDF3',
           }}
         >
+          {isMobile && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              aria-label={t('menu.open')}
+              onClick={() => setNavOpen(true)}
+            />
+          )}
           {/* Global ticket search (Story 10.2) — left; utilities sit right. */}
           <div style={{ marginRight: 'auto', maxWidth: 420, width: '100%' }}>
             <GlobalSearch />
@@ -223,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div style={{ overflow: 'hidden' }}>
                     <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{me.user.name}</div>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      {me.role.toUpperCase()} · {me.user.email}
+                      {t(`role.${me.role}`)} · {me.user.email}
                     </Text>
                   </div>
                 </div>
@@ -271,11 +328,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Avatar size={28} style={{ background: palette.primary }}>
                 {initialsOf(me.user.name)}
               </Avatar>
-              <span style={{ marginInlineStart: 8 }}>{me.user.name}</span>
+              {/* Compact header on phones: the avatar alone identifies the account. */}
+              {!isMobile && <span style={{ marginInlineStart: 8 }}>{me.user.name}</span>}
             </Button>
           </Dropdown>
         </Header>
-        <Content style={{ margin: 20 }}>{children}</Content>
+        <Content style={{ margin: isMobile ? 10 : 20 }}>
+          {ADMIN_TITLE_KEYS[location.pathname] && (
+            <Breadcrumb
+              style={{ marginBottom: 12 }}
+              items={[
+                { title: <Link to="/admin/settings">{t('menu.settings')}</Link> },
+                { title: t(ADMIN_TITLE_KEYS[location.pathname]!) },
+              ]}
+            />
+          )}
+          {children}
+        </Content>
       </Layout>
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </Layout>

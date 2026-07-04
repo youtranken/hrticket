@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Descriptions, Switch, Modal, Input, Typography, App as AntApp, Divider } from 'antd';
+import { Alert, Card, Descriptions, Switch, Modal, Input, Typography, App as AntApp, Divider } from 'antd';
 import { useMe, toggleOtp } from '../../lib/auth';
 import { ChangePasswordPage } from '../auth/ChangePasswordPage';
 
@@ -37,7 +37,7 @@ export function ProfileContent() {
       <Descriptions column={1} bordered size="small">
         <Descriptions.Item label={t('common.email')}>{me.user.email}</Descriptions.Item>
         <Descriptions.Item label={t('common.name')}>{me.user.name}</Descriptions.Item>
-        <Descriptions.Item label={t('common.role')}>{me.role}</Descriptions.Item>
+        <Descriptions.Item label={t('common.role')}>{t(`role.${me.role}`)}</Descriptions.Item>
       </Descriptions>
 
       <Divider>{t('profile.security')}</Divider>
@@ -66,6 +66,10 @@ export function ProfileContent() {
           setPw('');
         }}
       >
+        {/* P2: turning 2FA OFF is a security downgrade — say so before the password. */}
+        {nextEnabled === false && (
+          <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={t('profile.otpOffWarn')} />
+        )}
         <Input.Password value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('common.password')} />
       </Modal>
     </>

@@ -172,6 +172,26 @@ export class AuditService {
     });
   }
 
+  /** Distinct action codes within the caller's scope — feeds the FE Select (#55).
+   *  Only action NAMES are returned (no payloads), so a TL sees ticket-log actions. */
+  async listActions(actor: SessionUser, projectId: number): Promise<string[]> {
+    if (actor.role === 'member') throw new ForbiddenException();
+    return withActor(systemActor, async (tx) => {
+      const conds: ReturnType<typeof sql>[] = [sql`project_id = ${projectId}`];
+      if (actor.role === 'team_lead') {
+        const groups = await this.leadGroups(tx, actor.id);
+        if (groups.length === 0) return [];
+        conds.push(sql`object_type = 'ticket'`);
+      }
+      const rows = (await tx.execute(sql`
+        SELECT DISTINCT action FROM audit_log
+        WHERE ${sql.join(conds, sql` AND `)}
+        ORDER BY action
+      `)) as unknown as Array<{ action: string }>;
+      return rows.map((r) => r.action);
+    });
+  }
+
   async viewLogList(
     actor: SessionUser,
     projectId: number,

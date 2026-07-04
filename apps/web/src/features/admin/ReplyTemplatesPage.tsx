@@ -88,9 +88,24 @@ export function ReplyTemplatesPage() {
           },
           {
             title: '',
-            width: 150,
+            width: 210,
             render: (_: unknown, row: ReplyTemplate) => (
               <Space>
+                {/* P2 #5: full-body preview — the list cell only ellipsizes. */}
+                <Button
+                  size="small"
+                  onClick={() =>
+                    modal.info({
+                      title: row.title,
+                      width: 560,
+                      content: (
+                        <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', margin: 0 }}>{row.body}</pre>
+                      ),
+                    })
+                  }
+                >
+                  {t('tpl.preview')}
+                </Button>
                 <Button size="small" onClick={() => openEdit(row)}>
                   {t('common.edit')}
                 </Button>

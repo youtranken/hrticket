@@ -24,6 +24,15 @@ export interface Me {
   otpEnabled: boolean;
 }
 
+/**
+ * True when the user's role currently holds the capability (SSA matrix, FR55).
+ * The BE enforces via CapabilityGuard — this only hides/disables dead controls.
+ * `null | undefined` me → false (nothing capability-gated shows while loading).
+ */
+export function hasCap(me: Me | null | undefined, cap: string): boolean {
+  return !!me?.capabilities.includes(cap);
+}
+
 /** Loads the current user; null when unauthenticated. */
 export function useMe() {
   return useQuery<Me | null>({

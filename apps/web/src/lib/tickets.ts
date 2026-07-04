@@ -164,13 +164,23 @@ export interface SearchResult {
   pageSize: number;
 }
 
+export type SearchSort = 'relevance' | 'created' | 'status';
+
 /** Vietnamese FTS + code + people search. `enabled` lets the dropdown debounce. */
-export function useTicketSearch(q: string, page = 1, pageSize = 20, enabled = true) {
+export function useTicketSearch(
+  q: string,
+  page = 1,
+  pageSize = 20,
+  enabled = true,
+  order: { sort: SearchSort; dir: SortDir } = { sort: 'relevance', dir: 'desc' },
+) {
   const trimmed = q.trim();
   return useQuery<SearchResult>({
-    queryKey: ['ticket-search', trimmed, page, pageSize],
+    queryKey: ['ticket-search', trimmed, page, pageSize, order.sort, order.dir],
     queryFn: () =>
-      api(`/tickets/search?q=${encodeURIComponent(trimmed)}&page=${page}&pageSize=${pageSize}`),
+      api(
+        `/tickets/search?q=${encodeURIComponent(trimmed)}&page=${page}&pageSize=${pageSize}&sort=${order.sort}&dir=${order.dir}`,
+      ),
     enabled: enabled && trimmed.length > 0,
   });
 }

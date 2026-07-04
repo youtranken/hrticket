@@ -276,3 +276,18 @@ pre,
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* P2: the per-row "Thẻ" add-tag button reveals on row hover (or while its picker is
+   open) — a dashed button on every row read as visual noise. Touch devices without
+   hover keep it always visible. */
+@media (hover: hover) {
+  .ant-table-row .tag-add-btn {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .ant-table-row:hover .tag-add-btn,
+  .ant-table-row .tag-add-btn--open,
+  .ant-table-row .tag-add-btn:focus-visible {
+    opacity: 1;
+  }
+}

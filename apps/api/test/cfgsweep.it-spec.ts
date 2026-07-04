@@ -25,6 +25,7 @@ import { AdminUsersService } from '../src/modules/auth/admin-users.service';
 import { RescueService } from '../src/modules/auth/rescue.service';
 import { RoleCapabilitiesController } from '../src/modules/ssa/role-capabilities.controller';
 import { RoleCapabilitiesService } from '../src/modules/ssa/role-capabilities.service';
+import { CapabilitiesService } from '../src/modules/capabilities/capabilities.service';
 import { EmailConnectionController } from '../src/modules/admin/email-connection.controller';
 import { EmailConnectionService } from '../src/modules/admin/email-connection.service';
 
@@ -58,7 +59,7 @@ describe('IT-CFGSWEEP: config scope + audit sweep', () => {
     new AdminUsersService(sessions),
     projectCtx,
   );
-  const roleCaps = new RoleCapabilitiesController(new RoleCapabilitiesService());
+  const roleCaps = new RoleCapabilitiesController(new RoleCapabilitiesService(new CapabilitiesService()));
   const emailConn = new EmailConnectionController(new EmailConnectionService(), projectCtx);
 
   const ID = {

@@ -87,14 +87,14 @@ export function CreateTicketModal({ open, onClose }: { open: boolean; onClose: (
           name="recipientEmail"
           rules={[{ required: true, type: 'email', message: t('manualTicket.recipientInvalid') }]}
         >
-          <Input placeholder="nguoinhan@example.com" />
+          <Input placeholder={t('manualTicket.recipientPlaceholder')} />
         </Form.Item>
         <Form.Item
           label={t('manualTicket.subject')}
           name="subject"
           rules={[{ required: true, message: t('manualTicket.subjectRequired') }]}
         >
-          <Input maxLength={500} />
+          <Input maxLength={500} showCount />
         </Form.Item>
         <Form.Item label={t('manualTicket.category')} name="categoryId" extra={t('manualTicket.categoryHint')}>
           <Select

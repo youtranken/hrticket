@@ -112,7 +112,7 @@ export function FileViewer({ attachment, open, onClose }: Props) {
       open={open}
       onCancel={onClose}
       footer={footer}
-      width={kind === 'pdf' || kind === 'video' ? 900 : 640}
+      width={kind === 'pdf' || kind === 'video' ? 'min(900px, 95vw)' : 'min(640px, 95vw)'}
       title={
         <Space>
           <Text strong>{attachment.fileName}</Text>

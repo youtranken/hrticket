@@ -19,7 +19,12 @@ export function ExportButton({ onExport }: { onExport: (format: ExportFormat) =>
     try {
       await onExport(format);
     } catch (e) {
-      message.error((e as Error).message || t('reports.export.failed'));
+      // The BE's over-cap 422 carries an i18n KEY as its message — translate it
+      // instead of toasting the raw "reports.export.tooLarge".
+      const raw = (e as Error).message;
+      message.error(
+        raw === 'reports.export.tooLarge' ? t('reports.export.tooLarge') : raw || t('reports.export.failed'),
+      );
     } finally {
       setBusy(false);
     }

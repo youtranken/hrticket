@@ -2,7 +2,7 @@ import { useState, type Key } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Table, Tag, Typography, Empty, Space, Button, Tooltip, Modal, Select, Avatar, Popover, Spin, Badge, Alert, App as AntApp } from 'antd';
+import { Table, Tag, Typography, Empty, Space, Button, Tooltip, Modal, Select, Avatar, Popover, Progress, Spin, Badge, Alert, App as AntApp } from 'antd';
 import {
   TagsOutlined,
   CheckOutlined,
@@ -16,7 +16,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult, TableCurrentDataSource } from 'antd/es/table/interface';
-import { useMe } from '../../lib/auth';
+import { hasCap, useMe } from '../../lib/auth';
 import { api } from '../../lib/apiClient';
 import {
   useTickets,
@@ -37,6 +37,7 @@ import {
 } from '../../lib/tickets';
 import { StatusTag } from '../../components/StatusTag';
 import { AwayBadge } from '../../components/AwayBadge';
+import { TableSkeleton } from '../../components/TableSkeleton';
 import { TicketFilterPanel, TicketFilterChips, activeCount } from './TicketFilterBar';
 import { TicketsTabBar } from './TicketsTabBar';
 import { CreateTicketModal } from './CreateTicketModal';
@@ -45,9 +46,10 @@ import { ExportButton } from '../reports/ExportButton';
 import { exportTickets } from '../../lib/export';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
+import { fmtDateTime } from '../../lib/datetime';
 
 function vnTime(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+  return fmtDateTime(iso);
 }
 
 // Deterministic avatar colour from the requester address (stable per person).
@@ -106,38 +108,54 @@ export function TicketListView({
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkAssignee, setBulkAssignee] = useState<string>();
   const [bulkBusy, setBulkBusy] = useState(false);
+  // #17: tickets that failed the bulk assign (kept selected for a one-click retry).
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false); // right-column filter panel toggle
   const [createOpen, setCreateOpen] = useState(false); // manual "new ticket" modal
   // Manual ticket creation is for the people who process them — project Admin / TL /
   // Member. SSA (cross-project superuser) doesn't open a single project's tickets.
   const canCreate = !!me && me.role !== 'ssa';
+  // Row selection exists ONLY to feed bulk assign — hide it from roles that can't
+  // assign others (a member's checkboxes were a dead control that always 403'd).
+  const canBulkAssign = hasCap(me, 'ticket.assign_others');
 
   const runBulkAssign = async () => {
     if (!bulkAssignee) return;
     setBulkBusy(true);
-    let ok = 0;
-    let fail = 0;
-    for (const id of selectedKeys) {
-      try {
-        const res = await api<{ needsCategory?: true }>(`/tickets/${id}/assign`, {
-          method: 'POST',
-          body: JSON.stringify({ assigneeId: bulkAssignee }),
-        });
-        // A "Khác" ticket needing re-classification returns HTTP 200 `{needsCategory}` but is
-        // NOT actually assigned — count it as a failure, not a success (FE#2).
-        if (res && typeof res === 'object' && 'needsCategory' in res) fail += 1;
-        else ok += 1;
-      } catch {
-        fail += 1;
-      }
+    setBulkErrors([]);
+    // Selected rows can only come from the CURRENT page, so its items carry the codes.
+    const codeOf = new Map((data?.items ?? []).map((r) => [r.id as Key, r.ticketCode]));
+    let results: Array<{ ticketId: string; ok: boolean; error?: string }>;
+    try {
+      // ONE batch request (roadmap #4) — the server loops assign per ticket (own tx
+      // each) and returns a per-ticket verdict; "needsCategory" counts as a failure.
+      const res = await api<{ results: typeof results }>(`/tickets/bulk-assign`, {
+        method: 'POST',
+        body: JSON.stringify({ ticketIds: selectedKeys, assigneeId: bulkAssignee }),
+      });
+      results = res.results;
+    } catch (e) {
+      setBulkBusy(false);
+      message.error((e as Error).message);
+      return;
     }
     setBulkBusy(false);
-    setBulkOpen(false);
-    setSelectedKeys([]);
-    setBulkAssignee(undefined);
     await qc.invalidateQueries({ queryKey: ['tickets'] });
     await qc.invalidateQueries({ queryKey: ['tickets-poll'] });
-    message.success(t('ticket.bulkAssignDone', { ok, fail }));
+    const failed = results.filter((r) => !r.ok);
+    const ok = results.length - failed.length;
+    if (failed.length === 0) {
+      setBulkOpen(false);
+      setSelectedKeys([]);
+      setBulkAssignee(undefined);
+      message.success(t('ticket.bulkAssignDone', { ok, fail: 0 }));
+    } else {
+      // Keep the modal open with the failure list; only the failed rows stay selected
+      // so OK again retries exactly those.
+      setSelectedKeys(failed.map((r) => r.ticketId));
+      setBulkErrors(failed.map((r) => codeOf.get(r.ticketId) ?? r.ticketId));
+      message.warning(t('ticket.bulkAssignDone', { ok, fail: failed.length }));
+    }
   };
 
   // The Inbox reads its full filter set from the URL; the fixed tabs (mine/pool) pin
@@ -146,8 +164,10 @@ export function TicketListView({
   // Default order comes from the BE: the status·freshness·urgency band (new/reopen on top,
   // overdue next, closed at the bottom) for inbox/pool/my-tickets. An explicit URL sort
   // (column header / sort control) overrides it.
+  // #24: pool/mine are filterable too — their view stays PINNED by the tab (the URL
+  // can't override it), while status/category/tag/date come from the URL like Inbox.
   const filters: TicketFilters = filterable
-    ? { view: 'all', ...urlFilters }
+    ? { ...urlFilters, view }
     : { view, sort: urlFilters.sort, dir: urlFilters.dir };
   const { data, isLoading, isError, refetch } = useTickets(page, pageSize, filters);
   const ssa = me?.role === 'ssa';
@@ -333,9 +353,10 @@ export function TicketListView({
     applyFilters(filterable ? next : { sort: next.sort, dir: next.dir });
   };
 
-  // Đơn 5: EVERY role may claim from the pool now — Admin/SSA/TL pick up any pool
-  // (incl. "Khác"); a member's visible pool rows are already their groups + "Khác".
-  const canClaimRole = !!me;
+  // Đơn 5: EVERY role may claim from the pool — as long as its ticket.claim
+  // capability is on (SSA matrix; CapabilityGuard 403s without it, so no dead
+  // button). A member's visible pool rows are already their groups + "Khác".
+  const canClaimRole = hasCap(me, 'ticket.claim');
   if (view === 'pool' && canClaimRole) {
     columns.push({
       title: '',
@@ -410,9 +431,13 @@ export function TicketListView({
         open={bulkOpen}
         title={t('ticket.bulkAssign')}
         onOk={runBulkAssign}
-        onCancel={() => setBulkOpen(false)}
+        onCancel={() => {
+          setBulkOpen(false);
+          setBulkErrors([]);
+        }}
         confirmLoading={bulkBusy}
         okButtonProps={{ disabled: !bulkAssignee }}
+        okText={bulkErrors.length > 0 ? t('ticket.bulkRetryFailed') : undefined}
       >
         <Select
           style={{ width: '100%' }}
@@ -423,10 +448,28 @@ export function TicketListView({
           optionFilterProp="label"
           options={(opts?.assignees ?? []).filter((a) => !a.disabled).map((a) => ({ value: a.id, label: a.name }))}
         />
+        {bulkBusy && (
+          <Progress
+            percent={100}
+            status="active"
+            showInfo={false}
+            style={{ marginTop: 12 }}
+          />
+        )}
+        {!bulkBusy && bulkErrors.length > 0 && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginTop: 12 }}
+            message={t('ticket.bulkFailedList', { count: bulkErrors.length })}
+            description={bulkErrors.join(', ')}
+          />
+        )}
       </Modal>
       {/* hr-1 layout: the list is the left column; the filter panel is a right column
-          that the toggle reveals, pushing the table left (no overlay popup). */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          that the toggle reveals, pushing the table left (no overlay popup). On narrow
+          screens the row wraps, so the panel drops below the table at full width. */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
       {/* Floating "N vé mới" pill — appears when the poll outruns the displayed page. */}
       {newCount > 0 && (
@@ -455,6 +498,9 @@ export function TicketListView({
           }
         />
       )}
+      {isLoading && !data ? (
+        <TableSkeleton rows={8} />
+      ) : (
       <Table<TicketListItem>
         // Remount when the side panel toggles so the sticky header re-measures column
         // widths against the new container width (otherwise header/body columns desync).
@@ -463,7 +509,7 @@ export function TicketListView({
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
-        rowSelection={{ selectedRowKeys: selectedKeys, onChange: setSelectedKeys }}
+        rowSelection={canBulkAssign ? { selectedRowKeys: selectedKeys, onChange: setSelectedKeys } : undefined}
         tableLayout="fixed"
         scroll={{ x: 880 }}
         onChange={handleTableChange}
@@ -515,12 +561,13 @@ export function TicketListView({
           },
         }}
           />
+      )}
         </div>
         {filterable && filterOpen && (
           <TicketFilterPanel
             value={filters}
             onChange={applyFilters}
-            onReset={() => applyFilters({ view: 'all' })}
+            onReset={() => applyFilters({ view })}
             isWorklistOrder={isWorklistOrder}
           />
         )}
@@ -646,6 +693,9 @@ function TagCell({ ticket, onChanged }: { ticket: TicketListItem; onChanged: () 
             type="dashed"
             icon={<TagsOutlined />}
             onClick={(e) => e.stopPropagation()}
+            // Hover-reveal (P2): visible on row hover / while its picker is open —
+            // a dashed button on EVERY row read as noise. See index.css.
+            className={`tag-add-btn${open ? ' tag-add-btn--open' : ''}`}
           >
             {t('ticket.tag')}
           </Button>

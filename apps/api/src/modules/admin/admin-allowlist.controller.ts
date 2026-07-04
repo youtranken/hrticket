@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { SessionGuard } from '../auth/session.guard';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
@@ -24,7 +25,8 @@ const addSchema = z.object({
 
 /** Allowlist administration (twin of the blocklist). Admin → own project; SSA → X-Project. */
 @Controller('api/admin/allowlist')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('config.manage', 'config.manage_all')
 export class AdminAllowlistController {
   constructor(
     private readonly svc: AdminAllowlistService,

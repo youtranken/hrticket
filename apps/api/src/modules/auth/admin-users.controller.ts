@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { SessionGuard } from './session.guard';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { CurrentUser } from './current-user.decorator';
 import type { SessionUser } from './session.service';
 import { RescueService } from './rescue.service';
@@ -36,7 +37,8 @@ const updateProfile = z
 
 /** Full user admin (Story 9.2, FR89). Admin → own project; SSA → X-Project / all. */
 @Controller('api/admin/users')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('user.manage')
 export class AdminUsersController {
   constructor(
     private readonly rescue: RescueService,

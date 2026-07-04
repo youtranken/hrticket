@@ -46,8 +46,10 @@ export function TicketFilterPanel({
   return (
     <div
       style={{
-        width: 300,
-        flexShrink: 0,
+        // Fixed side rail on desktop; a wrapped full-width block on narrow screens
+        // (the parent flex row wraps — see TicketListView).
+        flex: '1 0 300px',
+        maxWidth: 360,
         alignSelf: 'stretch',
         // Full-height column even when the list is empty/short (so it reads as a fixed
         // side rail, not a floating box).
@@ -136,6 +138,7 @@ export function TicketFilterPanel({
             aria-label={t('reports.filter.createdFrom')}
             style={{ width: 124 }}
             value={value.createdFrom ?? ''}
+            max={value.createdTo || undefined}
             onChange={(e) => set({ createdFrom: e.target.value || undefined })}
           />
           <span>–</span>
@@ -144,6 +147,7 @@ export function TicketFilterPanel({
             aria-label={t('reports.filter.createdTo')}
             style={{ width: 124 }}
             value={value.createdTo ?? ''}
+            min={value.createdFrom || undefined}
             onChange={(e) => set({ createdTo: e.target.value || undefined })}
           />
         </Space>,
@@ -162,28 +166,46 @@ export function TicketFilterChips({
   onChange: (next: TicketFilters) => void;
 }) {
   const { t } = useTranslation();
+  const { data: opts } = useFilterOptions();
+  const lang = i18n.language === 'en' ? 'en' : 'vi';
   const set = (patch: Partial<TicketFilters>) => onChange({ ...value, ...patch });
+  // P2: with 1–2 selections the chip shows the actual VALUES ("Trạng thái: Mở, Đã giao");
+  // 3+ falls back to the count so the chip row can't overflow.
+  const label = (title: string, names: string[]): string =>
+    names.length <= 2 ? `${title}: ${names.join(', ')}` : `${title}: ${names.length}`;
   if (!hasActiveFilters(value)) return null;
   return (
     <Space wrap size={[8, 8]} style={{ marginBottom: 12 }}>
       {value.status?.length ? (
         <Tag closable onClose={() => set({ status: undefined })}>
-          {t('reports.filter.status')}: {value.status.length}
+          {label(t('reports.filter.status'), value.status.map((s) => t(`status.${s}`)))}
         </Tag>
       ) : null}
       {value.categoryId?.length ? (
         <Tag closable onClose={() => set({ categoryId: undefined })}>
-          {t('reports.filter.category')}: {value.categoryId.length}
+          {label(
+            t('reports.filter.category'),
+            value.categoryId.map((id) => {
+              const c = opts?.categories.find((x) => x.id === id);
+              return c ? (lang === 'en' ? c.nameEn : c.nameVi) : String(id);
+            }),
+          )}
         </Tag>
       ) : null}
       {value.tagId?.length ? (
         <Tag closable onClose={() => set({ tagId: undefined })}>
-          {t('reports.filter.tag')}: {value.tagId.length}
+          {label(
+            t('reports.filter.tag'),
+            value.tagId.map((id) => opts?.tags.find((x) => x.id === id)?.name ?? String(id)),
+          )}
         </Tag>
       ) : null}
       {value.assigneeId?.length ? (
         <Tag closable onClose={() => set({ assigneeId: undefined })}>
-          {t('reports.filter.assignee')}: {value.assigneeId.length}
+          {label(
+            t('reports.filter.assignee'),
+            value.assigneeId.map((id) => opts?.assignees.find((x) => x.id === id)?.name ?? '…'),
+          )}
         </Tag>
       ) : null}
       {value.projectId !== undefined ? (
@@ -200,7 +222,7 @@ export function TicketFilterChips({
   );
 }
 
-/** Any filter or non-default ordering applied? */
+/** Any filter applied? The view is a TAB (pinned on pool/mine, #24), not a filter. */
 export function hasActiveFilters(f: TicketFilters): boolean {
   return Boolean(
     f.status?.length ||
@@ -209,8 +231,7 @@ export function hasActiveFilters(f: TicketFilters): boolean {
       f.assigneeId?.length ||
       f.projectId !== undefined ||
       f.createdFrom ||
-      f.createdTo ||
-      (f.view && f.view !== 'all'),
+      f.createdTo,
   );
 }
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CapabilitiesModule } from '../capabilities/capabilities.module';
 import { AdminConfigController } from './admin-config.controller';
 import { AdminConfigService } from './admin-config.service';
 import { AdminReminderController } from './admin-reminder.controller';
@@ -24,7 +25,7 @@ import { EmailConnectionService } from './email-connection.service';
  *  mail-bomb threshold & held-mail review (7.2) + junk rules (7.3) +
  *  attachment policy (8.4) + category-group membership (9.1). */
 @Module({
-  imports: [AuthModule], // SessionGuard + ProjectContextService
+  imports: [AuthModule, CapabilitiesModule], // SessionGuard + ProjectContextService + CapabilityGuard
   controllers: [
     AdminConfigController,
     AdminReminderController,

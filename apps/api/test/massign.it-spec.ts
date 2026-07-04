@@ -204,4 +204,41 @@ describe('IT-MASSIGN: manual assign + reclassify', () => {
     await harness!.db.update(tickets).set({ status: 'resolved' }).where(eq(tickets.id, tk));
     await expect(svc.assign(tlPay, tk, { assigneeId: t1 })).rejects.toThrow('INVALID_TRANSITION');
   });
+
+  it('IT-MASSIGN-005: bulk-assign endpoint — partial success with per-ticket verdicts', async () => {
+    if (!ready) return;
+    const { BulkAssignController } = await import('../src/modules/tickets/assignment.controller');
+    const ctrl = new BulkAssignController(svc);
+
+    const okA = await mkTicket(Payroll); // assignable
+    const okB = await mkTicket(Payroll); // assignable
+    const closed = await mkTicket(Payroll); // terminal → per-ticket failure
+    await harness!.db.update(tickets).set({ status: 'closed' }).where(eq(tickets.id, closed));
+
+    const res = (await ctrl.bulkAssign(tlPay, {
+      ticketIds: [okA, okB, closed],
+      assigneeId: t1,
+    })) as { results: Array<{ ticketId: string; ok: boolean; error?: string }> };
+
+    expect(res.results).toHaveLength(3);
+    expect(res.results.filter((r) => r.ok).map((r) => r.ticketId).sort()).toEqual([okA, okB].sort());
+    const failed = res.results.find((r) => r.ticketId === closed)!;
+    expect(failed.ok).toBe(false);
+    expect(failed.error).toBeTruthy();
+    // The two successes really landed (manual assign → in_progress, đơn 5 model).
+    for (const id of [okA, okB]) {
+      const [row] = await harness!.db.select().from(tickets).where(eq(tickets.id, id));
+      expect(row!.assigneeId).toBe(t1);
+      expect(row!.status).toBe('in_progress');
+    }
+    // The closed one was untouched — a mid-list failure never poisons the batch.
+    const [closedRow] = await harness!.db.select().from(tickets).where(eq(tickets.id, closed));
+    expect(closedRow!.assigneeId).toBeNull();
+    expect(closedRow!.status).toBe('closed');
+
+    // Malformed payload → 400 (zod boundary).
+    await expect(ctrl.bulkAssign(tlPay, { ticketIds: [], assigneeId: t1 })).rejects.toMatchObject({
+      status: 400,
+    });
+  });
 });

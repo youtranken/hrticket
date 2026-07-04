@@ -69,15 +69,16 @@ export function OtpPage() {
               {t('otp.heading')}
             </Title>
             <Paragraph type="secondary">{t('otp.prompt')}</Paragraph>
-            <Input
+            {/* P2 #7: per-digit OTP boxes (auto-advance, paste-friendly). onInput
+                tracks partial entry so the submit button enables exactly at 6 digits. */}
+            <Input.OTP
               size="large"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              onPressEnter={submit}
-              maxLength={6}
+              length={6}
               autoFocus
-              inputMode="numeric"
-              style={{ letterSpacing: 10, textAlign: 'center', fontSize: 22, fontWeight: 600 }}
+              value={code}
+              formatter={(v) => v.replace(/\D/g, '')}
+              onChange={(v) => setCode(v)}
+              onInput={(vals) => setCode(vals.join(''))}
             />
             <Button
               type="primary"

@@ -32,6 +32,7 @@ import {
   type AdminUser,
   type AssignableRole,
 } from '../../lib/admin';
+import { fmtDateTime } from '../../lib/datetime';
 
 const { Text } = Typography;
 const ROLE_OPTIONS: AssignableRole[] = ['admin', 'team_lead', 'member'];
@@ -260,7 +261,7 @@ export function AdminUsersPage() {
             width: 160,
             render: (_: unknown, u: AdminUser) =>
               u.lastLoginAt ? (
-                new Date(u.lastLoginAt).toLocaleString('vi-VN')
+                fmtDateTime(u.lastLoginAt)
               ) : (
                 <Tag>{t('users.neverLoggedIn')}</Tag>
               ),

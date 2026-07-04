@@ -10,6 +10,9 @@ export const ticketSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(200),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** Result order (#20): relevance (default, code→ts_rank→newest) or column sorts. */
+  sort: z.enum(['relevance', 'created', 'status']).default('relevance'),
+  dir: z.enum(['asc', 'desc']).default('desc'),
 });
 
 export type TicketSearchQuery = z.infer<typeof ticketSearchQuerySchema>;

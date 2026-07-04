@@ -43,9 +43,12 @@ async function poolTicket(page: Page, tag: string): Promise<string> {
   // Newest-first so the just-pooled ticket is on page 1 even as the shared dev stack
   // accumulates pool tickets across runs (pool sinks in the default worklist order).
   await page.goto('/pool?sort=created&dir=desc');
+  // Inner window is 8s, not 2s: under burst load (two contexts reload-looping) the
+  // list request alone has been measured at 2-3s on the shared dev box — a 2s window
+  // has zero headroom and fails every iteration even though the API is correct.
   await expect(async () => {
     await page.reload();
-    await expect(page.getByText(subject)).toBeVisible({ timeout: 2000 });
+    await expect(page.getByText(subject)).toBeVisible({ timeout: 8000 });
   }).toPass({ timeout: 45_000 });
   return subject;
 }
@@ -93,7 +96,7 @@ test('Epic 4.4 AC1: two users racing to claim → exactly one winner', async ({ 
     await p.goto('/pool?sort=created&dir=desc');
     await expect(async () => {
       await p.reload();
-      await expect(p.getByText(subject)).toBeVisible({ timeout: 2000 });
+      await expect(p.getByText(subject)).toBeVisible({ timeout: 8000 }); // see poolTicket
     }).toPass({ timeout: 45_000 });
   };
   await Promise.all([waitInPool(p1), waitInPool(p2)]);

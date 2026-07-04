@@ -19,6 +19,7 @@ import {
   useMarkAllNotificationsRead,
   type NotificationItem,
 } from '../../lib/notifications';
+import { fmtDateTime } from '../../lib/datetime';
 
 const { Text } = Typography;
 
@@ -37,7 +38,7 @@ function glyph(type: string): { node: React.ReactNode; color: string } {
 }
 
 function vnTime(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+  return fmtDateTime(iso);
 }
 
 /** Header notification bell with unread badge + dropdown list (Story 6.1). */

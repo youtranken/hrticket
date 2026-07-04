@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Steps, Card, Typography, Spin, Result } from 'antd';
+import { Steps, Card, Segmented, Typography, Spin, Result } from 'antd';
 import { CheckCircleOutlined, SyncOutlined, InboxOutlined } from '@ant-design/icons';
+import { setLanguage } from '../../i18n';
+import i18n from '../../i18n';
 import { palette } from '../../theme';
 
 interface StatusData {
@@ -21,9 +23,17 @@ const STEP_INDEX: Record<StatusData['status'], number> = { received: 0, in_progr
 export function PublicStatusPage() {
   const { t } = useTranslation();
   const { token } = useParams();
+  const [params] = useSearchParams();
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // P2 #4: the auto-ack's EN button links with ?lang=en; external requesters have
+  // no account, so the language is per-link (plus the toggle below).
+  useEffect(() => {
+    const l = params.get('lang');
+    if ((l === 'en' || l === 'vi') && l !== i18n.language) setLanguage(l);
+  }, [params]);
 
   useEffect(() => {
     let alive = true;
@@ -49,6 +59,17 @@ export function PublicStatusPage() {
       }}
     >
       <Card style={{ width: '100%', maxWidth: 560, borderRadius: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Segmented
+            size="small"
+            value={i18n.language === 'en' ? 'en' : 'vi'}
+            options={[
+              { label: 'VI', value: 'vi' },
+              { label: 'EN', value: 'en' },
+            ]}
+            onChange={(v) => setLanguage(v as 'vi' | 'en')}
+          />
+        </div>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <img src="/logo.png" alt="Phú Mỹ Hưng" style={{ height: 48, objectFit: 'contain' }} />
         </div>

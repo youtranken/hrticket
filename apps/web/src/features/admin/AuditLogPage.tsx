@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Card, Table, Tabs, Tag, Input, Space, Typography, Button, Tooltip } from 'antd';
-import { useAudit, useViewLog, type AuditRow, type ViewLogRow } from '../../lib/audit';
+import { Card, Table, Tabs, Tag, Input, Select, Space, Typography, Button, Tooltip } from 'antd';
+import { useAudit, useAuditActions, useViewLog, type AuditRow, type ViewLogRow } from '../../lib/audit';
+import { fmtDateTime } from '../../lib/datetime';
+import { exportAudit } from '../../lib/export';
+import { ExportButton } from '../reports/ExportButton';
+import { TableSkeleton } from '../../components/TableSkeleton';
 
 const { Text } = Typography;
 
 function fmt(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN');
+  return fmtDateTime(iso);
 }
 
 /** Readable object cell: a ticket shows its #code (linked) + subject + short uid; a user
@@ -81,16 +85,16 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
   const { t } = useTranslation();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [action, setAction] = useState('');
+  const [action, setAction] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
-  const { data, isFetching } = useAudit({
+  const { data: actionOpts } = useAuditActions();
+  const filter = {
     ticketId,
     from: from ? `${from}T00:00:00Z` : undefined,
     to: to ? `${to}T23:59:59Z` : undefined,
     action: action || undefined,
-    page,
-    pageSize: 50,
-  });
+  };
+  const { data, isFetching } = useAudit({ ...filter, page, pageSize: 50 });
 
   return (
     <>
@@ -101,18 +105,34 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
         <span>
           {t('audit.to')}: <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 160 }} />
         </span>
-        <Input
+        {/* #55: pick from the actions that actually exist — no more guessing raw codes. */}
+        <Select
           placeholder={t('audit.actionFilter')}
           value={action}
-          onChange={(e) => setAction(e.target.value)}
+          onChange={(v) => {
+            setAction(v);
+            setPage(1);
+          }}
           allowClear
-          style={{ width: 220 }}
+          showSearch
+          optionFilterProp="label"
+          style={{ width: 260 }}
+          options={(actionOpts?.actions ?? []).map((a) => ({
+            value: a,
+            label: `${t(`auditAction.${a}`, a)} (${a})`,
+          }))}
         />
+        <ExportButton onExport={(format) => exportAudit(filter, format)} />
       </Space>
+      {isFetching && !data ? (
+        <TableSkeleton />
+      ) : (
       <Table<AuditRow>
         rowKey="id"
         loading={isFetching}
         dataSource={data?.items ?? []}
+        // Fixed widths + x-scroll: flex columns can collapse to 0 (CLAUDE.md pitfall).
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page,
           pageSize: 50,
@@ -140,14 +160,17 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
           { title: t('audit.actor'), width: 200, render: (_: unknown, r: AuditRow) => r.actorLabel ?? '—' },
           {
             title: t('audit.action'),
+            width: 220,
             render: (_: unknown, r: AuditRow) => <Tag>{t(`auditAction.${r.action}`, r.action)}</Tag>,
           },
           {
             title: t('audit.object'),
+            width: 320,
             render: (_: unknown, r: AuditRow) => <ObjectCell row={r} />,
           },
         ]}
       />
+      )}
     </>
   );
 }

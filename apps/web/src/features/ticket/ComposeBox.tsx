@@ -12,12 +12,13 @@ import {
   Tabs,
   Tag,
   Typography,
+  Tooltip,
   Upload,
   Modal,
   Input,
   Checkbox,
 } from 'antd';
-import { DownOutlined } from '@ant-design/icons';
+import { DownOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { canTransition, type TicketStatus } from '@hris/shared';
 import {
   useReplyDefaults,
@@ -34,7 +35,8 @@ import {
 } from '../../lib/tickets';
 import { useReplyTemplates, fillTemplate } from '../../lib/replyTemplates';
 import { useUploadPolicy } from '../../lib/files';
-import { useMe } from '../../lib/auth';
+import { hasCap, useMe } from '../../lib/auth';
+import { fmtDateTime, fmtTime } from '../../lib/datetime';
 
 const { Text } = Typography;
 
@@ -91,15 +93,17 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
   const [tplSel, setTplSel] = useState<number>();
 
   // Mirror the SERVER reply gate exactly (review #7): the assignee — whatever the
-  // role (đơn 5) — or a Team Lead of the ticket's group. A non-assignee member gets
-  // no Reply/Forward UI (they claim first); the server (assertCanReplyTicket) is
-  // still the real gate. While loading, keep the tab to avoid a flash.
+  // role (đơn 5) — or a Team Lead of the ticket's group, AND the role must hold the
+  // ticket.reply capability (SSA matrix; CapabilityGuard 403s without it). A user
+  // who can't reply gets only the internal-note tab; the server is still the real
+  // gate. While loading, keep the tab to avoid a flash.
   const isAssignee = !!me && ticket.data?.ticket.assignee?.id === me.user.id;
   const tlInGroup =
     me?.role === 'team_lead' &&
     ticket.data?.ticket.categoryId != null &&
     (me.groups ?? []).includes(ticket.data.ticket.categoryId);
-  const canReply = me && ticket.data ? isAssignee || !!tlInGroup : true;
+  const canReply =
+    me && ticket.data ? (isAssignee || !!tlInGroup) && hasCap(me, 'ticket.reply') : true;
 
   const [to, setTo] = useState<string[]>([]);
   const [cc, setCc] = useState<string[]>([]);
@@ -335,7 +339,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
     setDraftLabel((p) => ({ ...p, [kind]: undefined }));
   };
 
-  const vnTime = (iso?: string) => (iso ? new Date(iso).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '');
+  const vnTime = (iso?: string) => fmtTime(iso);
 
   const insertTemplate = (id: number) => {
     const tpl = templates.data?.find((x) => x.id === id);
@@ -379,17 +383,34 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
       {attachments.length > 0 && (
         <Space wrap>
           {attachments.map((a) => (
-            <Tag key={a.id} closable color="blue" onClose={() => setAttachments((p) => p.filter((x) => x.id !== a.id))}>
-              📎 {a.fileName}
+            <Tag
+              key={a.id}
+              closable
+              color="blue"
+              icon={<PaperClipOutlined />}
+              onClose={() => setAttachments((p) => p.filter((x) => x.id !== a.id))}
+            >
+              {a.fileName}
             </Tag>
           ))}
         </Space>
       )}
       <Space>
         <Space.Compact>
-          <Button type="primary" loading={reply.isPending} disabled={!replyBody || to.length === 0} onClick={() => beginSend()}>
-            {t('compose.send')}
-          </Button>
+          {/* P2 #10: the disabled send button says WHY (missing recipient vs body). */}
+          <Tooltip
+            title={
+              to.length === 0
+                ? t('compose.needRecipient')
+                : !replyBody
+                  ? t('compose.needBody')
+                  : undefined
+            }
+          >
+            <Button type="primary" loading={reply.isPending} disabled={!replyBody || to.length === 0} onClick={() => beginSend()}>
+              {t('compose.send')}
+            </Button>
+          </Tooltip>
           {/* Send-with-status (đơn 6): the arrow menu sends AND moves the ticket in one
               action — Pending asks for the follow-up date first. */}
           {['open', 'assigned', 'in_progress', 'pending'].includes(status) && (
@@ -433,7 +454,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
   );
 
   const vnWhen = (iso?: string) =>
-    iso ? new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false }) : '';
+    fmtDateTime(iso);
 
   const forwardPane = (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -442,6 +463,9 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
       <Alert
         type="info"
         showIcon
+        // Soft tint (P2 #10) — same calm blue family as the app's info accents,
+        // instead of the heavier default info banner.
+        style={{ background: '#F0F5FF', border: '1px solid #D6E4FF' }}
         message={t('compose.forwardingOf', { from: forward?.fromAddr ?? '', time: vnWhen(forward?.createdAt) })}
         description={t('compose.forwardHint', { subject: `Fwd: ${ticket.data?.ticket.subject ?? ''}` })}
       />

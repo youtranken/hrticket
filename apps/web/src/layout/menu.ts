@@ -36,12 +36,15 @@ export function menuForRole(me: Me): NavGroup[] {
 
   const groups: NavGroup[] = [{ key: 'work', titleKey: 'menu.group.work', items: work }];
 
-  // Đơn 13: a member gets the Reports entry too (self report, pinned by the BE)
-  // — but not the audit log, which stays TL/Admin/SSA.
+  // Đơn 13: a member gets the Reports entry too (self report, pinned by the BE).
+  // The audit entry follows the ENFORCED log.read_group capability (member stays
+  // excluded even if granted — AuditService hard-blocks members, no scope exists).
   groups.push({
     key: 'reports',
     titleKey: 'menu.group.reports',
-    items: me.role === 'member' ? reports.filter((i) => i.key === 'reports') : reports,
+    items: reports.filter(
+      (i) => i.key !== 'audit' || (me.role !== 'member' && has('log.read_group')),
+    ),
   });
 
   // Admin section is CAPABILITY-driven (not role-hardcoded) so the SSA's /admin/roles

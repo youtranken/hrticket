@@ -20,7 +20,10 @@ import { useAttachmentConfig, useSaveAttachmentConfig } from '../../lib/attachme
 const { Title, Text } = Typography;
 
 function humanGb(bytes: number): string {
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  const gb = bytes / 1024 / 1024 / 1024;
+  // P2: adapt the unit — "0.0 GB" for a small share read as broken.
+  if (gb < 1) return `${Math.round(gb * 1024)} MB`;
+  return `${gb.toFixed(1)} GB`;
 }
 
 /** Admin "Attachment settings" (Story 8.4): allowed-format chips (with a warning for

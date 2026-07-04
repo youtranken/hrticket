@@ -14,6 +14,8 @@ export enum ErrorCode {
   MISSING_ACTOR = 'MISSING_ACTOR',
   // Auth / session
   PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED',
+  /** The role's capability was toggled OFF in the SSA matrix (FR55 enforcement). */
+  CAPABILITY_DISABLED = 'CAPABILITY_DISABLED',
   // Ticket lifecycle (Epic 5)
   INVALID_TRANSITION = 'INVALID_TRANSITION',
   PENDING_REQUIRES_SNOOZE = 'PENDING_REQUIRES_SNOOZE',

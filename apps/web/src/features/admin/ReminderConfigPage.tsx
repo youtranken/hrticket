@@ -85,7 +85,7 @@ export function ReminderConfigPage() {
                   label={t('reminders.overdueDays')}
                   rules={[{ required: true }]}
                 >
-                  <InputNumber min={1} max={60} style={{ width: '100%' }} />
+                  <InputNumber min={1} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={8}>
@@ -94,7 +94,7 @@ export function ReminderConfigPage() {
                   label={t('reminders.poolUnclaimedDays')}
                   rules={[{ required: true }]}
                 >
-                  <InputNumber min={0} max={60} style={{ width: '100%' }} />
+                  <InputNumber min={0} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={8}>

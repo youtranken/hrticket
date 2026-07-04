@@ -4,6 +4,7 @@ import type { TicketMessage } from '../../lib/tickets';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { FileCard } from '../../components/FileCard';
 import { palette } from '../../theme';
+import { fmtDateTime } from '../../lib/datetime';
 
 const { Text } = Typography;
 
@@ -32,7 +33,7 @@ function AddrRow({ label, addrs }: { label: string; addrs: string[] }) {
 }
 
 function vnTime(iso: string): string {
-  return new Date(iso).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+  return fmtDateTime(iso);
 }
 function initials(addr: string): string {
   return (addr.split('@')[0] || '?').slice(0, 2).toUpperCase();

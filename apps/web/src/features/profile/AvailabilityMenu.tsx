@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, Modal, Input, Badge, Space, Switch, App as AntApp } from 'antd';
+import { Alert, Button, Modal, Input, Badge, Space, Switch, App as AntApp } from 'antd';
 import { useMe } from '../../lib/auth';
 import { setMyAvailability, isAwayNow } from '../../lib/tickets';
 
@@ -38,6 +38,12 @@ export function AvailabilityMenu() {
   };
 
   const save = async () => {
+    // Guard the range before it reaches the BE (#40): an end date before the start
+    // would silently mean "never away".
+    if (away && to && (from || todayVn()) > to) {
+      message.error(t('availability.rangeInvalid'));
+      return;
+    }
     setSaving(true);
     try {
       if (!away) {
@@ -49,8 +55,9 @@ export function AvailabilityMenu() {
       await qc.invalidateQueries({ queryKey: ['tickets'] });
       message.success(t('availability.saved'));
       setOpen(false);
-    } catch (e) {
-      message.error((e as Error).message);
+    } catch {
+      // P2 #10: a friendly line instead of the raw API/network error text.
+      message.error(t('availability.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -81,16 +88,25 @@ export function AvailabilityMenu() {
             <span>{t('availability.away')}</span>
           </Space>
           {away && (
-            <Space>
-              <label>
-                {t('availability.from')}{' '}
-                <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 160 }} />
-              </label>
-              <label>
-                {t('availability.toOpen')}{' '}
-                <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 160 }} />
-              </label>
-            </Space>
+            <>
+              <Alert type="info" showIcon message={t('availability.hint')} />
+              <Space>
+                <label>
+                  {t('availability.from')}{' '}
+                  <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 160 }} />
+                </label>
+                <label>
+                  {t('availability.toOpen')}{' '}
+                  <Input
+                    type="date"
+                    value={to}
+                    min={from || todayVn()}
+                    onChange={(e) => setTo(e.target.value)}
+                    style={{ width: 160 }}
+                  />
+                </label>
+              </Space>
+            </>
           )}
         </Space>
       </Modal>

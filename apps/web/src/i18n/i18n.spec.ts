@@ -69,3 +69,29 @@ describe('i18n key usage (every referenced key exists)', () => {
     expect(orphans, `unknown i18n keys referenced:\n${orphans.join('\n')}`).toEqual([]);
   });
 });
+
+describe('i18n no-unused-key (P2 #9 — the catalog carries no dead weight)', () => {
+  it('every catalog key is referenced somewhere in src/', () => {
+    // One big haystack: a key counts as used when it appears as a string literal
+    // anywhere ('key' / "key" / `key`) — this also covers labelKey/descKey tables —
+    // or when it matches a dynamic template prefix like t(`status.${s}`), or is an
+    // i18next plural variant (_one/_other) of a used base key.
+    const allSrc = sourceFiles('src')
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    const dynPrefixes = [...allSrc.matchAll(/\bt\(\s*`([^`$]*)\$\{/g)]
+      .map((m) => m[1]!)
+      .filter((p) => p.length > 0);
+    const literallyUsed = (k: string) =>
+      allSrc.includes(`'${k}'`) || allSrc.includes(`"${k}"`) || allSrc.includes('`' + k + '`');
+    const used = (k: string): boolean => {
+      if (literallyUsed(k)) return true;
+      if (dynPrefixes.some((p) => k.startsWith(p))) return true;
+      const plural = /^(.*)_(one|other)$/.exec(k);
+      if (plural) return used(plural[1]!);
+      return false;
+    };
+    const dead = viKeys.filter((k) => !used(k));
+    expect(dead, `unused i18n keys (delete them or reference them):\n${dead.join('\n')}`).toEqual([]);
+  });
+});

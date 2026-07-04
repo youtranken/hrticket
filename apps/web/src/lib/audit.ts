@@ -64,6 +64,15 @@ export function useAudit(f: AuditFilters) {
   });
 }
 
+/** Distinct action codes within the caller's scope — feeds the filter Select (#55). */
+export function useAuditActions() {
+  return useQuery<{ actions: string[] }>({
+    queryKey: ['audit', 'actions'],
+    queryFn: () => api('/audit/actions'),
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useViewLog(f: { ticketId?: string; from?: string; to?: string; page?: number; pageSize?: number }) {
   return useQuery<Paged<ViewLogRow>>({
     queryKey: ['audit', 'view-log', f],

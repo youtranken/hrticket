@@ -16,7 +16,11 @@ const vnDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealCalendarDay, 
  */
 const exportFilterSchema = z.object({
   view: z.enum(['all', 'pool', 'mine', 'pending']).default('all'),
-  sort: z.enum(['worklist', 'created', 'status', 'snooze']).default('worklist'),
+  // Mirror of ticketListQuerySchema.sort — a worklist sorted by a newer column
+  // (band/category/assignee) must stay exportable, not 400.
+  sort: z
+    .enum(['band', 'worklist', 'created', 'status', 'snooze', 'category', 'assignee'])
+    .default('worklist'),
   dir: z.enum(['asc', 'desc']).default('desc'),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(100).default(20),
@@ -41,6 +45,30 @@ export type ExportTicketsBody = z.infer<typeof exportTicketsSchema>;
 export function asTicketListQuery(f: ExportTicketsBody['filter']): TicketListQuery {
   return f;
 }
+
+/** A parseable date/datetime bound (same contract as the audit reader's query). */
+const dateBound = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), 'INVALID_DATE')
+  .optional();
+
+/** Export the audit log with the SAME filters the on-screen reader accepts (#55). */
+export const exportAuditSchema = z.object({
+  format: z.enum(['xlsx', 'csv']).default('csv'),
+  lang: z.enum(['vi', 'en']).default('vi'),
+  filter: z
+    .object({
+      from: dateBound,
+      to: dateBound,
+      actorId: z.string().uuid().optional(),
+      action: z.string().optional(),
+      objectType: z.string().optional(),
+      ticketId: z.string().uuid().optional(),
+      categoryId: z.number().int().positive().optional(),
+    })
+    .default({}),
+});
+export type ExportAuditBody = z.infer<typeof exportAuditSchema>;
 
 /** Export a report (matches the 10.3 dashboard tables + đơn 13 slicing). */
 export const exportReportSchema = z.object({

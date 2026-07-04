@@ -4,6 +4,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
+import { CapabilityGuard, RequireCap } from '../capabilities/capability.guard';
 import { AuditService } from './audit.service';
 
 // A parseable date/datetime bound. Without this guard a value like '2026-99-99' or
@@ -38,7 +39,8 @@ const viewLogQuery = z.object({
 /** Story 9.5 — audit + sensitive view-log reader. Member → 403 (service-enforced);
  *  Admin/TL → own project; SSA → active project via X-Project. */
 @Controller('api/audit')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, CapabilityGuard)
+@RequireCap('log.read_group')
 export class AuditController {
   constructor(
     private readonly audit: AuditService,
@@ -59,6 +61,12 @@ export class AuditController {
     const parsed = auditQuery.safeParse(query);
     if (!parsed.success) throw new BadRequestException('Invalid query');
     return this.audit.list(actor, await this.project(actor, xp), parsed.data);
+  }
+
+  /** Distinct action codes for the filter dropdown (#55). */
+  @Get('actions')
+  async actions(@CurrentUser() actor: SessionUser, @Headers('x-project') xp?: string) {
+    return { actions: await this.audit.listActions(actor, await this.project(actor, xp)) };
   }
 
   @Get('view-log')

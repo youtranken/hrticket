@@ -199,4 +199,41 @@ describe('IT-AUDIT: audit + view-log reader', () => {
     const leaveRes = await svc.viewLogList(session(tlLeave.id, 'team_lead'), HRIS, { ...PAGE, ticketId: T });
     expect(leaveRes.total).toBe(0);
   });
+
+  it('IT-AUDIT-004: action list + CSV export ride the reader scope (#55)', async () => {
+    if (!ready) return;
+    const admin = (await makeUser(harness!.db, { projectId: HRIS, role: 'admin', email: 'au4-adm@x.com' }))!;
+    const member = (await makeUser(harness!.db, { projectId: HRIS, role: 'member', email: 'au4-m@x.com' }))!;
+    const T = await makeTicket(Payroll);
+    await audit('ticket.created', 'ticket', T, null, {});
+    await audit('ticket.assigned', 'ticket', T, null, { to: 'x' });
+
+    // Distinct actions feed the FE Select; a member is refused outright.
+    const actions = await svc.listActions(session(admin.id, 'admin'), HRIS);
+    expect(actions).toEqual(expect.arrayContaining(['ticket.created', 'ticket.assigned']));
+    await expect(svc.listActions(session(member.id, 'member'), HRIS)).rejects.toMatchObject({
+      status: 403,
+    });
+
+    // The export table mirrors the on-screen list (same filter, same scope) and
+    // serializes to CSV with the localized header.
+    const { ExportService } = await import('../src/modules/export/export.service');
+    const { TicketsReadService } = await import('../src/modules/tickets/tickets-read.service');
+    const { ReportingService } = await import('../src/modules/reporting/reporting.service');
+    const exportSvc = new ExportService(new TicketsReadService(), new ReportingService(), svc);
+    const table = await exportSvc.auditTable(
+      session(admin.id, 'admin'),
+      HRIS,
+      { action: 'ticket.created' },
+      'vi',
+    );
+    expect(table.rowCount).toBe(1);
+    expect(table.headers[0]).toBe('Thời điểm');
+    const csv = exportSvc.toCsv(table).toString('utf8');
+    expect(csv).toContain('ticket.created');
+    // A member can't export what they can't read.
+    await expect(
+      exportSvc.auditTable(session(member.id, 'member'), HRIS, {}, 'vi'),
+    ).rejects.toMatchObject({ status: 403 });
+  });
 });

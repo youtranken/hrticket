@@ -17,7 +17,8 @@ import {
   isCapability,
   isLocked,
   defaultAllowed,
-} from './capability-catalog';
+} from '../capabilities/capability-catalog';
+import { CapabilitiesService } from '../capabilities/capabilities.service';
 
 export interface CapabilityCell {
   role: CapRole;
@@ -33,36 +34,34 @@ export interface CapabilityMatrix {
   rows: CapabilityRow[];
 }
 
-const CACHE_TTL_MS = 60_000; // A.9 — guards may read with a short cache.
-
 /**
  * Story 9.4 (FR55/FR72) — SSA-only runtime editor for the role × capability matrix.
- * Reads are served from a 60s cache (rebuilt on every write); /me reads the table
- * directly so a toggle is visible on the user's next request (≤60s, AC1). Locked
+ * Reads go through CapabilitiesService's 60s cache (shared with CapabilityGuard),
+ * busted on every write so a toggle is enforced on the next request (AC1). Locked
  * cells (anti-self-lock + SSA full-access) are refused even on a direct API call (AC3).
  */
 @Injectable()
 export class RoleCapabilitiesService {
-  private cache: { at: number; allowed: Map<CapRole, Set<Capability>> } | null = null;
+  constructor(private readonly caps: CapabilitiesService) {}
 
   /** Full matrix for the editor UI (every role × every catalog capability). */
   async getMatrix(): Promise<CapabilityMatrix> {
-    const allowed = await this.loadAllowed();
+    const byRole = new Map<CapRole, Set<Capability>>();
+    for (const role of CAP_ROLES) byRole.set(role, await this.caps.getAllowed(role));
     const rows: CapabilityRow[] = CAPABILITIES.map((capability) => ({
       capability,
       cells: CAP_ROLES.map((role) => ({
         role,
-        allowed: allowed.get(role)?.has(capability) ?? false,
+        allowed: byRole.get(role)!.has(capability),
         locked: isLocked(role, capability),
       })),
     }));
     return { roles: CAP_ROLES, rows };
   }
 
-  /** Cached allowed-set for a role (for future capability guards, A.9). */
+  /** Cached allowed-set for a role (delegates to the shared guard-side cache). */
   async getAllowed(role: CapRole): Promise<Set<Capability>> {
-    const allowed = await this.loadAllowed();
-    return allowed.get(role) ?? new Set();
+    return this.caps.getAllowed(role);
   }
 
   async setCapability(
@@ -94,7 +93,7 @@ export class RoleCapabilitiesService {
         newValue: { allowed },
       });
     });
-    this.cache = null; // bust → effective immediately, well within the 60s window
+    this.caps.bust(); // effective on the next request — the guard re-reads at once
     return { ok: true as const };
   }
 
@@ -118,35 +117,11 @@ export class RoleCapabilitiesService {
         newValue: { reset: 'PRD-default' },
       });
     });
-    this.cache = null;
+    this.caps.bust();
     return { ok: true as const };
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
-  private async loadAllowed(): Promise<Map<CapRole, Set<Capability>>> {
-    const now = Date.now();
-    if (this.cache && now - this.cache.at < CACHE_TTL_MS) return this.cache.allowed;
-    const allowed = await withActor(systemActor, async (tx) => {
-      const rows = await tx
-        .select({
-          role: roleCapabilities.role,
-          capability: roleCapabilities.capability,
-          allowed: roleCapabilities.allowed,
-        })
-        .from(roleCapabilities);
-      const map = new Map<CapRole, Set<Capability>>();
-      for (const r of CAP_ROLES) map.set(r, new Set());
-      for (const row of rows) {
-        if (row.allowed && isCapRole(row.role) && isCapability(row.capability)) {
-          map.get(row.role)!.add(row.capability);
-        }
-      }
-      return map;
-    });
-    this.cache = { at: now, allowed };
-    return allowed;
-  }
-
   private async cellValue(tx: DbTx, role: CapRole, capability: Capability): Promise<boolean> {
     const [row] = await tx
       .select({ allowed: roleCapabilities.allowed })
