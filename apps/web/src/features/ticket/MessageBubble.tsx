@@ -112,7 +112,10 @@ export function MessageBubble({
       <Avatar size={36} style={{ background: inbound ? '#1F9D6B' : palette.primary, flexShrink: 0 }}>
         {initials(m.fromAddr)}
       </Avatar>
-      <div style={{ maxWidth: '80%' }}>
+      {/* flex:1 (not shrink-to-content + 80% cap): the bubble always spans the full
+          row so a long body reflows WIDE instead of tall — direction still reads
+          from the avatar side + header alignment + tint. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
             display: 'flex',
