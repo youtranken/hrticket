@@ -234,6 +234,11 @@ describe('IT-VIS: advanced visibility', () => {
       { name: 'reply:defaults', assertBlocked: async (a) => {
         await expect(reply.getDefaults(a, X)).rejects.toMatchObject({ status: 404 });
       } },
+      // Đơn 16: sender-history is anchored on the ticket id — invisible ticket → 404
+      // (and the list inside is RLS-scoped like the worklist).
+      { name: 'requester-history', assertBlocked: async (a) => {
+        await expect(read.requesterHistory(a, X)).rejects.toMatchObject({ status: 404 });
+      } },
       // Report v2 aggregates (đơn 13 opened them to every role): the sensitive
       // Payroll ticket must contribute NOTHING — a blocked actor gets no Payroll
       // row at all. All reporting methods share baseWhere + withActor, so one
@@ -255,6 +260,9 @@ describe('IT-VIS: advanced visibility', () => {
     expect((await searchSvc.search(session(inGroup.id), TOKEN)).items.some((i) => i.id === X)).toBe(true);
     expect(await fileVisible(session(inGroup.id), att!.id)).toBe(true);
     expect((await reply.getDefaults(session(inGroup.id), X)).isSensitive).toBe(true);
+    const hist = await read.requesterHistory(session(inGroup.id), X);
+    expect(hist.total).toBeGreaterThanOrEqual(1);
+    expect(hist.items.some((i) => i.id === X)).toBe(true);
     // Report control uses a TL (a member is self-pinned and X is unassigned).
     expect(
       (await rpt.byCategory(session(inGroup.id, HRIS, 'team_lead'), HRIS, {})).categories.some(

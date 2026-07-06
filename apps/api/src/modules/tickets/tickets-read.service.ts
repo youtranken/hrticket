@@ -726,4 +726,58 @@ export class TicketsReadService {
       };
     });
   }
+
+  /**
+   * All tickets this ticket's REQUESTER has sent to the project (⋮ menu, đơn 16):
+   * "how many tickets does this email have?". Anchored on the ticket id — the email
+   * never rides in from the client — so the same RLS gate as getDetail applies:
+   * can't see the ticket → 404, and the history itself only counts tickets the
+   * CALLER can see (a member gets their scope, an admin the whole project).
+   * Junk/spam included and flagged — spotting a noisy sender is half the point.
+   */
+  async requesterHistory(user: SessionUser, id: string) {
+    const actor = await actorForUser(user);
+    return withActor(actor, async (tx) => {
+      const [t] = await tx
+        .select({ projectId: tickets.projectId, requesterEmail: tickets.requesterEmail })
+        .from(tickets)
+        .where(eq(tickets.id, id));
+      if (!t) throw new NotFoundException('Ticket not found'); // RLS-invisible → 404, no leak
+
+      const same = and(
+        eq(tickets.projectId, t.projectId),
+        eq(tickets.requesterEmail, t.requesterEmail),
+      );
+      const [agg] = await tx
+        .select({
+          total: sql<number>`count(*)::int`,
+          active: sql<number>`count(*) FILTER (WHERE ${tickets.status} NOT IN ('resolved','closed'))::int`,
+          junk: sql<number>`count(*) FILTER (WHERE ${tickets.isJunk} OR ${tickets.isSpamThread})::int`,
+        })
+        .from(tickets)
+        .where(same);
+      const items = await tx
+        .select({
+          id: tickets.id,
+          ticketCode: tickets.ticketCode,
+          subject: tickets.subject,
+          status: tickets.status,
+          isJunk: tickets.isJunk,
+          isSpamThread: tickets.isSpamThread,
+          createdAt: tickets.createdAt,
+        })
+        .from(tickets)
+        .where(same)
+        .orderBy(desc(tickets.createdAt))
+        .limit(50);
+
+      return {
+        email: t.requesterEmail,
+        total: agg?.total ?? 0,
+        active: agg?.active ?? 0,
+        junk: agg?.junk ?? 0,
+        items,
+      };
+    });
+  }
 }

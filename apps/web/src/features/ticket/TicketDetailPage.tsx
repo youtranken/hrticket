@@ -14,6 +14,9 @@ import {
   Alert,
   Skeleton,
   FloatButton,
+  Modal,
+  Table,
+  Spin,
   App as AntApp,
 } from 'antd';
 import {
@@ -26,9 +29,16 @@ import {
   ClockCircleOutlined,
   CheckCircleOutlined,
   UpOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import { hasCap, useMe } from '../../lib/auth';
-import { useTicket, useApproveParticipant, displayCode, type TicketMessage } from '../../lib/tickets';
+import {
+  useTicket,
+  useApproveParticipant,
+  useRequesterHistory,
+  displayCode,
+  type TicketMessage,
+} from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
 import { MessageBubble } from './MessageBubble';
@@ -434,28 +444,127 @@ function SpamActionsMenu({
     );
   };
 
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   return (
-    <Dropdown
-      trigger={['click']}
-      menu={{
-        items: [
-          {
-            key: 'junk',
-            icon: <DeleteOutlined />,
-            label: t('spam.mark.junkAction'),
-            disabled: isJunk,
-            onClick: onMarkJunk,
-          },
-          {
-            key: 'spam',
-            icon: <StopOutlined />,
-            label: isSpamThread ? t('spam.mark.spamActionOff') : t('spam.mark.spamActionOn'),
-            onClick: onToggleSpam,
-          },
-        ],
-      }}
-    >
-      <Button size="small" icon={<MoreOutlined />} aria-label={t('spam.mark.menuLabel')} />
-    </Dropdown>
+    <>
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            {
+              // Đơn 16: how many tickets has this sender opened? (spam triage +
+              // "did this person already ask?" in one glance)
+              key: 'history',
+              icon: <HistoryOutlined />,
+              label: t('ticket.senderHistory'),
+              onClick: () => setHistoryOpen(true),
+            },
+            {
+              key: 'junk',
+              icon: <DeleteOutlined />,
+              label: t('spam.mark.junkAction'),
+              disabled: isJunk,
+              onClick: onMarkJunk,
+            },
+            {
+              key: 'spam',
+              icon: <StopOutlined />,
+              label: isSpamThread ? t('spam.mark.spamActionOff') : t('spam.mark.spamActionOn'),
+              onClick: onToggleSpam,
+            },
+          ],
+        }}
+      >
+        <Button size="small" icon={<MoreOutlined />} aria-label={t('spam.mark.menuLabel')} />
+      </Dropdown>
+      {historyOpen && <SenderHistoryModal ticketId={ticketId} onClose={() => setHistoryOpen(false)} />}
+    </>
+  );
+}
+
+/** Đơn 16 — "⋮ → Ticket từ người gửi này": every ticket the requester has opened,
+ *  RLS-scoped (you only count what you could see in the worklist anyway). Click a
+ *  row to jump to that ticket; the one you're on is tagged. */
+function SenderHistoryModal({ ticketId, onClose }: { ticketId: string; onClose: () => void }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const q = useRequesterHistory(ticketId, true);
+  const d = q.data;
+  return (
+    <Modal open title={t('ticket.senderHistoryTitle')} footer={null} onCancel={onClose} width={680}>
+      {q.isLoading || !d ? (
+        <div style={{ textAlign: 'center', padding: 24 }}>
+          <Spin />
+        </div>
+      ) : (
+        <Space direction="vertical" style={{ width: '100%' }} size="small">
+          <Text strong>{d.email}</Text>
+          <Space wrap size="small">
+            <Tag color="blue">{t('ticket.senderHistoryTotal', { n: d.total })}</Tag>
+            <Tag color="green">{t('ticket.senderHistoryActive', { n: d.active })}</Tag>
+            {d.junk > 0 && <Tag color="orange">{t('ticket.senderHistoryJunk', { n: d.junk })}</Tag>}
+          </Space>
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={false}
+            dataSource={d.items}
+            scroll={{ y: 360 }}
+            onRow={(r) => ({
+              onClick: () => {
+                if (r.id === ticketId) return;
+                onClose();
+                navigate(`/tickets/${r.id}`);
+              },
+              style: { cursor: r.id === ticketId ? 'default' : 'pointer' },
+            })}
+            columns={[
+              {
+                title: t('reports.search.match.code'),
+                dataIndex: 'ticketCode',
+                width: 170,
+                render: (v: string, r) =>
+                  r.id === ticketId ? (
+                    <span style={{ whiteSpace: 'nowrap' }}>
+                      <Text strong>{v}</Text>
+                      <Tag style={{ marginLeft: 6 }}>{t('ticket.current')}</Tag>
+                    </span>
+                  ) : (
+                    v
+                  ),
+              },
+              {
+                title: t('ticket.subject'),
+                dataIndex: 'subject',
+                ellipsis: true,
+                render: (v: string, r) => (
+                  <>
+                    {(r.isJunk || r.isSpamThread) && (
+                      <Tag color="orange" style={{ marginRight: 4 }}>
+                        {t('spam.mark.junkBadge')}
+                      </Tag>
+                    )}
+                    {v}
+                  </>
+                ),
+              },
+              {
+                title: t('ticket.status'),
+                dataIndex: 'status',
+                width: 130,
+                render: (s: string) => <StatusTag status={s} />,
+              },
+              {
+                title: t('ticket.createdAt'),
+                dataIndex: 'createdAt',
+                width: 140,
+                render: (v: string) => vnTime(v),
+              },
+            ]}
+          />
+        </Space>
+      )}
+    </Modal>
   );
 }

@@ -247,6 +247,32 @@ export function useTicket(id: string) {
   });
 }
 
+/** Đơn 16 — every ticket this ticket's requester has sent (⋮ menu). RLS-scoped:
+ *  the caller only ever counts tickets they could see in the worklist anyway. */
+export interface RequesterHistory {
+  email: string;
+  total: number;
+  active: number;
+  junk: number;
+  items: {
+    id: string;
+    ticketCode: string;
+    subject: string;
+    status: string;
+    isJunk: boolean;
+    isSpamThread: boolean;
+    createdAt: string;
+  }[];
+}
+
+export function useRequesterHistory(ticketId: string, enabled: boolean) {
+  return useQuery<RequesterHistory>({
+    queryKey: ['ticket', ticketId, 'requester-history'],
+    queryFn: () => api(`/tickets/${ticketId}/requester-history`),
+    enabled,
+  });
+}
+
 export function useApproveParticipant(ticketId: string) {
   const qc = useQueryClient();
   return useMutation({

@@ -55,4 +55,11 @@ export class TicketsController {
   async detail(@CurrentUser() user: SessionUser, @Param('id') id: string) {
     return this.read.getDetail(user, id);
   }
+
+  /** Every ticket the requester of :id has sent to this project (⋮ menu, đơn 16).
+   *  Same visibility gate as the detail; the list itself is RLS-scoped too. */
+  @Get(':id/requester-history')
+  async requesterHistory(@CurrentUser() user: SessionUser, @Param('id') id: string) {
+    return this.read.requesterHistory(user, id);
+  }
 }
