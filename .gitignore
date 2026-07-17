@@ -44,3 +44,6 @@ _cleanup-all.sql
 backups/
 docs/demo-shots/
 e2e-attachments/
+
+# Graphify generated output
+graphify-out/

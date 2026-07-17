@@ -41,7 +41,7 @@ import {
 } from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
-import { MessageBubble } from './MessageBubble';
+import { MailThread, type MessageAttachment } from './MailThread';
 import { ComposeBox } from './ComposeBox';
 import { AssignControls } from './AssignControls';
 import { LifecycleControls } from './LifecycleControls';
@@ -155,7 +155,7 @@ export function TicketDetailPage() {
   // Attachments belong to a specific message (inbound or outbound reply) → show them in
   // the thread next to that message. Anything not linked to a message (legacy) stays in
   // the ticket-level card so nothing is hidden.
-  const attByMsg = new Map<string, typeof attachments>();
+  const attByMsg = new Map<string, MessageAttachment[]>();
   const orphanAtt: typeof attachments = [];
   for (const a of attachments) {
     if (a.messageId) {
@@ -332,31 +332,28 @@ export function TicketDetailPage() {
       )}
 
       <div>
-        {messages.map((m) => (
-          <MessageBubble
-            key={m.id}
-            m={m}
-            attachments={attByMsg.get(m.id) ?? []}
-            ownProjectKey={ticket.projectKey}
-            onForward={
-              // Mirror the server reply gate (review #7): assignee (any role, đơn 5)
-              // or TL of the ticket's group, holding the ticket.reply capability —
-              // nobody else gets a dead Forward link.
-              ticket.status !== 'closed' &&
-              me &&
-              hasCap(me, 'ticket.reply') &&
-              (ticket.assignee?.id === me.user.id ||
-                (me.role === 'team_lead' &&
-                  ticket.categoryId !== null &&
-                  (me.groups ?? []).includes(ticket.categoryId)))
-                ? (msg) => {
-                    setForwardMsg(msg);
-                    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                  }
-                : undefined
-            }
-          />
-        ))}
+        <MailThread
+          messages={messages}
+          attByMsg={attByMsg}
+          ownProjectKey={ticket.projectKey}
+          onForward={
+            // Mirror the server reply gate (review #7): assignee (any role, đơn 5)
+            // or TL of the ticket's group, holding the ticket.reply capability —
+            // nobody else gets a dead Forward link.
+            ticket.status !== 'closed' &&
+            me &&
+            hasCap(me, 'ticket.reply') &&
+            (ticket.assignee?.id === me.user.id ||
+              (me.role === 'team_lead' &&
+                ticket.categoryId !== null &&
+                (me.groups ?? []).includes(ticket.categoryId)))
+              ? (msg) => {
+                  setForwardMsg(msg);
+                  bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                }
+              : undefined
+          }
+        />
         <div ref={bottomRef} />
       </div>
 
