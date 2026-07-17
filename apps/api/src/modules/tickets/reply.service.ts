@@ -14,6 +14,7 @@ import { actorForUser } from './actor';
 import { sendOutboundMail } from './send-mail.usecase';
 import { canTransition, assertCanReplyTicket } from './ticket.state-machine';
 import { systemMailboxAddresses } from '../email-engine/mailbox-addresses';
+import { sanitizeEmailHtml } from '../email-engine/sanitize';
 import { autoCloseLockedSiblings } from './cross-post-lock';
 
 export interface ReplyInput {
@@ -383,7 +384,12 @@ export class ReplyService {
         .limit(1);
       const quote = prevMsg ? gmailQuote(prevMsg) : { html: '', text: '' };
 
-      const typedHtml = input.bodyHtml ?? htmlFromText(input.body);
+      // bodyHtml is client-supplied (compose.controller replySchema) and lands in
+      // body_html_safe, which the FE renders in-DOM — sanitize it HERE, at the only
+      // untrusted hop. Not in sendOutboundMail: that would also strip the footer's
+      // margin-top and the quote's border-left, which allowedStyles does not permit.
+      const typedHtml =
+        input.bodyHtml == null ? htmlFromText(input.body) : sanitizeEmailHtml(input.bodyHtml);
       const bodyText = `${input.body}${codeFooterText(t.ticketCode)}${quote.text}`;
       const bodyHtml = `${typedHtml}${codeFooterHtml(t.ticketCode)}${quote.html}`;
       const res = await sendOutboundMail(tx, {

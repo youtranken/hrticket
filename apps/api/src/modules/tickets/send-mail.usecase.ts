@@ -53,7 +53,13 @@ export async function sendOutboundMail(
       bccAddrs: input.bcc ?? null,
       bodyText: input.bodyText,
       bodyHtml: input.bodyHtml,
-      // We generate this HTML ourselves, so the "safe" copy is the same (FR12/3.7).
+      // CONTRACT: bodyHtml must ALREADY be safe to render in-DOM — callers either
+      // generate it themselves or sanitize client input before calling (reply.service
+      // sanitizes; forward/manual/note escape via htmlFromText). It is copied verbatim
+      // into body_html_safe, which the FE renders with dangerouslySetInnerHTML, so a
+      // caller that passes raw user HTML here creates a stored XSS. Sanitizing here
+      // instead would strip our own footer/quote styling (allowedStyles has no
+      // border-left/margin-top), which is why the duty sits with the caller.
       bodyHtmlSafe: input.bodyHtml,
       messageId,
       inReplyTo: input.inReplyTo ?? null,
