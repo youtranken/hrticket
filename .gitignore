@@ -11,6 +11,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 *.local
 
 # Attachments storage (filesystem — never commit user files)
