@@ -12,6 +12,11 @@
 # First deploy only: after the stack is up, seed base data ONCE:
 #   docker compose -f docker-compose.prod.yml run --rm migrate node dist/infra/db/seed.js
 
+# Pin the project name. Compose otherwise derives it from the directory, so a repo
+# cloned as `hrticket/` instead of `app/` would silently get its own container names
+# AND its own `<dir>_pgdata` volume — i.e. an empty database that looks like data loss.
+name: app
+
 x-api-build: &api-build
   context: .
   dockerfile: apps/api/Dockerfile
