@@ -3,10 +3,13 @@ FROM node:24-slim AS build
 RUN corepack enable
 WORKDIR /repo
 
-COPY pnpm-workspace.yaml package.json ./
+# See apps/api/Dockerfile: every workspace manifest must be present for
+# --frozen-lockfile to validate; --filter keeps the install to @hris/web's tree.
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/web/package.json apps/web/
-RUN pnpm install --frozen-lockfile=false
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile --filter @hris/web...
 
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
