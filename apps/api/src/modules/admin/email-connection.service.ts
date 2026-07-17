@@ -61,6 +61,39 @@ export interface TestResult {
 export class EmailConnectionService {
   private readonly logger = new Logger(EmailConnectionService.name);
 
+  /**
+   * Record every test attempt (AC3 mirror of `update`): who tested, against which
+   * host, and whether the stored App Password was reused. Never the password itself.
+   * This was the one mutating path in the module that left no trace.
+   */
+  private async auditTest(
+    user: SessionUser,
+    projectId: number,
+    input: ConnectionInput,
+    flags: { reusingStored: boolean; refused: boolean },
+  ): Promise<void> {
+    await withActor(systemActor, (tx) =>
+      writeAudit(tx, {
+        projectId,
+        actorId: user.id,
+        actorLabel: user.email,
+        action: 'email_connection.tested',
+        objectType: 'email_connection',
+        objectId: String(projectId),
+        newValue: {
+          imapHost: input.imapHost,
+          imapPort: input.imapPort,
+          imapUser: input.imapUser,
+          smtpHost: input.smtpHost,
+          smtpPort: input.smtpPort,
+          smtpUser: input.smtpUser,
+          usedStoredPassword: flags.reusingStored,
+          refusedHostMismatch: flags.refused,
+        },
+      }),
+    );
+  }
+
   private async row(projectId: number) {
     const [r] = await withActor(systemActor, (tx) =>
       tx.select().from(emailConnections).where(eq(emailConnections.projectId, projectId)),
@@ -190,10 +223,33 @@ export class EmailConnectionService {
    * other is ❌. Persists status/last_checked on the row when it exists (AC4).
    */
   async testConnection(
+    user: SessionUser,
     projectId: number,
     input: ConnectionInput,
   ): Promise<TestResult> {
     const existing = await this.row(projectId);
+
+    // The stored App Password may only be replayed against the host it was stored
+    // FOR. Without this, omitting `password` (exactly what the UI sends when the
+    // field is left blank) makes the server decrypt the secret and hand it to any
+    // host the caller names — a credential-exfil primitive that also defeats the
+    // write-only masking this module is built around. A test against a NEW host is
+    // legitimate, but the caller must then supply the password themselves.
+    const reusingStored = input.password === undefined && !!existing?.passwordEncrypted;
+    const hostChanged =
+      reusingStored &&
+      (input.imapHost !== existing!.imapHost || input.smtpHost !== existing!.smtpHost);
+
+    await this.auditTest(user, projectId, input, { reusingStored, refused: hostChanged });
+
+    if (hostChanged) {
+      const leg: TestLeg = {
+        ok: false,
+        error: 'host differs from the saved connection — re-enter the App Password to test a new host',
+      };
+      return { imap: leg, smtp: leg };
+    }
+
     let password = input.password;
     if (password === undefined && existing?.passwordEncrypted) {
       const dec = this.safeDecrypt(existing.passwordEncrypted);

