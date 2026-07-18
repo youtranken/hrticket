@@ -17,6 +17,9 @@ build/
 # Attachments storage (filesystem — never commit user files)
 attachments/
 storage/
+# ...but the broad `storage/` rule above also matched a SOURCE directory of the same
+# name. Re-include it — this is real code and must be committed / present in a clone.
+!apps/api/src/infra/storage/
 
 # Logs
 *.log
