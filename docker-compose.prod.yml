@@ -30,7 +30,12 @@ services:
       POSTGRES_DB: hris
     # No host port mapping in prod — the DB is reachable only on the internal network.
     volumes:
-      - pgdata:/var/lib/postgresql
+      # All persistent state lives under ./data (= /home/hr/hrticket/data) so one
+      # `tar ./data` captures DB + attachments. Bind mount (not a named volume) so the
+      # files sit at a predictable host path. The container starts as root, so the
+      # postgres entrypoint chowns PGDATA on first init — no manual chown needed.
+      # PG18 keeps its data under /var/lib/postgresql (NOT /data) — mount that parent.
+      - ./data/pgdata:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U hris -d hris']
       interval: 5s
@@ -73,7 +78,7 @@ services:
       SMTP_HRIS_PASSWORD: ${SMTP_HRIS_PASSWORD:-}
       SMTP_HRIS_FROM: ${SMTP_HRIS_FROM:-}
     volumes:
-      - ${ATTACHMENT_HOST_DIR:-../attachments}:/data/attachments
+      - ${ATTACHMENT_HOST_DIR:-./data/attachments}:/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,7 +126,7 @@ services:
       SMTP_CNB_SECURE: ${SMTP_CNB_SECURE:-true}
       SMTP_CNB_FROM: ${SMTP_CNB_FROM:-}
     volumes:
-      - ${ATTACHMENT_HOST_DIR:-../attachments}:/data/attachments
+      - ${ATTACHMENT_HOST_DIR:-./data/attachments}:/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,5 +163,5 @@ services:
       - api
     restart: unless-stopped
 
-volumes:
-  pgdata:
+# No named volumes: all persistent data is bind-mounted under ./data (see postgres +
+# api/worker attachment mounts above).

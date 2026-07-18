@@ -40,6 +40,9 @@ Thumbs.db
 # Docker volumes (local)
 pgdata/
 
+# Prod persistent data (bind-mounted DB + attachments) — NEVER commit
+/data/
+
 # Local-only artifacts (never commit: prod dumps, e2e uploads, demo screenshots)
 _cleanup-all.sql
 backups/
