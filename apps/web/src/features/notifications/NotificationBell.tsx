@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, Dropdown, Empty, List, Typography } from 'antd';
+import { App, Badge, Button, Dropdown, Empty, List, Typography } from 'antd';
 import {
   BellOutlined,
   InboxOutlined,
@@ -31,7 +31,7 @@ function glyph(type: string): { node: React.ReactNode; color: string } {
   if (type === 'ticket_reopened' || type === 'ticket_reopened_pool') return { node: <RollbackOutlined />, color: '#D97706' };
   if (type === 'snooze_due') return { node: <ClockCircleOutlined />, color: '#D97706' };
   if (type === 'disk_low') return { node: <HddOutlined />, color: '#D14343' };
-  if (type === 'mail_bomb') return { node: <WarningOutlined />, color: '#D14343' };
+  if (type === 'mail_bomb' || type === 'mailbox_down') return { node: <WarningOutlined />, color: '#D14343' };
   if (type === 'worker_alert' || type === 'worker_down' || type.endsWith('_failed'))
     return { node: <ExclamationCircleOutlined />, color: '#D14343' };
   return { node: <BellOutlined />, color: '#8c8c8c' };
@@ -41,9 +41,22 @@ function vnTime(iso: string): string {
   return fmtDateTime(iso);
 }
 
+/** Notifications that describe a system/health problem, not a ticket — clicking one opens
+ *  a detail popup (error + what-to-do) instead of navigating to a ticket. */
+const ALERT_TYPES = new Set([
+  'worker_alert',
+  'worker_down',
+  'mailbox_down',
+  'disk_low',
+  'mail_bomb',
+  'inbox_failed',
+  'outbox_failed',
+]);
+
 /** Header notification bell with unread badge + dropdown list (Story 6.1). */
 export function NotificationBell() {
   const { t } = useTranslation();
+  const { modal } = App.useApp();
   const navigate = useNavigate();
   const { data } = useNotifications();
   const markRead = useMarkNotificationRead();
@@ -53,19 +66,58 @@ export function NotificationBell() {
   const items = data?.items ?? [];
   const unread = data?.unreadCount ?? 0;
 
-  const onClickItem = (n: NotificationItem) => {
-    if (!n.readAt) markRead.mutate(n.id);
-    setOpen(false);
-    if (n.payload?.ticketId) navigate(`/tickets/${n.payload.ticketId}`);
-  };
-
   // Pass the whole payload into i18n so type-specific keys can interpolate (e.g. the
   // mail-bomb sender); append a ticket code / actor when present.
   const label = (n: NotificationItem): string => {
+    // Worker-liveness alert: append WHICH loop(s) are down, translated to the user's
+    // language, so "Cảnh báo hệ thống" is no longer a detail-free dead end.
+    if (n.type === 'worker_alert' && Array.isArray(n.payload?.loops) && n.payload.loops.length) {
+      const loops = n.payload.loops.map((l) => t(`notif.loop.${l}`, { defaultValue: l })).join(', ');
+      return `${t('notif.worker_alert')}: ${loops}`;
+    }
     const base = t(`notif.${n.type}`, { defaultValue: t('notif.generic'), ...(n.payload ?? {}) });
     const code = n.payload?.ticketCode ? ` ${n.payload.ticketCode}` : '';
     const by = n.payload?.by ? ` · ${n.payload.by}` : '';
     return `${base}${code}${by}`.trim();
+  };
+
+  // Alert-type notifications have no ticket to open — clicking one shows a popup with the
+  // specific error plus a hint on what to do; for a broken mailbox it offers a shortcut to
+  // the email-connection page where the App Password is re-entered.
+  const showAlertDetail = (n: NotificationItem): void => {
+    const help = t(`notif.help.${n.type}`, { defaultValue: '', ...(n.payload ?? {}) });
+    const content = (
+      <div>
+        <div>{label(n)}</div>
+        {help && (
+          <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+            {help}
+          </Text>
+        )}
+      </div>
+    );
+    if (n.type === 'mailbox_down') {
+      modal.confirm({
+        title: t('notif.detailTitle'),
+        icon: <ExclamationCircleOutlined style={{ color: '#D14343' }} />,
+        content,
+        okText: t('notif.gotoEmailConfig'),
+        cancelText: t('notif.close'),
+        onOk: () => navigate('/admin/email-connection'),
+      });
+    } else {
+      modal.info({ title: t('notif.detailTitle'), content, okText: t('notif.close') });
+    }
+  };
+
+  const onClickItem = (n: NotificationItem): void => {
+    if (!n.readAt) markRead.mutate(n.id);
+    setOpen(false);
+    if (n.payload?.ticketId) {
+      navigate(`/tickets/${n.payload.ticketId}`);
+      return;
+    }
+    if (ALERT_TYPES.has(n.type)) showAlertDetail(n);
   };
 
   const panel = (

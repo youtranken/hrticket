@@ -5,6 +5,7 @@ import { startHarness } from './setup.it';
 import { makeUser } from './factories/user.factory';
 import { startLoop } from '../src/modules/worker/loop-runner';
 import { MonitorService } from '../src/modules/monitor/monitor.service';
+import { alertMailboxDown, MAILBOX_ALERT_TYPE } from '../src/modules/monitor/mailbox-alert';
 import { workerHeartbeats, notifications, users } from '../src/infra/db/schema';
 import type { Mailer } from '../src/infra/mail/mailer';
 
@@ -98,6 +99,43 @@ describe('IT-OPS: worker loops + monitor', () => {
     expect(second.notified).toBe(0);
     expect(await harness!.db.select().from(notifications)).toHaveLength(expected);
     expect(sentTo).toHaveLength(1);
+  });
+
+  it('IT-OPS-008: a failing mailbox alerts THAT project\'s admins + SSA only, deduped 1/hour', async () => {
+    if (!ready) return;
+    // Seed creates projects hris=1, cnb=2 and one SSA in project 1 (global by role).
+    const adminHris = (await makeUser(harness!.db, { projectId: 1, email: 'admin-hris@t.local', role: 'admin' }))!;
+    const adminCnb = (await makeUser(harness!.db, { projectId: 2, email: 'admin-cnb@t.local', role: 'admin' }))!;
+    await makeUser(harness!.db, { projectId: 2, email: 'member-cnb@t.local', role: 'member' });
+    const ssa = await harness!.db.select({ id: users.id }).from(users).where(eq(users.role, 'ssa'));
+
+    // The CNB (project 2) mailbox fails.
+    const n = await alertMailboxDown({ projectId: 2, projectKey: 'cnb', projectName: 'C&B', error: 'Invalid credentials' });
+
+    // Recipients = CNB admin + every SSA; NEVER the HRIS admin, NEVER the CNB member.
+    const expected = 1 + ssa.length;
+    expect(n).toBe(expected);
+    const notes = await harness!.db.select().from(notifications);
+    expect(notes).toHaveLength(expected);
+    expect(notes.every((r) => r.type === MAILBOX_ALERT_TYPE)).toBe(true);
+    const gotIds = new Set(notes.map((r) => r.actorId));
+    expect(gotIds.has(adminCnb.id)).toBe(true);
+    expect(gotIds.has(adminHris.id)).toBe(false); // the OTHER project stays silent
+    for (const s of ssa) expect(gotIds.has(s.id)).toBe(true);
+    // Payload carries which mailbox + the error, so the bell shows detail (not "System alert").
+    const payload = JSON.parse(notes[0]!.payload!) as { projectKey: string; error: string };
+    expect(payload.projectKey).toBe('cnb');
+    expect(payload.error).toContain('Invalid credentials');
+
+    // Same project within the hour → deduped, nothing new.
+    expect(await alertMailboxDown({ projectId: 2, projectKey: 'cnb', projectName: 'C&B', error: 'still down' })).toBe(0);
+    expect(await harness!.db.select().from(notifications)).toHaveLength(expected);
+
+    // A DIFFERENT project (HRIS) is a separate dedup bucket → it still alerts, and reaches
+    // at least our HRIS admin + every SSA. (Prior tests leave extra project-1 admins around —
+    // beforeEach clears notifications, not users — so assert a lower bound, not an exact count.)
+    const m = await alertMailboxDown({ projectId: 1, projectKey: 'hris', projectName: 'HRIS', error: 'timeout' });
+    expect(m).toBeGreaterThanOrEqual(1 + ssa.length);
   });
 
   it('IT-OPS: a healthy/fresh heartbeat raises no alert', async () => {

@@ -7,6 +7,7 @@ import { IntakeService } from '../intake/intake.service';
 import { repairAttachments } from '../intake/attachment-repair';
 import { ReminderService } from '../reminders/reminder.service';
 import { DiskMonitorService } from '../monitor/disk-monitor.service';
+import { alertMailboxDown } from '../monitor/mailbox-alert';
 import { startLoop } from './loop-runner';
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 60_000); // NFR3: 60s
@@ -54,7 +55,7 @@ export class WorkerRunner {
 
   private async pollAndIntake(): Promise<void> {
     const projects = await withActor(systemActor, (tx) =>
-      tx.select({ id: projectsTable.id, key: projectsTable.key }).from(projectsTable),
+      tx.select({ id: projectsTable.id, key: projectsTable.key, name: projectsTable.name }).from(projectsTable),
     );
     for (const p of projects) {
       try {
@@ -62,7 +63,13 @@ export class WorkerRunner {
         if (out.inserted > 0) this.logger.log(`${out.mailbox}: +${out.inserted} new mail`);
       } catch (e) {
         // Isolation: a failing mailbox is logged and skipped, not allowed to block the rest.
-        this.logger.error(`poll failed for project ${p.key}: ${(e as Error)?.message}`);
+        const msg = (e as Error)?.message ?? 'unknown error';
+        this.logger.error(`poll failed for project ${p.key}: ${msg}`);
+        // Surface it to THIS project's admins (+SSA), deduped 1/hour, so a wrong App
+        // Password no longer fails silently in the log — HRIS/CNB stay separate.
+        await alertMailboxDown({ projectId: p.id, projectKey: p.key, projectName: p.name, error: msg }).catch(
+          (err) => this.logger.error(`mailbox alert failed: ${(err as Error)?.message}`),
+        );
       }
     }
     const n = await this.intake.processReceived();

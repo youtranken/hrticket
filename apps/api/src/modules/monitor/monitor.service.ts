@@ -49,12 +49,13 @@ export class MonitorService {
     if (unhealthy.length === 0) return { alerted: false, notified: 0 };
 
     const reason = unhealthy.map((b) => `${b.loopName}=${b.status}`).join(', ');
-    const notified = await this.raiseAlert(reason, now);
+    const loops = unhealthy.map((b) => b.loopName);
+    const notified = await this.raiseAlert(reason, loops, now);
     return { alerted: notified > 0, reason, notified };
   }
 
   /** Insert in-app notifications + send one email, deduped to 1/hour. Returns rows made. */
-  private async raiseAlert(reason: string, now: number): Promise<number> {
+  private async raiseAlert(reason: string, loops: string[], now: number): Promise<number> {
     const oneHourAgo = new Date(now - 3_600_000);
     const recipients = await withActor(systemActor, async (tx) => {
       const recent = await tx
@@ -72,7 +73,9 @@ export class MonitorService {
         await emitNotification(tx, {
           actorId: a.id,
           type: ALERT_TYPE,
-          payload: { reason, at: new Date(now).toISOString() },
+          // `loops` lets the FE show WHICH loop is down in the user's language; `reason`
+          // stays for the email/log (English, technical).
+          payload: { reason, loops, at: new Date(now).toISOString() },
         });
       }
       return admins;

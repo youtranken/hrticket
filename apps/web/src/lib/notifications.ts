@@ -4,7 +4,20 @@ import { api } from './apiClient';
 export interface NotificationItem {
   id: number;
   type: string;
-  payload: { ticketId?: string; ticketCode?: string; by?: string; reason?: string } | null;
+  payload:
+    | {
+        ticketId?: string;
+        ticketCode?: string;
+        by?: string;
+        reason?: string;
+        // Worker-liveness alert: which loops are down (FE translates the names).
+        loops?: string[];
+        // Per-mailbox alert (mailbox_down): which project + the error text.
+        projectKey?: string;
+        projectName?: string;
+        error?: string;
+      }
+    | null;
   readAt: string | null;
   createdAt: string;
 }
