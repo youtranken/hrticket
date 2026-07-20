@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar, Button, Space, Tag, Tooltip, Typography } from 'antd';
-import { DownOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { DownOutlined, PaperClipOutlined, SendOutlined } from '@ant-design/icons';
 import type { TicketMessage } from '../../lib/tickets';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { FileCard } from '../../components/FileCard';
@@ -267,15 +267,24 @@ function MailRow({
         </Text>
         <span style={{ flex: 1 }} />
         {onForward && !foreign && !m.isInternal && (
-          <a
-            style={{ fontSize: 12 }}
+          <Button
+            size="small"
+            icon={<SendOutlined />}
             onClick={(e) => {
               e.stopPropagation();
               onForward(m);
             }}
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: palette.primary,
+              background: `${palette.primary}14`, // ~8% navy tint highlight
+              borderColor: `${palette.primary}40`,
+              borderRadius: 8,
+            }}
           >
             {t('compose.forwardAction')}
-          </a>
+          </Button>
         )}
         <DownOutlined style={{ fontSize: 11, color: '#8C97A8' }} />
       </div>

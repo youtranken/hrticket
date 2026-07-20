@@ -13,7 +13,6 @@ import {
   List,
   Alert,
   Skeleton,
-  FloatButton,
   Modal,
   Table,
   Spin,
@@ -28,7 +27,6 @@ import {
   MoreOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
-  UpOutlined,
   HistoryOutlined,
 } from '@ant-design/icons';
 import { hasCap, useMe } from '../../lib/auth';
@@ -41,6 +39,7 @@ import {
 } from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
+import { ScrollProgress } from '../../components/ScrollProgress';
 import { MailThread, type MessageAttachment } from './MailThread';
 import { ComposeBox } from './ComposeBox';
 import { AssignControls } from './AssignControls';
@@ -116,8 +115,19 @@ export function TicketDetailPage() {
   }, [msgCount]);
 
   // Forward mode: the bubble's link selects a message, the ComposeBox opens its
-  // Forward tab. The compose sits below the thread — bring it into view.
+  // Forward tab. The compose sits below the thread — bring the input into view.
   const [forwardMsg, setForwardMsg] = useState<TicketMessage | null>(null);
+  const composeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!forwardMsg) return;
+    // Wait a tick so ComposeBox has switched to the (taller) Forward tab, then scroll the
+    // input area itself into view — not just the end of the thread above it.
+    const id = window.setTimeout(
+      () => composeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      120,
+    );
+    return () => window.clearTimeout(id);
+  }, [forwardMsg]);
 
   // Skeleton mirrors the real layout (header card + a couple of message bubbles) so
   // the page doesn't jump when data lands — a lone off-center Spin read as broken.
@@ -347,10 +357,7 @@ export function TicketDetailPage() {
               (me.role === 'team_lead' &&
                 ticket.categoryId !== null &&
                 (me.groups ?? []).includes(ticket.categoryId)))
-              ? (msg) => {
-                  setForwardMsg(msg);
-                  bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                }
+              ? (msg) => setForwardMsg(msg) // scroll handled by the effect below, once the Forward tab has expanded
               : undefined
           }
         />
@@ -362,23 +369,19 @@ export function TicketDetailPage() {
           {t('lifecycle.closedBanner')}
         </StateBanner>
       ) : (
-        <ComposeBox
-          key={id}
-          ticketId={id}
-          status={ticket.status}
-          forward={forwardMsg}
-          onForwardDone={() => setForwardMsg(null)}
-        />
+        <div ref={composeRef} style={{ scrollMarginTop: 80 }}>
+          <ComposeBox
+            key={id}
+            ticketId={id}
+            status={ticket.status}
+            forward={forwardMsg}
+            onForwardDone={() => setForwardMsg(null)}
+          />
+        </div>
       )}
 
-      {/* Quick jump back to the top of a long thread (#9) — branded navy pill with a tooltip. */}
-      <FloatButton.BackTop
-        visibilityHeight={300}
-        type="primary"
-        icon={<UpOutlined />}
-        tooltip={t('common.backToTop')}
-        style={{ insetInlineEnd: 28, insetBlockEnd: 28 }}
-      />
+      {/* Back-to-top that doubles as a 0→100% scroll-progress meter (ring + %). */}
+      <ScrollProgress />
     </Space>
   );
 }
