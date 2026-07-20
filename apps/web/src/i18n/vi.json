@@ -128,7 +128,7 @@
   "compose.forward": "Forward",
   "compose.forwardAction": "Forward",
   "compose.forwardingOf": "Đang forward mail của {{from}} ({{time}})",
-  "compose.forwardHint": "Tiêu đề gửi đi: {{subject}} — tệp đính kèm của mail gốc KHÔNG tự gửi kèm.",
+  "compose.forwardHint": "Tiêu đề gửi đi: {{subject}} — kèm các mail cũ hơn trong luồng (trích dẫn bên dưới). Tệp đính kèm của mail gốc KHÔNG tự gửi kèm.",
   "compose.forwardPlaceholder": "Lời nhắn kèm theo (không bắt buộc)…",
   "compose.forwardSend": "Gửi forward",
   "compose.forwarded": "Đã forward",

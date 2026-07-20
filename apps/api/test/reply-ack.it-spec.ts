@@ -360,6 +360,86 @@ describe('IT-REPLY/ACK: reply threading + auto-ack', () => {
     expect(safe).toContain('Ticket:');
   });
 
+  it('IT-FWD-001: forward quotes OLDER messages Gmail-style, never the newer ones', async () => {
+    if (!ready) return;
+    // Thread: MSG-ONE (inbound) → MSG-TWO (our reply) → MSG-THREE (inbound). Forwarding
+    // MSG-TWO must carry MSG-ONE below it but NOT MSG-THREE; forwarding MSG-ONE carries
+    // only itself. (Mirrors Gmail's per-message forward: history below, nothing after.)
+    const t = await ingest({
+      from: 'req@x.com',
+      to: HRIS_BOX,
+      subject: 'History',
+      text: 'MSG-ONE body',
+      messageId: '<fwd-hist-1@x.com>',
+    });
+    await harness!.db.update(tickets).set({ assigneeId: agent.id }).where(eq(tickets.id, t.id));
+
+    // The seeded inbound is msg 1; add a middle + a newer message, strictly later.
+    const [m1] = await harness!.db
+      .select({ id: ticketMessages.id, createdAt: ticketMessages.createdAt })
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, t.id), eq(ticketMessages.direction, 'inbound')));
+    await harness!.db.insert(ticketMessages).values([
+      {
+        ticketId: t.id,
+        direction: 'outbound',
+        fromAddr: HRIS_BOX,
+        toAddrs: ['req@x.com'],
+        bodyText: 'MSG-TWO body',
+        isInternal: false,
+        createdAt: new Date(m1!.createdAt.getTime() + 60_000),
+      },
+      {
+        ticketId: t.id,
+        direction: 'inbound',
+        fromAddr: 'req@x.com',
+        toAddrs: [HRIS_BOX],
+        bodyText: 'MSG-THREE body',
+        isInternal: false,
+        createdAt: new Date(m1!.createdAt.getTime() + 120_000),
+      },
+    ]);
+    const [mid] = await harness!.db
+      .select({ id: ticketMessages.id })
+      .from(ticketMessages)
+      .where(and(eq(ticketMessages.ticketId, t.id), eq(ticketMessages.bodyText, 'MSG-TWO body')));
+
+    const bodyOf = async (outMsgId: string): Promise<string> => {
+      const [out] = await withActor(systemActor, (tx) =>
+        tx
+          .select({ text: ticketMessages.bodyText, html: ticketMessages.bodyHtmlSafe })
+          .from(ticketMessages)
+          .where(eq(ticketMessages.messageId, outMsgId)),
+      );
+      return `${out!.text ?? ''}\n${out!.html ?? ''}`;
+    };
+
+    // Forward the MIDDLE message → older quoted, newer excluded.
+    const fwdMid = await reply.forward(agent, t.id, {
+      to: ['newguy@z.com'],
+      body: 'FYI',
+      ticketMessageId: mid!.id,
+      confirmNewRecipients: true,
+    });
+    expect('messageId' in fwdMid).toBe(true);
+    const midBody = await bodyOf((fwdMid as { messageId: string }).messageId);
+    expect(midBody).toContain('MSG-TWO body'); // the forwarded message itself
+    expect(midBody).toContain('MSG-ONE body'); // older → quoted below
+    expect(midBody).not.toContain('MSG-THREE body'); // newer → never included
+
+    // Forward the FIRST message → only itself (nothing came before it).
+    const fwdFirst = await reply.forward(agent, t.id, {
+      to: ['newguy@z.com'],
+      body: 'FYI',
+      ticketMessageId: m1!.id,
+      confirmNewRecipients: true,
+    });
+    const firstBody = await bodyOf((fwdFirst as { messageId: string }).messageId);
+    expect(firstBody).toContain('MSG-ONE body');
+    expect(firstBody).not.toContain('MSG-TWO body');
+    expect(firstBody).not.toContain('MSG-THREE body');
+  });
+
   it('IT-REPLY-003: outbound message + outbox row are atomic — fail mid-tx rolls back both', async () => {
     if (!ready) return;
     const t = await ingest({

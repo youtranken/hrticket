@@ -4,7 +4,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, sql } from 'drizzle-orm';
 import type { TicketStatus } from '@hris/shared';
 import { withActor } from '../../infra/db/with-actor';
 import { tickets, ticketMessages, participants, categories, drafts } from '../../infra/db/schema';
@@ -141,6 +141,39 @@ function forwardedBlock(msg: {
     `</div><br>${innerHtml}</div>`;
   const text = `\n\n${lines.join('\n')}\n\n${msg.bodyText ?? ''}`;
   return { html, text };
+}
+
+/**
+ * Gmail-style nested quote of the messages OLDER than the one being forwarded, so a
+ * forwarded mid-thread message carries the conversation history below it — newest-earlier
+ * outermost, oldest innermost — but NEVER the messages that came after it. Forward the
+ * first message → no history; forward the last → the whole thread. `earlier` must be
+ * oldest→newest. Mirrors forwardedBlock's img-stripping + safe-HTML handling.
+ */
+function quotedHistoryBlock(
+  earlier: Array<{ createdAt: Date; fromAddr: string; bodyHtmlSafe: string | null; bodyText: string | null }>,
+): { html: string; text: string } {
+  if (earlier.length === 0) return { html: '', text: '' };
+  const attr = (m: { createdAt: Date; fromAddr: string }): string => {
+    const when = m.createdAt.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false });
+    return `Vào / On ${when}, <${m.fromAddr}> đã viết / wrote:`;
+  };
+  // HTML: build inside-out (oldest first) so the newest-earlier ends up the outermost quote.
+  let html = '';
+  for (const m of earlier) {
+    const body = (m.bodyHtmlSafe?.trim() || htmlFromText(m.bodyText ?? '')).replace(/<img\b[^>]*>/gi, '');
+    html =
+      `<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">` +
+      `<div class="gmail_attr" style="color:#5f6368">${escapeHtml(attr(m))}</div>${body}${html}</blockquote>`;
+  }
+  // Text: newest-earlier at depth 1, deepening `>` toward the oldest.
+  let text = '';
+  [...earlier].reverse().forEach((m, i) => {
+    const prefix = '> '.repeat(i + 1);
+    const bodyLines = (m.bodyText ?? '').split('\n').map((l) => prefix + l).join('\n');
+    text += `\n${prefix}${attr(m)}\n${bodyLines}`;
+  });
+  return { html: `<br>${html}`, text };
 }
 
 @Injectable()
@@ -655,16 +688,37 @@ export class ReplyService {
         });
       }
 
+      // Gmail-style: the forwarded mail carries the OLDER thread messages quoted below it
+      // (nested), but not the ones that came after — so a mid-thread forward shows history
+      // up to that point. Own-ticket, non-internal, strictly older than the forwarded mail.
+      const earlier = await tx
+        .select({
+          createdAt: ticketMessages.createdAt,
+          fromAddr: ticketMessages.fromAddr,
+          bodyHtmlSafe: ticketMessages.bodyHtmlSafe,
+          bodyText: ticketMessages.bodyText,
+        })
+        .from(ticketMessages)
+        .where(
+          and(
+            eq(ticketMessages.ticketId, ticketId),
+            eq(ticketMessages.isInternal, false),
+            lt(ticketMessages.createdAt, msg.createdAt),
+          ),
+        )
+        .orderBy(asc(ticketMessages.createdAt));
+
       // ticket_messages stores no subject — reconstruct the forwarded mail's display
       // subject from the ticket's (outbound replies went out as `Re: <subject>`).
       const fwd = forwardedBlock({
         ...msg,
         subject: msg.direction === 'outbound' ? replySubject(t.subject) : t.subject,
       });
+      const hist = quotedHistoryBlock(earlier);
       const intro = input.body?.trim() ?? '';
       const introHtml = intro ? htmlFromText(intro) : '';
-      const bodyText = `${intro}${codeFooterText(t.ticketCode)}${fwd.text}`;
-      const bodyHtml = `${introHtml}${codeFooterHtml(t.ticketCode)}${fwd.html}`;
+      const bodyText = `${intro}${codeFooterText(t.ticketCode)}${fwd.text}${hist.text}`;
+      const bodyHtml = `${introHtml}${codeFooterHtml(t.ticketCode)}${fwd.html}${hist.html}`;
 
       const res = await sendOutboundMail(tx, {
         projectId: t.projectId,
@@ -692,6 +746,7 @@ export class ReplyService {
         newValue: {
           messageId: res.messageId,
           forwardedTicketMessageId: msg.id,
+          includedHistory: earlier.length, // older messages quoted below the forwarded mail
           to: input.to,
           cc: input.cc ?? [],
           bcc: input.bcc ?? [],

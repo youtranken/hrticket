@@ -128,7 +128,7 @@
   "compose.forward": "Forward",
   "compose.forwardAction": "Forward",
   "compose.forwardingOf": "Forwarding the mail from {{from}} ({{time}})",
-  "compose.forwardHint": "Outgoing subject: {{subject}} — the original mail's attachments are NOT re-sent.",
+  "compose.forwardHint": "Outgoing subject: {{subject}} — earlier messages in the thread are quoted below. The original mail's attachments are NOT re-sent.",
   "compose.forwardPlaceholder": "Optional note to include…",
   "compose.forwardSend": "Send forward",
   "compose.forwarded": "Forwarded",
