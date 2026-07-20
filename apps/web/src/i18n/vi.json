@@ -272,6 +272,7 @@
   "users.status": "Trạng thái",
   "users.activeTag": "Active",
   "users.disabledTag": "Inactive",
+  "users.showInactive": "Hiện cả người đã ngưng",
   "users.enable": "Kích hoạt",
   "users.disable": "Vô hiệu hóa",
   "users.reset": "Reset mật khẩu",

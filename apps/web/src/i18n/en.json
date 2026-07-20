@@ -272,6 +272,7 @@
   "users.status": "Status",
   "users.activeTag": "Active",
   "users.disabledTag": "Inactive",
+  "users.showInactive": "Show inactive",
   "users.enable": "Activate",
   "users.disable": "Deactivate",
   "users.reset": "Reset password",

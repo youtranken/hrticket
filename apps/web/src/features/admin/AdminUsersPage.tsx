@@ -12,6 +12,7 @@ import {
   Select,
   Space,
   Switch,
+  Checkbox,
   Dropdown,
   Modal,
   Typography,
@@ -68,6 +69,8 @@ export function AdminUsersPage() {
   const { data: me } = useMe();
   const { data: users = [], isLoading, refetch } = useAdminUsers();
   const [q, setQ] = useState('');
+  // Default view is Active-only; disabled users are hidden until the admin opts in.
+  const [showInactive, setShowInactive] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [moving, setMoving] = useState<AdminUser | null>(null);
@@ -85,11 +88,12 @@ export function AdminUsersPage() {
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return users;
-    return users.filter(
+    const base = showInactive ? users : users.filter((u) => !u.disabled);
+    if (!needle) return base;
+    return base.filter(
       (u) => u.name.toLowerCase().includes(needle) || u.email.toLowerCase().includes(needle),
     );
-  }, [users, q]);
+  }, [users, q, showInactive]);
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['admin', 'users'] });
@@ -175,12 +179,17 @@ export function AdminUsersPage() {
       <PeopleTabBar />
       <Card title={t('menu.users')}>
         <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }}>
-        <Input.Search
-          allowClear
-          placeholder={t('users.search')}
-          style={{ width: 280 }}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <Space>
+          <Input.Search
+            allowClear
+            placeholder={t('users.search')}
+            style={{ width: 280 }}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}>
+            {t('users.showInactive')}
+          </Checkbox>
+        </Space>
         <Button type="primary" onClick={() => setCreating(true)}>
           {t('users.create')}
         </Button>
@@ -270,11 +279,8 @@ export function AdminUsersPage() {
             title: t('users.status'),
             dataIndex: 'disabled',
             width: 140,
-            filters: [
-              { text: t('users.activeTag'), value: false },
-              { text: t('users.disabledTag'), value: true },
-            ],
-            onFilter: (val, u: AdminUser) => u.disabled === val,
+            // Active/inactive visibility is governed by the "show inactive" checkbox above
+            // (default hides disabled users) — no per-column filter to compete with it.
             // A clear Active ⇄ Disabled toggle (with confirm) instead of a "lock" button.
             render: (_: unknown, u: AdminUser) =>
               canManage(u) ? (
