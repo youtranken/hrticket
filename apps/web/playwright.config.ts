@@ -19,6 +19,9 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:8080',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // Slow the browser down for a watchable demo: run headed with E2E_SLOWMO=600.
+    // Default 0 keeps CI at full speed.
+    launchOptions: { slowMo: Number(process.env.E2E_SLOWMO ?? 0) },
   },
   // Desktop-first (≥1280px per the responsive scope).
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

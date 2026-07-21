@@ -94,6 +94,34 @@ export const categoryKeywords = pgTable(
   ],
 );
 
+/**
+ * Sender-domain routing rules (FR104, Story 4.7). Map a From-address glob (`*@phth.com`)
+ * OR an exact address (`an@phth.com`, no `*`) to a category. Used as the SAFETY NET when
+ * keyword classification does NOT yield a single match: instead of falling to "Khác", mail
+ * from a known company domain lands in that company's pool. Per-project unique on pattern
+ * (one domain maps to at most one category); a company with many domains = many rows.
+ */
+export const categorySenderRules = pgTable(
+  'category_sender_rules',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id),
+    pattern: text('pattern').notNull(),
+    categoryId: integer('category_id')
+      .notNull()
+      .references(() => categories.id),
+    createdBy: uuid('created_by').references(() => users.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_category_sender_rule_project').on(t.projectId),
+    // One pattern maps to at most one category per project (real conflict target).
+    unique('uq_category_sender_rule').on(t.projectId, t.pattern),
+  ],
+);
+
 /** User ↔ category membership (FR58). 1 user belongs to n categories. */
 export const userGroupMembership = pgTable(
   'user_group_membership',

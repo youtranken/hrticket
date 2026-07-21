@@ -54,6 +54,7 @@ export interface AdminCategory {
   isSystem: boolean;
   disabled: boolean;
   keywords: string[];
+  senderPatterns: string[];
   ticketCount: number;
   autoAssign: { strategy: string; members: AutoAssignMember[] } | null;
 }
@@ -83,12 +84,20 @@ export function createCategory(input: {
   nameEn: string;
   isSensitive?: boolean;
   keywords?: string[];
+  senderPatterns?: string[];
 }): Promise<{ id: number }> {
   return api('/admin/categories', { method: 'POST', body: JSON.stringify(input) });
 }
 export function updateCategory(
   id: number,
-  patch: { nameVi?: string; nameEn?: string; isSensitive?: boolean; disabled?: boolean; keywords?: string[] },
+  patch: {
+    nameVi?: string;
+    nameEn?: string;
+    isSensitive?: boolean;
+    disabled?: boolean;
+    keywords?: string[];
+    senderPatterns?: string[];
+  },
 ): Promise<{ ok: true }> {
   return api(`/admin/categories/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }

@@ -10,6 +10,7 @@ import { withActor, systemActor, type DbTx } from '../../infra/db/with-actor';
 import {
   categories,
   categoryKeywords,
+  categorySenderRules,
   autoAssignConfig,
   autoAssignMembers,
   assignCursors,
@@ -32,6 +33,7 @@ export interface CategoryAdminView {
   isSystem: boolean;
   disabled: boolean;
   keywords: string[];
+  senderPatterns: string[];
   ticketCount: number;
   autoAssign: { strategy: string; members: { userId: string; name: string; position: number }[] } | null;
 }
@@ -69,6 +71,10 @@ export class AdminConfigService {
         .select({ categoryId: categoryKeywords.categoryId, keyword: categoryKeywords.keyword })
         .from(categoryKeywords)
         .where(inArray(categoryKeywords.categoryId, ids));
+      const senderRules = await tx
+        .select({ categoryId: categorySenderRules.categoryId, pattern: categorySenderRules.pattern })
+        .from(categorySenderRules)
+        .where(inArray(categorySenderRules.categoryId, ids));
       const counts = (await tx.execute(sql`
         SELECT category_id, count(*)::int AS n FROM tickets
         WHERE category_id IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
@@ -103,6 +109,7 @@ export class AdminConfigService {
           isSystem: c.isSystem,
           disabled: c.disabled,
           keywords: kws.filter((k) => k.categoryId === c.id).map((k) => k.keyword),
+          senderPatterns: senderRules.filter((s) => s.categoryId === c.id).map((s) => s.pattern),
           ticketCount: countBy.get(c.id) ?? 0,
           autoAssign: cfg
             ? {
@@ -121,7 +128,7 @@ export class AdminConfigService {
   async createCategory(
     actor: SessionUser,
     projectId: number,
-    input: { nameVi: string; nameEn: string; isSensitive?: boolean; keywords?: string[] },
+    input: { nameVi: string; nameEn: string; isSensitive?: boolean; keywords?: string[]; senderPatterns?: string[] },
   ): Promise<{ id: number }> {
     return withActor(systemActor, async (tx) => {
       const [row] = await tx
@@ -136,11 +143,13 @@ export class AdminConfigService {
         .returning({ id: categories.id });
       if (!row) throw new ConflictException('A category with that English name already exists');
       await this.replaceKeywords(tx, row.id, input.keywords ?? []);
+      await this.replaceSenderRules(tx, actor, projectId, row.id, input.senderPatterns ?? []);
       await this.audit(tx, actor, projectId, 'category.created', row.id, null, {
         nameVi: input.nameVi,
         nameEn: input.nameEn,
         isSensitive: input.isSensitive ?? false,
         keywords: input.keywords ?? [],
+        senderPatterns: input.senderPatterns ?? [],
       });
       return { id: row.id };
     });
@@ -150,7 +159,14 @@ export class AdminConfigService {
     actor: SessionUser,
     projectId: number,
     id: number,
-    patch: { nameVi?: string; nameEn?: string; isSensitive?: boolean; disabled?: boolean; keywords?: string[] },
+    patch: {
+      nameVi?: string;
+      nameEn?: string;
+      isSensitive?: boolean;
+      disabled?: boolean;
+      keywords?: string[];
+      senderPatterns?: string[];
+    },
   ): Promise<{ ok: true }> {
     return withActor(systemActor, async (tx) => {
       const cat = await this.loadCategory(tx, projectId, id);
@@ -165,6 +181,9 @@ export class AdminConfigService {
         await tx.update(categories).set(set).where(eq(categories.id, id));
       }
       if (patch.keywords !== undefined) await this.replaceKeywords(tx, id, patch.keywords);
+      if (patch.senderPatterns !== undefined) {
+        await this.replaceSenderRules(tx, actor, projectId, id, patch.senderPatterns);
+      }
 
       await this.audit(tx, actor, projectId, 'category.updated', id, cat, { ...patch });
       return { ok: true as const };
@@ -185,6 +204,7 @@ export class AdminConfigService {
 
       // Clear dependents first (FK order), then the category.
       await tx.delete(categoryKeywords).where(eq(categoryKeywords.categoryId, id));
+      await tx.delete(categorySenderRules).where(eq(categorySenderRules.categoryId, id));
       await tx.delete(userGroupMembership).where(eq(userGroupMembership.categoryId, id));
       await tx.delete(assignCursors).where(eq(assignCursors.categoryId, id));
       const cfg = await tx
@@ -384,6 +404,90 @@ export class AdminConfigService {
         .insert(categoryKeywords)
         .values({ categoryId, keyword: kw })
         .onConflictDoNothing({ target: [categoryKeywords.categoryId, categoryKeywords.keyword] });
+    }
+  }
+
+  /**
+   * Replace a category's sender-domain rules (FR104). Patterns are lowercased (matching is
+   * case-insensitive; storing lower keeps the per-project unique key from admitting
+   * `An@x`/`an@x` twice), trimmed, de-duped. A non-empty pattern MUST contain "@" → 422.
+   * A pattern already owned by ANOTHER category in the project → 409 (unique per project;
+   * one domain routes to one pool).
+   */
+  private async replaceSenderRules(
+    tx: DbTx,
+    actor: SessionUser,
+    projectId: number,
+    categoryId: number,
+    patterns: string[],
+  ): Promise<void> {
+    const clean = [...new Set(patterns.map((p) => p.trim().toLowerCase()).filter((p) => p.length > 0))];
+    for (const p of clean) {
+      // Structural check: exactly one "@", a non-empty local part (may be the glob "*"),
+      // and a domain that contains at least one real char — so catch-alls (`*@*`, `*@`),
+      // empty-local (`@x`), and whitespace patterns are rejected (a `*@*` would otherwise
+      // become LIKE `%@%` and hijack ALL routing, killing the keyword fallback).
+      const at = p.indexOf('@');
+      const local = at >= 0 ? p.slice(0, at) : '';
+      const domain = at >= 0 ? p.slice(at + 1) : '';
+      const valid =
+        at >= 0 &&
+        at === p.lastIndexOf('@') &&
+        local.length > 0 &&
+        !/\s/.test(p) &&
+        /[a-z0-9]/.test(domain);
+      if (!valid) {
+        throw new UnprocessableEntityException(
+          `Invalid sender pattern (expected local@domain, e.g. *@phth.com): "${p}"`,
+        );
+      }
+    }
+    if (clean.length) {
+      // A pattern already used by ANOTHER category in this project. If that owner is ACTIVE
+      // → real conflict (409). If the owner is DISABLED or SYSTEM its rule is inert (matching
+      // excludes those), so the new category may TAKE IT OVER — we drop the dead rule here.
+      // Without this, a disabled company would strand its domain forever (can't be reused,
+      // and if it still has tickets it can't be deleted either).
+      const existing = await tx
+        .select({
+          id: categorySenderRules.id,
+          pattern: categorySenderRules.pattern,
+          ownerId: categorySenderRules.categoryId,
+          ownerDisabled: categories.disabled,
+          ownerSystem: categories.isSystem,
+        })
+        .from(categorySenderRules)
+        .innerJoin(categories, eq(categories.id, categorySenderRules.categoryId))
+        .where(and(eq(categorySenderRules.projectId, projectId), inArray(categorySenderRules.pattern, clean)));
+      const reclaim: number[] = [];
+      for (const r of existing) {
+        if (r.ownerId === categoryId) continue; // own rule — re-inserted after the delete below
+        if (r.ownerDisabled || r.ownerSystem) {
+          reclaim.push(r.id); // inert owner → let this category reclaim the domain
+        } else {
+          throw new ConflictException(`Sender pattern "${r.pattern}" already routes to another category`);
+        }
+      }
+      if (reclaim.length) {
+        await tx.delete(categorySenderRules).where(inArray(categorySenderRules.id, reclaim));
+      }
+    }
+    await tx.delete(categorySenderRules).where(eq(categorySenderRules.categoryId, categoryId));
+    for (const pattern of clean) {
+      // The pre-check above catches the common cross-category collision, but a concurrent
+      // request could claim the same (project, pattern) between that SELECT and this INSERT.
+      // Surface that race as a real 409 instead of onConflictDoNothing silently swallowing
+      // it (which would return 200 with the rule missing).
+      try {
+        await tx
+          .insert(categorySenderRules)
+          .values({ projectId, categoryId, pattern, createdBy: actor.id });
+      } catch (e) {
+        if ((e as { code?: string }).code === '23505') {
+          throw new ConflictException(`Sender pattern "${pattern}" already routes to another category`);
+        }
+        throw e;
+      }
     }
   }
 

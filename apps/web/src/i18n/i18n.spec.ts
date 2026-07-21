@@ -64,7 +64,10 @@ describe('i18n key usage (every referenced key exists)', () => {
     const catalog = new Set(viKeys);
     const orphans: string[] = [];
     for (const [key, file] of usedKeys()) {
-      if (!catalog.has(key)) orphans.push(`${key}  (${file})`);
+      // A pluralized key (`t('x.count', {count})`) resolves to the `_one`/`_other`
+      // variants in the catalog, never the bare base — accept either variant.
+      const defined = catalog.has(key) || catalog.has(`${key}_one`) || catalog.has(`${key}_other`);
+      if (!defined) orphans.push(`${key}  (${file})`);
     }
     expect(orphans, `unknown i18n keys referenced:\n${orphans.join('\n')}`).toEqual([]);
   });

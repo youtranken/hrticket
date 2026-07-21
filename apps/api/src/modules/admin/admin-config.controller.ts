@@ -22,11 +22,16 @@ import { ProjectContextService } from '../auth/project-context.service';
 import { AdminConfigService } from './admin-config.service';
 
 const keywords = z.array(z.string()).optional();
+// Sender-domain routing patterns (FR104): From-address globs / exact addresses. Deep
+// validation ("@" present, per-project uniqueness) lives in the service so it can answer
+// 422/409; here we only shape it as an optional string array.
+const senderPatterns = z.array(z.string()).optional();
 const createCategory = z.object({
   nameVi: z.string().min(1),
   nameEn: z.string().min(1),
   isSensitive: z.boolean().optional(),
   keywords,
+  senderPatterns,
 });
 const updateCategory = z.object({
   nameVi: z.string().min(1).optional(),
@@ -34,6 +39,7 @@ const updateCategory = z.object({
   isSensitive: z.boolean().optional(),
   disabled: z.boolean().optional(),
   keywords,
+  senderPatterns,
 });
 const autoAssign = z.object({
   strategy: z.enum(['round_robin', 'least_load']),

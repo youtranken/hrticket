@@ -113,6 +113,19 @@ function CategoriesTab() {
             ),
           },
           {
+            title: t('admin.senderDomains'),
+            dataIndex: 'senderPatterns',
+            render: (p: string[] = []) => (
+              <Space size={4} wrap>
+                {p.map((w) => (
+                  <Tag key={w} color="blue">
+                    {w}
+                  </Tag>
+                ))}
+              </Space>
+            ),
+          },
+          {
             title: t('admin.sensitive'),
             dataIndex: 'isSensitive',
             width: 110,
@@ -210,17 +223,18 @@ function CategoryDrawer({
   const [nameEn, setNameEn] = useState(cat?.nameEn ?? '');
   const [sensitive, setSensitive] = useState(cat?.isSensitive ?? false);
   const [keywords, setKeywords] = useState<string[]>(cat?.keywords ?? []);
+  const [senderPatterns, setSenderPatterns] = useState<string[]>(cat?.senderPatterns ?? []);
   const [saving, setSaving] = useState(false);
 
-  // Categories are pure taxonomy now — name, keywords, sensitivity. People & work
-  // distribution (membership + auto-assign rotation) live together in /admin/groups.
+  // Categories are pure taxonomy now — name, keywords, sender domains, sensitivity. People
+  // & work distribution (membership + auto-assign rotation) live together in /admin/groups.
   const save = async () => {
     setSaving(true);
     try {
       if (isNew) {
-        await createCategory({ nameVi, nameEn, isSensitive: sensitive, keywords });
+        await createCategory({ nameVi, nameEn, isSensitive: sensitive, keywords, senderPatterns });
       } else {
-        await updateCategory(cat!.id, { nameVi, nameEn, isSensitive: sensitive, keywords });
+        await updateCategory(cat!.id, { nameVi, nameEn, isSensitive: sensitive, keywords, senderPatterns });
       }
       message.success(t('admin.saved'));
       onSaved();
@@ -266,6 +280,20 @@ function CategoryDrawer({
             placeholder={t('admin.keywordsHint')}
             tokenSeparators={[',']}
           />
+        </div>
+        <div>
+          <Text>{t('admin.senderDomains')}</Text>
+          <Select
+            mode="tags"
+            style={{ width: '100%' }}
+            value={senderPatterns}
+            onChange={setSenderPatterns}
+            placeholder={t('admin.senderDomainsHint')}
+            tokenSeparators={[',', ' ']}
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('admin.senderDomainsNote')}
+          </Text>
         </div>
       </Space>
     </Drawer>

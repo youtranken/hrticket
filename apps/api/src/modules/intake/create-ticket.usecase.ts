@@ -5,7 +5,8 @@ import { writeAudit } from '../../infra/audit/audit';
 import { nextTicketCode } from '../tickets/ticket-code';
 import { ingestAttachments } from './attachments';
 import { enqueueAutoAck } from './auto-ack';
-import { classifyTicket, otherCategoryId } from '../routing/classify.service';
+import { classifyTicket, otherCategoryId, type ClassifyResult } from '../routing/classify.service';
+import { matchSenderDomain } from '../routing/sender-domain.service';
 import { applyAutoTags } from '../routing/auto-tag.service';
 import { autoAssign } from '../routing/auto-assign.service';
 import { sanitizeEmailHtml } from '../email-engine/sanitize';
@@ -48,14 +49,33 @@ export async function createTicketFromMail(
 ): Promise<CreateTicketResult> {
   const { projectId, mailbox, parsed } = input;
   const isJunk = input.isJunk ?? false;
-  // Junk-rule mail is unclassified by definition → forced to "Khác" (FR103); normal
-  // mail runs keyword classification (Story 4.1).
-  const classified = isJunk
-    ? null
-    : await classifyTicket(tx, projectId, parsed.subject, parsed.bodyText);
-  const categoryId = isJunk ? await otherCategoryId(tx, projectId) : classified!.categoryId;
-  const ticketCode = await nextTicketCode(tx, projectId);
   const requesterEmail = parsed.from?.address ?? 'unknown@unknown';
+
+  // Category routing (FR104, Story 4.7 — DOMAIN-PRIMARY since categories are companies).
+  // The sender's company domain is the clean, non-overlapping signal, so it decides first;
+  // keyword classification (Story 4.1) is only a FALLBACK for senders with no domain rule
+  // (e.g. a personal gmail that names a topic). Junk is unclassified → forced to "Khác".
+  let categoryId: number;
+  let classifySource: 'sender_domain' | 'keyword' | 'none';
+  let senderRuleId: number | null = null;
+  let classified: ClassifyResult | null = null;
+  if (isJunk) {
+    categoryId = await otherCategoryId(tx, projectId);
+    classifySource = 'none';
+  } else {
+    const domain = await matchSenderDomain(tx, projectId, requesterEmail);
+    if (domain) {
+      categoryId = domain.categoryId;
+      classifySource = 'sender_domain';
+      senderRuleId = domain.ruleId;
+    } else {
+      classified = await classifyTicket(tx, projectId, parsed.subject, parsed.bodyText);
+      categoryId = classified.categoryId;
+      classifySource = classified.reason === 'single_match' ? 'keyword' : 'none';
+    }
+  }
+
+  const ticketCode = await nextTicketCode(tx, projectId);
   const createdAt = input.createdAt ?? new Date();
 
   const [ticket] = await tx
@@ -180,6 +200,8 @@ export async function createTicketFromMail(
       isJunk,
       classifyReason: classified?.reason ?? null,
       matchedKeywords: classified?.matchedKeywords ?? [],
+      classifySource, // 'keyword' | 'sender_domain' | 'none' (FR104)
+      senderRuleId, // the category_sender_rules id when routed by domain
     },
   });
 
