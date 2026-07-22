@@ -101,11 +101,28 @@ export function RolesPage() {
           </Popconfirm>
         }
       >
+      <Space wrap size={16} style={{ marginBottom: 12 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>{t('caps.legend')}</Text>
+        <Space size={6}>
+          <Switch checked disabled size="small" />
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('caps.legendOn')}</Text>
+        </Space>
+        <Space size={6}>
+          <Switch checked={false} disabled size="small" />
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('caps.legendOff')}</Text>
+        </Space>
+        <Space size={6}>
+          <LockOutlined style={{ color: '#8c8c8c' }} />
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('caps.legendLocked')}</Text>
+        </Space>
+      </Space>
       <Table<CapabilityRow>
         rowKey="capability"
         loading={isLoading}
         dataSource={data?.rows ?? []}
         pagination={false}
+        sticky
+        scroll={{ x: 'max-content' }}
         columns={[
           {
             title: t('caps.capability'),

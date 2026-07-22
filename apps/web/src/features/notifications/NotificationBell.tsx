@@ -19,7 +19,7 @@ import {
   useMarkAllNotificationsRead,
   type NotificationItem,
 } from '../../lib/notifications';
-import { fmtDateTime, fmtRelative } from '../../lib/datetime';
+import { fmtDateTime, fmtRelative, todayVn } from '../../lib/datetime';
 import { EmptyState } from '../../components/EmptyState';
 import { NoNotificationsArt } from '../../components/illustrations/empty';
 
@@ -41,6 +41,27 @@ function glyph(type: string): { node: React.ReactNode; color: string } {
 
 function vnTime(iso: string): string {
   return fmtDateTime(iso);
+}
+
+/** Bucket notifications (already newest-first) into Today / Yesterday / Earlier day
+ *  groups so a long list is scannable at a glance (Story: notifications UX). */
+function groupByDay(
+  items: NotificationItem[],
+  t: (k: string) => string,
+): { key: string; label: string; items: NotificationItem[] }[] {
+  const today = todayVn();
+  const yesterday = new Date(Date.now() - 86_400_000).toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+  });
+  const groups: { key: string; label: string; items: NotificationItem[] }[] = [];
+  for (const n of items) {
+    const d = new Date(n.createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const key = d === today ? 'today' : d === yesterday ? 'yesterday' : 'earlier';
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(n);
+    else groups.push({ key, label: t(`notif.${key}`), items: [n] });
+  }
+  return groups;
 }
 
 /** Notifications that describe a system/health problem, not a ticket — clicking one opens
@@ -122,6 +143,38 @@ export function NotificationBell() {
     if (ALERT_TYPES.has(n.type)) showAlertDetail(n);
   };
 
+  const renderNotif = (n: NotificationItem) => {
+    const g = glyph(n.type);
+    return (
+      <List.Item
+        onClick={() => onClickItem(n)}
+        // Keyboard path: a List.Item is a plain div — without these it is
+        // unreachable by Tab and unreadable as actionable by screen readers.
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClickItem(n);
+          }
+        }}
+        style={{ cursor: 'pointer', padding: '8px 12px', background: n.readAt ? undefined : '#e6f4ff' }}
+      >
+        <List.Item.Meta
+          avatar={<span style={{ fontSize: 16, color: g.color }}>{g.node}</span>}
+          title={<Text style={{ fontSize: 13 }}>{label(n)}</Text>}
+          description={
+            <Tooltip title={vnTime(n.createdAt)}>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {fmtRelative(n.createdAt)}
+              </Text>
+            </Tooltip>
+          }
+        />
+      </List.Item>
+    );
+  };
+
   const panel = (
     <div style={{ width: 360, background: '#fff', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.15)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px' }}>
@@ -137,42 +190,27 @@ export function NotificationBell() {
           <EmptyState art={<NoNotificationsArt />} description={t('notif.empty')} imageHeight={84} />
         </div>
       ) : (
-        <List
-          size="small"
-          dataSource={items}
-          style={{ maxHeight: 420, overflowY: 'auto' }}
-          renderItem={(n) => {
-            const g = glyph(n.type);
-            return (
-              <List.Item
-                onClick={() => onClickItem(n)}
-                // Keyboard path: a List.Item is a plain div — without these it is
-                // unreachable by Tab and unreadable as actionable by screen readers.
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onClickItem(n);
-                  }
+        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+          {groupByDay(items, t).map((grp) => (
+            <div key={grp.key}>
+              <div
+                style={{
+                  padding: '5px 12px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: palette.textSecondary,
+                  background: palette.fillSubtle,
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 1,
                 }}
-                style={{ cursor: 'pointer', padding: '8px 12px', background: n.readAt ? undefined : '#e6f4ff' }}
               >
-                <List.Item.Meta
-                  avatar={<span style={{ fontSize: 16, color: g.color }}>{g.node}</span>}
-                  title={<Text style={{ fontSize: 13 }}>{label(n)}</Text>}
-                  description={
-                    <Tooltip title={vnTime(n.createdAt)}>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        {fmtRelative(n.createdAt)}
-                      </Text>
-                    </Tooltip>
-                  }
-                />
-              </List.Item>
-            );
-          }}
-        />
+                {grp.label}
+              </div>
+              <List size="small" dataSource={grp.items} renderItem={renderNotif} />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

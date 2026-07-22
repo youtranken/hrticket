@@ -84,6 +84,7 @@ export function ReminderConfigPage() {
                 <Form.Item
                   name="overdueDays"
                   label={t('reminders.overdueDays')}
+                  tooltip={t('reminders.overdueDaysHint')}
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={1} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
@@ -93,6 +94,7 @@ export function ReminderConfigPage() {
                 <Form.Item
                   name="poolUnclaimedDays"
                   label={t('reminders.poolUnclaimedDays')}
+                  tooltip={t('reminders.poolUnclaimedDaysHint')}
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={0} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
@@ -102,6 +104,7 @@ export function ReminderConfigPage() {
                 <Form.Item
                   name="digestMaxN"
                   label={t('reminders.digestMaxN')}
+                  tooltip={t('reminders.digestMaxNHint')}
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={1} max={100} style={{ width: '100%' }} />
@@ -111,6 +114,7 @@ export function ReminderConfigPage() {
                 <Form.Item
                   name="digestHour"
                   label={t('reminders.digestHour')}
+                  tooltip={t('reminders.digestHourHint')}
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={0} max={23} style={{ width: '100%' }} addonAfter="h" />
@@ -120,6 +124,7 @@ export function ReminderConfigPage() {
                 <Form.Item
                   name="digestMinute"
                   label={t('reminders.digestMinute')}
+                  tooltip={t('reminders.digestMinuteHint')}
                   rules={[{ required: true }]}
                 >
                   <InputNumber min={0} max={59} style={{ width: '100%' }} addonAfter="m" />
@@ -129,6 +134,7 @@ export function ReminderConfigPage() {
             <Form.Item
               name="digestEnabled"
               label={t('reminders.digestEnabled')}
+              tooltip={t('reminders.digestEnabledHint')}
               valuePropName="checked"
             >
               <Switch />
