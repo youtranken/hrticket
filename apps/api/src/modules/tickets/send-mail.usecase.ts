@@ -21,6 +21,8 @@ export interface SendOutboundInput {
   /** Stored attachments to link to this outbound message + send via SMTP (3.6). */
   attachmentIds?: string[];
   idempotencyKey?: string;
+  /** Undo Send (12.9): hold the outbox row this many seconds before it may be sent. */
+  holdSeconds?: number;
 }
 
 export interface SendOutboundResult {
@@ -65,6 +67,8 @@ export async function sendOutboundMail(
       inReplyTo: input.inReplyTo ?? null,
       references: input.references ?? null,
       isAutoReply: input.isAutoReply ?? false,
+      // 12.1: our outbound goes to the bottom at send time (ordering key = received_at).
+      receivedAt: new Date(),
     })
     .returning({ id: ticketMessages.id });
   const ticketMessageId = message!.id;
@@ -100,6 +104,7 @@ export async function sendOutboundMail(
     ticketId: input.ticketId,
     messageId,
     idempotencyKey: input.idempotencyKey,
+    holdSeconds: input.holdSeconds,
   });
 
   return { ticketMessageId, messageId, outboxId };

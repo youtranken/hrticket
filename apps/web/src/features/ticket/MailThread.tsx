@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar, Button, Space, Tag, Tooltip, Typography } from 'antd';
-import { DownOutlined, PaperClipOutlined, SendOutlined } from '@ant-design/icons';
+import {
+  DownOutlined,
+  PaperClipOutlined,
+  SendOutlined,
+  EnterOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
 import type { TicketMessage } from '../../lib/tickets';
 import { SafeMessageBody } from '../../components/SafeMessageBody';
 import { FileCard } from '../../components/FileCard';
@@ -63,11 +69,13 @@ export function MailThread({
   attByMsg,
   ownProjectKey,
   onForward,
+  onReply,
 }: {
   messages: TicketMessage[];
   attByMsg: Map<string, MessageAttachment[]>;
   ownProjectKey?: string;
   onForward?: (m: TicketMessage) => void;
+  onReply?: (m: TicketMessage, mode: 'reply' | 'replyAll') => void;
 }) {
   const { t } = useTranslation();
   const lastId = messages.at(-1)?.id;
@@ -134,6 +142,7 @@ export function MailThread({
           onToggle={() => toggle(m.id)}
           ownProjectKey={ownProjectKey}
           onForward={onForward}
+          onReply={onReply}
         />
       ))}
     </div>
@@ -148,6 +157,7 @@ function MailRow({
   onToggle,
   ownProjectKey,
   onForward,
+  onReply,
 }: {
   m: TicketMessage;
   first: boolean;
@@ -156,6 +166,7 @@ function MailRow({
   onToggle: () => void;
   ownProjectKey?: string;
   onForward?: (m: TicketMessage) => void;
+  onReply?: (m: TicketMessage, mode: 'reply' | 'replyAll') => void;
 }) {
   const { t } = useTranslation();
   const [hover, setHover] = useState(false);
@@ -266,6 +277,35 @@ function MailRow({
           {vnTime(m.createdAt)}
         </Text>
         <span style={{ flex: 1 }} />
+        {/* 12.4: per-message Reply / Reply All (Forward already existed). Same gate as
+            Forward (onReply set only when the viewer may reply). */}
+        {onReply && !foreign && !m.isInternal && (
+          <>
+            <Button
+              size="small"
+              icon={<EnterOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReply(m, 'reply');
+              }}
+              style={{ fontSize: 13, borderRadius: 8 }}
+            >
+              {/* kept English like Forward (compose.replyAction = "Reply" in both locales) */}
+              {t('compose.replyAction')}
+            </Button>
+            <Button
+              size="small"
+              icon={<TeamOutlined />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReply(m, 'replyAll');
+              }}
+              style={{ fontSize: 13, borderRadius: 8 }}
+            >
+              {t('compose.replyAllAction')}
+            </Button>
+          </>
+        )}
         {onForward && !foreign && !m.isInternal && (
           <Button
             size="small"

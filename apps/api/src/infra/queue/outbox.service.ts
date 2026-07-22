@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { DbTx } from '../db/with-actor';
 import { outbox } from '../db/schema';
 
@@ -26,6 +26,10 @@ export interface EnqueueInput {
   messageId: string;
   /** Dedup guard: two enqueues with the same key collapse to one row (AC4). */
   idempotencyKey?: string;
+  /** Undo Send (12.9): hold the row for N seconds before the worker may claim it —
+   *  next_attempt_at = now() + holdSeconds. The claim index already gates on it, so the
+   *  mail simply isn't picked up until the window passes; at-least-once is unchanged. */
+  holdSeconds?: number;
 }
 
 export interface EnqueueResult {
@@ -64,6 +68,10 @@ export async function enqueue(tx: DbTx, input: EnqueueInput): Promise<EnqueueRes
       ticketId: input.ticketId ?? null,
       messageId: input.messageId,
       idempotencyKey,
+      // 12.9: hold N seconds before the worker may claim this row (undo window).
+      ...(input.holdSeconds
+        ? { nextAttemptAt: sql`now() + make_interval(secs => ${input.holdSeconds})` }
+        : {}),
     })
     .onConflictDoNothing({ target: outbox.idempotencyKey })
     .returning({ id: outbox.id });

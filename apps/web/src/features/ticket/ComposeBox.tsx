@@ -24,6 +24,7 @@ import {
   useReplyDefaults,
   useReply,
   useForward,
+  useUndoSend,
   useNote,
   useDraft,
   useTicket,
@@ -57,6 +58,11 @@ interface Props {
   forward?: TicketMessage | null;
   /** Called when the forward is sent or cancelled — the page clears its selection. */
   onForwardDone?: () => void;
+  /** 12.4: which message the user hit Reply / Reply All on → seeds the reply tab from
+   *  THAT message's audience. Null = the default (latest-mail) reply-all. */
+  replyTarget?: { messageId: string; mode: 'reply' | 'replyAll' } | null;
+  /** Called when the per-message reply banner is dismissed (the (x)). */
+  onReplyTargetDone?: () => void;
 }
 
 /**
@@ -66,12 +72,36 @@ interface Props {
  * ticket is sensitive OR the server flags a brand-new recipient. Drafts autosave
  * server-side (3.5), per (ticket,user,kind).
  */
-export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) {
+export function ComposeBox({
+  ticketId,
+  status,
+  forward,
+  onForwardDone,
+  replyTarget,
+  onReplyTargetDone,
+}: Props) {
   const { t } = useTranslation();
   const { message } = AntApp.useApp();
   const { data: me } = useMe();
   const [tab, setTab] = useState<'reply' | 'note' | 'forward'>('reply');
   const [closeAfter, setCloseAfter] = useState(false);
+  // 12.9: an Undo Send is outstanding → block a second Send so the still-populated composer
+  // (kept for edit-and-resend) can't enqueue a DUPLICATE held mail before the window closes.
+  const [undoPending, setUndoPending] = useState(false);
+  // Undo Send (12.9): an INLINE banner (not a floating AntD notification, which doesn't
+  // mount reliably here) shows a live countdown — turning red in the final 3s — with an
+  // Undo button. Driven by OUR OWN timers; cleared on unmount.
+  const [undoBanner, setUndoBanner] = useState<{ left: number; titleKey: string } | null>(null);
+  const undoActionRef = useRef<{ outboxId: string; cleanup: () => void; resolved: boolean } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const undoTickRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  useEffect(
+    () => () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      if (undoTickRef.current) clearInterval(undoTickRef.current);
+    },
+    [],
+  );
   // Reply & Close is offered where closing is a legal shortcut (In Progress / Resolved),
   // PLUS Pending: replying wakes a snoozed ticket (Pending → In Progress on the server),
   // from which the close is legal — so "reply & close" works there too.
@@ -79,16 +109,18 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
     canTransition(status as TicketStatus, 'closed').ok || status === 'pending';
 
   const navigate = useNavigate();
-  const defaults = useReplyDefaults(ticketId, true);
+  const defaults = useReplyDefaults(ticketId, true, replyTarget);
   const replyDraft = useDraft(ticketId, 'reply');
   const noteDraft = useDraft(ticketId, 'note');
   const reply = useReply(ticketId);
+  const undoSend = useUndoSend(ticketId);
   const fwd = useForward(ticketId);
   const note = useNote(ticketId);
   // Canned reply templates: any agent may insert; only TL (who also replies) gets the
   // manage shortcut here (Admin/SSA manage from Settings — they don't see the reply tab).
   const ticket = useTicket(ticketId);
-  const templates = useReplyTemplates();
+  // 12.2: only templates matching this ticket's category (or common) are offered.
+  const templates = useReplyTemplates({ categoryId: ticket.data?.ticket.categoryId ?? undefined });
   const policy = useUploadPolicy();
   const [tplSel, setTplSel] = useState<number>();
 
@@ -98,12 +130,14 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
   // who can't reply gets only the internal-note tab; the server is still the real
   // gate. While loading, keep the tab to avoid a flash.
   const isAssignee = !!me && ticket.data?.ticket.assignee?.id === me.user.id;
-  const tlInGroup =
-    me?.role === 'team_lead' &&
+  // 12.3: any group member (Member or TL) may reply — mirrors BE canReplyTicket.
+  // Admin/SSA are administrative: they only reply when they are the assignee.
+  const inGroup =
+    (me?.role === 'member' || me?.role === 'team_lead') &&
     ticket.data?.ticket.categoryId != null &&
     (me.groups ?? []).includes(ticket.data.ticket.categoryId);
   const canReply =
-    me && ticket.data ? (isAssignee || !!tlInGroup) && hasCap(me, 'ticket.reply') : true;
+    me && ticket.data ? (isAssignee || !!inGroup) && hasCap(me, 'ticket.reply') : true;
 
   const [to, setTo] = useState<string[]>([]);
   const [cc, setCc] = useState<string[]>([]);
@@ -176,6 +210,20 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
     seeded.current = true;
   }, [replyDraft.isLoading, defaults.isLoading, replyDraft.data, defaults.data, noteDraft.data]);
 
+  // 12.4: per-message Reply / Reply All → open the reply tab and RE-SEED recipients from
+  // that specific message's audience (the `defaults` query re-fetches on target change).
+  // Body is kept (the user's in-progress text isn't discarded).
+  useEffect(() => {
+    // Let the draft-aware initial seed (above) win on mount so a saved draft's recipients
+    // aren't clobbered (12.4 AC7). Only genuine, later per-message clicks re-seed.
+    if (!seeded.current) return;
+    if (!replyTarget || !defaults.data) return;
+    setTab('reply');
+    setTo(defaults.data.to);
+    setCc(defaults.data.cc);
+    setBcc(defaults.data.bcc ?? []);
+  }, [replyTarget?.messageId, replyTarget?.mode, defaults.data]);
+
   // Autosave (debounced 2s) + flush on tab hide. Independent per kind (AC4).
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
@@ -183,7 +231,10 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       if (tab === 'reply') {
-        if (replyBody) void putDraft(ticketId, 'reply', replyBody, { to, cc, bcc }).then((r) => setDraftLabel((p) => ({ ...p, reply: r.updatedAt })));
+        // 12.9: never re-persist the reply draft while an undo window is live — the composer
+        // is kept populated on purpose; a resurrected draft = already-sent body → duplicate send.
+        if (replyBody && !undoActionRef.current)
+          void putDraft(ticketId, 'reply', replyBody, { to, cc, bcc }).then((r) => setDraftLabel((p) => ({ ...p, reply: r.updatedAt })));
       } else if (noteBody) {
         void putDraft(ticketId, 'note', noteBody).then((r) => setDraftLabel((p) => ({ ...p, note: r.updatedAt })));
       }
@@ -193,7 +244,8 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
 
   useEffect(() => {
     const save = () => {
-      if (replyBody) void putDraft(ticketId, 'reply', replyBody, { to, cc, bcc });
+      // 12.9: skip the reply draft while an undo window is live (see the autosave effect).
+      if (replyBody && !undoActionRef.current) void putDraft(ticketId, 'reply', replyBody, { to, cc, bcc });
       if (noteBody) void putDraft(ticketId, 'note', noteBody);
     };
     const flush = () => {
@@ -209,6 +261,40 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
       window.removeEventListener('beforeunload', save);
     };
   }, [replyBody, noteBody, to, cc, bcc, ticketId]);
+
+  // 12.9: resolve the Undo Send window — user clicked Undo (`doUndo`) or it elapsed.
+  const finishUndo = (doUndo: boolean) => {
+    const ctx = undoActionRef.current;
+    if (!ctx || ctx.resolved) return;
+    ctx.resolved = true;
+    if (undoTickRef.current) clearInterval(undoTickRef.current);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoActionRef.current = null;
+    setUndoBanner(null);
+    setUndoPending(false);
+    if (doUndo) {
+      undoSend.mutate(ctx.outboxId, {
+        onSuccess: () => message.info(t('compose.undone')),
+        onError: () => {
+          message.error(t('compose.undoTooLate'));
+          ctx.cleanup();
+        },
+      });
+    } else {
+      ctx.cleanup(); // window elapsed → the mail is going out; clear the composer
+    }
+  };
+
+  const runUndoWindow = (outboxId: string, secs: number, titleKey: string, cleanup: () => void) => {
+    undoActionRef.current = { outboxId, cleanup, resolved: false };
+    setUndoBanner({ left: secs, titleKey });
+    setUndoPending(true);
+    undoTickRef.current = setInterval(
+      () => setUndoBanner((b) => (b && b.left > 1 ? { ...b, left: b.left - 1 } : b)),
+      1000,
+    );
+    undoTimerRef.current = setTimeout(() => finishUndo(false), secs * 1000);
+  };
 
   const submitReply = (
     confirmNewRecipients?: boolean,
@@ -226,11 +312,42 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
         closeAfter,
         statusAfter,
         snoozeUntil: statusAfter === 'pending' && snoozeUntil ? snoozeUntil : undefined,
+        // 12.9: request the undo hold; the server ignores it for status-changing sends.
+        undo: true,
+        // 12.10: when replying to a specific message, quote + thread onto THAT message.
+        ticketMessageId: replyTarget?.messageId,
       },
       {
         onSuccess: (res) => {
           if ('needsConfirm' in res) {
             setConfirm({ recipients: [...to, ...cc, ...bcc], newRecipients: res.newRecipients, sensitive: defaults.data?.isSensitive ?? false, mode: 'reply' });
+            return;
+          }
+          // 12.4: a sent reply ends the per-message context — drop the seeded recipients
+          // and the "replying to this message" banner so they don't linger for the next one.
+          const clearComposer = () => {
+            void deleteDraft(ticketId, 'reply');
+            setReplyBody('');
+            setAttachments([]);
+            setConfirm(null);
+            setCloseAfter(false);
+            setSendStatus(undefined);
+            setSendSnoozeDate('');
+            setDraftLabel((p) => ({ ...p, reply: undefined }));
+            setTo([]);
+            setCc([]);
+            setBcc([]);
+            onReplyTargetDone?.();
+          };
+          // 12.9: a plain reply is HELD for a few seconds — keep the composer intact and
+          // offer "Undo" so the whole draft comes straight back to edit; clear only once the
+          // window closes without an undo. A status-changing reply isn't held → clear now.
+          if (res.undoable && res.outboxId) {
+            // Drop the server draft NOW (FE state is the source of truth for edit-and-resend)
+            // so a refresh / second tab during the window can't reload it and duplicate-send.
+            void deleteDraft(ticketId, 'reply');
+            setDraftLabel((p) => ({ ...p, reply: undefined }));
+            runUndoWindow(res.outboxId, res.undoWindowSeconds ?? 8, 'compose.sent', clearComposer);
             return;
           }
           message.success(
@@ -242,14 +359,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
                   ? t('compose.sentAndSnoozed')
                   : t('compose.sent'),
           );
-          void deleteDraft(ticketId, 'reply');
-          setReplyBody('');
-          setAttachments([]);
-          setConfirm(null);
-          setCloseAfter(false);
-          setSendStatus(undefined);
-          setSendSnoozeDate('');
-          setDraftLabel((p) => ({ ...p, reply: undefined }));
+          clearComposer();
         },
         onError: (e) => message.error(e.message),
       },
@@ -279,16 +389,22 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
   const submitForward = (confirmNewRecipients?: boolean) => {
     if (!forward) return;
     fwd.mutate(
-      { to: fTo, cc: fCc, bcc: fBcc, body: fBody, ticketMessageId: forward.id, confirmNewRecipients },
+      { to: fTo, cc: fCc, bcc: fBcc, body: fBody, ticketMessageId: forward.id, confirmNewRecipients, undo: true },
       {
         onSuccess: (res) => {
           if ('needsConfirm' in res) {
             setConfirm({ recipients: [...fTo, ...fCc, ...fBcc], newRecipients: res.newRecipients, sensitive: defaults.data?.isSensitive ?? false, mode: 'forward' });
             return;
           }
-          message.success(t('compose.forwarded'));
           setConfirm(null);
-          onForwardDone?.();
+          // Closing the forward pane resets its fields; keep it open while an undo is pending.
+          const closeForward = () => onForwardDone?.();
+          if (res.undoable && res.outboxId) {
+            runUndoWindow(res.outboxId, res.undoWindowSeconds ?? 8, 'compose.forwarded', closeForward);
+            return;
+          }
+          message.success(t('compose.forwarded'));
+          closeForward();
         },
         onError: (e) => message.error(e.message),
       },
@@ -355,6 +471,23 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
 
   const replyPane = (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
+      {replyTarget && (
+        // 12.4: shows which message drove the recipient list; (x) dismisses the banner.
+        <Alert
+          type="info"
+          showIcon
+          closable
+          onClose={() => onReplyTargetDone?.()}
+          message={
+            <span>
+              <Tag color="blue" style={{ marginInlineEnd: 8 }}>
+                {t(replyTarget.mode === 'reply' ? 'compose.replyAction' : 'compose.replyAllAction')}
+              </Tag>
+              {t(replyTarget.mode === 'reply' ? 'compose.replyingTo' : 'compose.replyingAllTo')}
+            </span>
+          }
+        />
+      )}
       <Select mode="tags" value={to} onChange={emailListSetter(setTo)} placeholder={t('compose.to')} style={{ width: '100%' }} tokenSeparators={[',', ' ']} />
       <Select mode="tags" value={cc} onChange={emailListSetter(setCc)} placeholder={t('compose.cc')} style={{ width: '100%' }} tokenSeparators={[',', ' ']} />
       <Select mode="tags" value={bcc} onChange={emailListSetter(setBcc)} placeholder={t('compose.bcc')} style={{ width: '100%' }} tokenSeparators={[',', ' ']} />
@@ -407,7 +540,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
                   : undefined
             }
           >
-            <Button type="primary" loading={reply.isPending} disabled={!replyBody || to.length === 0} onClick={() => beginSend()}>
+            <Button type="primary" loading={reply.isPending} disabled={!replyBody || to.length === 0 || undoPending} onClick={() => beginSend()}>
               {t('compose.send')}
             </Button>
           </Tooltip>
@@ -415,7 +548,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
               action — Pending asks for the follow-up date first. */}
           {['open', 'assigned', 'in_progress', 'pending'].includes(status) && (
             <Dropdown
-              disabled={!replyBody || to.length === 0 || reply.isPending}
+              disabled={!replyBody || to.length === 0 || reply.isPending || undoPending}
               menu={{
                 items: [
                   { key: 'pending', label: t('compose.sendPending') },
@@ -479,7 +612,7 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
         autoSize={{ minRows: 3, maxRows: 10 }}
       />
       <Space>
-        <Button type="primary" loading={fwd.isPending} disabled={fTo.length === 0} onClick={onForwardSendClick}>
+        <Button type="primary" loading={fwd.isPending} disabled={fTo.length === 0 || undoPending} onClick={onForwardSendClick}>
           {t('compose.forwardSend')}
         </Button>
         <Button onClick={() => onForwardDone?.()}>{t('common.cancel')}</Button>
@@ -513,6 +646,28 @@ export function ComposeBox({ ticketId, status, forward, onForwardDone }: Props) 
 
   return (
     <Card size="small">
+      {undoBanner && (
+        // 12.9: inline Undo Send banner with a live countdown that turns red in the final 3s.
+        <Alert
+          type="success"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={
+            <Space size="small">
+              <span>{t(undoBanner.titleKey)}</span>
+              <Button
+                type="link"
+                size="small"
+                danger={undoBanner.left <= 3}
+                style={{ padding: 0, fontWeight: undoBanner.left <= 3 ? 700 : 400 }}
+                onClick={() => finishUndo(true)}
+              >
+                {t('compose.undoSend', { s: undoBanner.left })}
+              </Button>
+            </Space>
+          }
+        />
+      )}
       <Tabs
         activeKey={canReply ? tab : 'note'}
         onChange={(k) => setTab(k as 'reply' | 'note' | 'forward')}

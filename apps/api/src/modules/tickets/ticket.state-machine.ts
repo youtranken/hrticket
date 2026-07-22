@@ -70,25 +70,26 @@ export function assertCanChangeStatus(user: SessionUser, ticket: LifecycleTicket
 
 /**
  * Who may SEND an outbound reply (process the conversation by emailing the requester):
- * the assignee, or the Team Lead of the ticket's category group. Deliberately NARROWER
- * than `canActOnTicket` — Admin/SSA are administrative (they assign + oversee, e.g.
- * close/lock/junk), they do NOT process tickets by replying (model decision). A Member
- * who isn't the assignee must claim it first. Internal notes are a separate path (no
- * email leaves) and are not gated here.
+ * the assignee, OR any Member/Team Lead of the ticket's category group (Story 12.3 —
+ * the whole group can handle mail, not just whoever claimed it first). Still NARROWER
+ * than `canActOnTicket` for the administrative tier — Admin/SSA are administrative (they
+ * assign + oversee, e.g. close/lock/junk), they do NOT process tickets by replying
+ * unless they are the assignee (model decision). Internal notes are a separate path
+ * (no email leaves) and are not gated here.
+ *
+ * NOTE (12.3): this reversed the old "assignee-first" rule — reply is now WIDER than
+ * lifecycle supervision for group members. Do not confuse with `canActOnTicket`
+ * (status/close/lock still assignee + TL-in-group + Admin/SSA).
  */
 export function canReplyTicket(
   user: SessionUser,
   groups: number[],
   ticket: LifecycleTicket,
 ): boolean {
-  // The HANDLER replies — assignee-first (đơn 5): an Admin who claimed the ticket
-  // processes it end-to-end, so the administrative block below only applies when
-  // they are NOT the one holding it.
-  if (ticket.assigneeId === user.id) return true;
+  if (ticket.assigneeId === user.id) return true; // assignee of any role handles end-to-end
   if (user.role === 'admin' || user.role === 'ssa') return false; // administrative — don't process
-  if (user.role === 'team_lead' && ticket.categoryId !== null && groups.includes(ticket.categoryId)) {
-    return true;
-  }
+  // Any group member (Member or Team Lead) of the ticket's category may reply/forward.
+  if (ticket.categoryId !== null && groups.includes(ticket.categoryId)) return true;
   return false;
 }
 

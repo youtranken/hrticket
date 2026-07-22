@@ -100,6 +100,7 @@ describe('IT-LIST: worklist ordering + filters + pending', () => {
     ageDays?: number; // last_opened_at = now - ageDays
     assignedDaysAgo?: number | null;
     snoozeUntil?: string | null;
+    closedAt?: Date | null;
   }): Promise<string> {
     seq += 1;
     const now = Date.now();
@@ -120,6 +121,7 @@ describe('IT-LIST: worklist ordering + filters + pending', () => {
             : new Date(now - opts.assignedDaysAgo * DAY),
         snoozeUntil: opts.snoozeUntil ?? null,
         lastOpenedAt: new Date(now - (opts.ageDays ?? 1) * DAY),
+        closedAt: opts.closedAt ?? null,
       })
       .returning({ id: tickets.id });
     return row!.id;
@@ -287,5 +289,42 @@ describe('IT-LIST: worklist ordering + filters + pending', () => {
     expect(desc[2]).toBe(tPool);
     expect(desc.slice(0, 2)).toEqual([...asc.slice(0, 2)].reverse());
     expect(asc.slice(0, 2).sort()).toEqual([tX, tY].sort());
+  });
+
+  // ── IT-LIST-006: "Ngày đóng" column data + sort (Story 12.6) ────────────────
+  // The default worklist hides closed tickets (đơn 8), so the close-date column is
+  // meaningful when the user filters to the archive (status=closed). We pass an
+  // explicit status filter to surface both closed and open rows in one list.
+  it('IT-LIST-006a: list returns closedAt (value when closed, null when open)', async () => {
+    if (!ready) return;
+    const when = new Date(Date.now() - 2 * DAY);
+    const tClosed = await mk({ status: 'closed', closedAt: when });
+    const tOpen = await mk({ status: 'in_progress' });
+
+    const r = await read.list(adminU, q({ status: ['closed', 'in_progress'], pageSize: 100 }));
+    const byId = new Map(r.items.map((i) => [i.id, i]));
+    expect(byId.get(tClosed)!.closedAt).not.toBeNull();
+    expect(byId.get(tOpen)!.closedAt).toBeNull();
+  });
+
+  it('IT-LIST-006b: sort=closed orders by close time, open tickets (NULL) sink last both ways', async () => {
+    if (!ready) return;
+    const older = await mk({ status: 'closed', closedAt: new Date(Date.now() - 5 * DAY) });
+    const newer = await mk({ status: 'closed', closedAt: new Date(Date.now() - 1 * DAY) });
+    const open = await mk({ status: 'in_progress' }); // closed_at NULL
+
+    const ids = (r: Awaited<ReturnType<TicketsReadService['list']>>) => r.items.map((i) => i.id);
+    const query = (dir: 'asc' | 'desc') =>
+      q({ sort: 'closed', dir, status: ['closed', 'in_progress'], pageSize: 100 });
+    const asc = ids(await read.list(adminU, query('asc')));
+    const desc = ids(await read.list(adminU, query('desc')));
+
+    expect(asc).toHaveLength(3);
+    // Open ticket (NULL close time) sinks last in BOTH directions.
+    expect(asc[2]).toBe(open);
+    expect(desc[2]).toBe(open);
+    // Closed tickets flip between asc/desc: oldest-first vs newest-first.
+    expect(asc.slice(0, 2)).toEqual([older, newer]);
+    expect(desc.slice(0, 2)).toEqual([newer, older]);
   });
 });

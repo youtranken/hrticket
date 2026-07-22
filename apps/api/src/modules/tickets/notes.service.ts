@@ -38,6 +38,7 @@ export class NotesService {
           bodyText: body,
           bodyHtmlSafe: htmlFromText(body),
           // No recipients, no Message-ID — a note is not an email.
+          receivedAt: new Date(), // 12.1: ordering key (a note lands where it's written)
         })
         .returning({ id: ticketMessages.id });
 

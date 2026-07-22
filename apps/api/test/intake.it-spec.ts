@@ -185,4 +185,27 @@ describe('IT-INTAKE: create ticket from mail', () => {
     expect(t.externalSource).toBe('freshdesk');
     expect(t.externalId).toBe('FD-42');
   });
+
+  it('IT-INTAKE-005: message stamps received_at (ingest) and clamps a future Date header', async () => {
+    if (!ready) return;
+    const mid = '<future@x.com>';
+    const inboxId = await seedInbox(harness!.db, HRIS, BOX, makeRaw({ from: 'b@x.com', to: BOX, messageId: mid }), mid);
+    const before = Date.now();
+    await withActor(systemActor, async (tx) => {
+      const [row] = await tx.select().from(inboxMessages).where(eq(inboxMessages.id, inboxId));
+      const parsed = await parseMail(row!.raw);
+      // Spoofed/skewed FUTURE Date header (3 days ahead) — must NOT drive display time.
+      parsed.date = new Date(Date.now() + 3 * 86_400_000);
+      await createTicketFromMail(tx, { projectId: HRIS, mailbox: BOX, inboxMessageId: inboxId, parsed });
+    });
+    const [msg] = await harness!.db.select().from(ticketMessages);
+    // Write-path stamps received_at (12.1) — a regression that drops it would fail HERE,
+    // unlike the read-only IT-THREAD tests that insert received_at by hand.
+    expect(msg!.receivedAt).not.toBeNull();
+    const rcv = new Date(msg!.receivedAt!).getTime();
+    expect(rcv).toBeGreaterThanOrEqual(before - 5000);
+    expect(rcv).toBeLessThanOrEqual(Date.now() + 5000);
+    // created_at (display) is clamped to ingest, NOT the +3d header.
+    expect(new Date(msg!.createdAt).getTime()).toBeLessThan(Date.now() + 86_400_000);
+  });
 });

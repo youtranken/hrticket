@@ -68,6 +68,8 @@ export interface TicketListItem {
   assignee: TicketAssignee | null;
   tags: { name: string; color: string | null; kind: string }[];
   createdAt: Date;
+  /** Ticket close time (null = not closed yet) — drives the "Ngày đóng" list column (12.6). */
+  closedAt: Date | null;
   isOverdue: boolean;
   overdueDays: number;
   snoozeUntil: string | null;
@@ -201,6 +203,7 @@ export class TicketsReadService {
           assigneeAwayFrom: assignee.awayFrom,
           assigneeAwayTo: assignee.awayTo,
           createdAt: tickets.createdAt,
+          closedAt: tickets.closedAt,
           snoozeUntil: tickets.snoozeUntil,
           reopenCount: tickets.reopenCount,
           isJunk: tickets.isJunk,
@@ -260,6 +263,7 @@ export class TicketsReadService {
           .filter((t) => t.ticketId === r.id)
           .map((t) => ({ name: t.name, color: t.color, kind: t.kind })),
         createdAt: r.createdAt,
+        closedAt: r.closedAt,
         isOverdue: r.isOverdue,
         overdueDays: r.overdueDays,
         snoozeUntil: r.snoozeUntil,
@@ -455,6 +459,14 @@ export class TicketsReadService {
       const byDate = q.dir === 'asc' ? asc(tickets.createdAt) : desc(tickets.createdAt);
       return [sql`${inactive} asc`, byDate, asc(tickets.id)];
     }
+    if (q.sort === 'closed') {
+      // "Ngày đóng" column (12.6). Still-open tickets (closed_at NULL) sink last in
+      // both directions so the manual sort is about closed tickets, not open ones.
+      return [
+        q.dir === 'asc' ? sql`${tickets.closedAt} asc nulls last` : sql`${tickets.closedAt} desc nulls last`,
+        asc(tickets.id),
+      ];
+    }
     if (q.sort === 'status') return [q.dir === 'asc' ? asc(tickets.status) : desc(tickets.status), asc(tickets.id)];
     if (q.sort === 'snooze') return [q.dir === 'asc' ? asc(tickets.snoozeUntil) : desc(tickets.snoozeUntil), asc(tickets.id)];
     if (q.sort === 'category') {
@@ -591,11 +603,18 @@ export class TicketsReadService {
           isAutoReply: ticketMessages.isAutoReply,
           isInternal: ticketMessages.isInternal,
           createdAt: ticketMessages.createdAt,
+          receivedAt: ticketMessages.receivedAt,
           messageId: ticketMessages.messageId,
         })
         .from(ticketMessages)
         .where(eq(ticketMessages.ticketId, id))
-        .orderBy(asc(ticketMessages.createdAt));
+        // 12.1: order by when WE received the message (falls back to created_at for
+        // pre-12.1 rows), then created_at + id as deterministic tie-breakers.
+        .orderBy(
+          asc(sql`coalesce(${ticketMessages.receivedAt}, ${ticketMessages.createdAt})`),
+          asc(ticketMessages.createdAt),
+          asc(ticketMessages.id),
+        );
 
       const ppl = await tx
         .select({ id: participants.id, email: participants.email, status: participants.status })
@@ -662,6 +681,7 @@ export class TicketsReadService {
                 isAutoReply: ticketMessages.isAutoReply,
                 isInternal: ticketMessages.isInternal,
                 createdAt: ticketMessages.createdAt,
+                receivedAt: ticketMessages.receivedAt,
                 messageId: ticketMessages.messageId,
                 ticketId: ticketMessages.ticketId,
               })
@@ -681,10 +701,19 @@ export class TicketsReadService {
               }));
           })
         : [];
+      // 12.1: merge both projects' messages by received time (fallback created_at),
+      // tie-broken by created_at then id — matches the single-ticket ORDER BY above.
+      const orderTs = (m: { receivedAt: Date | null; createdAt: Date }) =>
+        (m.receivedAt ?? m.createdAt).getTime();
       const conversation = [
         ...messages.map((m) => ({ ...m, fromProjectKey: t.projectKey as string | null })),
         ...siblingMessages,
-      ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      ].sort(
+        (a, b) =>
+          orderTs(a) - orderTs(b) ||
+          a.createdAt.getTime() - b.createdAt.getTime() ||
+          String(a.id).localeCompare(String(b.id)),
+      );
 
       return {
         ticket: {
@@ -739,7 +768,11 @@ export class TicketsReadService {
     const actor = await actorForUser(user);
     return withActor(actor, async (tx) => {
       const [t] = await tx
-        .select({ projectId: tickets.projectId, requesterEmail: tickets.requesterEmail })
+        .select({
+          projectId: tickets.projectId,
+          requesterEmail: tickets.requesterEmail,
+          createdAt: tickets.createdAt,
+        })
         .from(tickets)
         .where(eq(tickets.id, id));
       if (!t) throw new NotFoundException('Ticket not found'); // RLS-invisible → 404, no leak
@@ -753,6 +786,8 @@ export class TicketsReadService {
           total: sql<number>`count(*)::int`,
           active: sql<number>`count(*) FILTER (WHERE ${tickets.status} NOT IN ('resolved','closed'))::int`,
           junk: sql<number>`count(*) FILTER (WHERE ${tickets.isJunk} OR ${tickets.isSpamThread})::int`,
+          // 12.5: how many tickets this sender opened BEFORE the current one.
+          prior: sql<number>`count(*) FILTER (WHERE ${tickets.createdAt} < ${t.createdAt.toISOString()}::timestamptz)::int`,
         })
         .from(tickets)
         .where(same);
@@ -776,6 +811,7 @@ export class TicketsReadService {
         total: agg?.total ?? 0,
         active: agg?.active ?? 0,
         junk: agg?.junk ?? 0,
+        prior: agg?.prior ?? 0,
         items,
       };
     });

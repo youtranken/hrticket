@@ -79,7 +79,7 @@ export const ticketListQuerySchema = z.object({
    *  shared with the digest (FR106), still selectable explicitly; `created`/`status`/
    *  `snooze`/`category`/`assignee` are the manual column sorts. */
   sort: z
-    .enum(['band', 'worklist', 'created', 'status', 'snooze', 'category', 'assignee'])
+    .enum(['band', 'worklist', 'created', 'closed', 'status', 'snooze', 'category', 'assignee'])
     .default('band'),
   dir: z.enum(['asc', 'desc']).default('desc'),
   status: z

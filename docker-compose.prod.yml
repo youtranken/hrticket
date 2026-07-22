@@ -163,5 +163,32 @@ services:
       - api
     restart: unless-stopped
 
+  # Scheduled backup, running INSIDE Docker — no host cron / Ubuntu scheduler needed.
+  # Reuses the pinned postgres:18.4 image (pg_dump version matches the server exactly),
+  # so nothing extra to install or trust. On start it backs up once, then daily at
+  # BACKUP_HOUR: a CUSTOM-format DB dump (-Fc, restorable with pg_restore — see §5) plus
+  # a tar of the SAME attachments dir the app uses, into ./backups, pruning files older
+  # than BACKUP_KEEP_DAYS. Logic in scripts/backup-loop.sh; guide in HUONG-DAN-VAN-HANH.md §4.
+  backup:
+    image: postgres:18.4
+    entrypoint: ['/bin/bash', '/backup-loop.sh']
+    environment:
+      TZ: ${TZ:-Asia/Ho_Chi_Minh} # BACKUP_HOUR + timestamps in VN time
+      PGHOST: postgres
+      PGUSER: hris
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: hris
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_HOUR: ${BACKUP_HOUR:-2} # 02:00 VN daily
+    volumes:
+      - ./scripts/backup-loop.sh:/backup-loop.sh:ro
+      - ./backups:/backups
+      # Same default as api/worker, so relocating attachments never drops them from backups.
+      - ${ATTACHMENT_HOST_DIR:-./data/attachments}:/attachments:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 # No named volumes: all persistent data is bind-mounted under ./data (see postgres +
-# api/worker attachment mounts above).
+# api/worker attachment mounts above). DB/attachment dumps go to ./backups (gitignored).

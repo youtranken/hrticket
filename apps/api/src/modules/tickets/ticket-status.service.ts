@@ -130,6 +130,7 @@ export class TicketStatusService {
           fromAddr: user.email,
           bodyText: input.note,
           bodyHtmlSafe: htmlFromText(input.note),
+          receivedAt: new Date(), // 12.1: ordering key
         });
       }
 

@@ -111,7 +111,15 @@ export async function createTicketFromMail(
       inReplyTo: parsed.inReplyTo,
       references: parsed.references.join(' ') || null,
       isAutoReply: input.isAutoReply ?? false,
-      createdAt: parsed.date ?? createdAt,
+      // Display send-time = the Date header, but clamp a spoofed/skewed FUTURE header
+      // (> ingest + 1 day) back to ingest so the UI never shows a mail "sent" days ahead.
+      createdAt:
+        parsed.date && parsed.date.getTime() <= createdAt.getTime() + 86_400_000
+          ? parsed.date
+          : createdAt,
+      // 12.1: ordering key = when WE ingested it, so late-arriving mail sinks to the
+      // bottom regardless of its (possibly older) Date header.
+      receivedAt: createdAt,
     })
     .returning({ id: ticketMessages.id });
 

@@ -33,6 +33,9 @@ const replySchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  undo: z.boolean().optional(),
+  // 12.10: the message being replied to → the quote + threading hook onto it (not latest).
+  ticketMessageId: z.string().uuid().optional(),
 });
 
 const forwardSchema = z.object({
@@ -42,7 +45,10 @@ const forwardSchema = z.object({
   body: z.string().optional(),
   ticketMessageId: z.string().uuid(),
   confirmNewRecipients: z.boolean().optional(),
+  undo: z.boolean().optional(),
 });
+
+const undoSendSchema = z.object({ outboxId: z.string().uuid() });
 
 const noteSchema = z.object({ body: z.string().min(1) });
 
@@ -65,8 +71,19 @@ export class ComposeController {
   ) {}
 
   @Get('reply-defaults')
-  async replyDefaults(@CurrentUser() user: SessionUser, @Param('id') id: string) {
-    return this.replies.getDefaults(user, id);
+  @RequireCap('ticket.reply')
+  async replyDefaults(
+    @CurrentUser() user: SessionUser,
+    @Param('id') id: string,
+    @Query('messageId') messageId?: string,
+    @Query('mode') mode?: string,
+  ) {
+    // 12.4: recipients come from the specific message the user hit Reply/Reply-All on
+    // (messageId), and `mode=reply` narrows to that message's sender only.
+    return this.replies.getDefaults(user, id, {
+      messageId: messageId || undefined,
+      mode: mode === 'reply' ? 'reply' : 'replyAll',
+    });
   }
 
   @Post('replies')
@@ -84,6 +101,15 @@ export class ComposeController {
     const parsed = forwardSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException('Invalid payload');
     return this.replies.forward(user, id, parsed.data);
+  }
+
+  /** Undo Send (12.9): recall a held reply/forward within the 8s window. */
+  @Post('undo-send')
+  @RequireCap('ticket.reply')
+  async undoSend(@CurrentUser() user: SessionUser, @Param('id') id: string, @Body() body: unknown) {
+    const parsed = undoSendSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException('Invalid payload');
+    return this.replies.undoSend(user, id, parsed.data.outboxId);
   }
 
   @Post('notes')

@@ -7,7 +7,7 @@ import {
 import { and, asc, desc, eq, lt, sql } from 'drizzle-orm';
 import type { TicketStatus } from '@hris/shared';
 import { withActor } from '../../infra/db/with-actor';
-import { tickets, ticketMessages, participants, categories, drafts } from '../../infra/db/schema';
+import { tickets, ticketMessages, participants, categories, drafts, outbox, attachments } from '../../infra/db/schema';
 import { writeAudit } from '../../infra/audit/audit';
 import type { SessionUser } from '../auth/session.service';
 import { actorForUser } from './actor';
@@ -33,7 +33,17 @@ export interface ReplyInput {
   statusAfter?: 'pending' | 'resolved';
   /** Future VN day 'YYYY-MM-DD' — required when statusAfter='pending'. */
   snoozeUntil?: string;
+  /** Undo Send (12.9): hold the mail for a short window so the sender can recall it.
+   *  Ignored when the reply also changes status (closeAfter/statusAfter) — those send now. */
+  undo?: boolean;
+  /** Per-message reply (12.4/12.10): the message the user hit Reply on — the quote AND
+   *  the threading headers hook onto THIS message, not the latest. Omitted = reply to the
+   *  latest mail (the default bottom composer). */
+  ticketMessageId?: string;
 }
+
+/** Undo Send window (12.9) — seconds the outbound is held before the worker may send it. */
+export const UNDO_WINDOW_SECONDS = 8;
 
 export interface ReplyDefaults {
   to: string[];
@@ -53,6 +63,8 @@ export interface ForwardInput {
   ticketMessageId: string;
   /** Client acknowledges the new-recipient warning (same gate as reply). */
   confirmNewRecipients?: boolean;
+  /** Undo Send (12.9): hold the forward for a short recall window. */
+  undo?: boolean;
 }
 
 function escapeHtml(s: string): string {
@@ -179,14 +191,22 @@ function quotedHistoryBlock(
 @Injectable()
 export class ReplyService {
   /**
-   * Reply-All suggestion (FR9, v2): the recipients MIRROR THE LATEST MAIL on the
-   * thread — exactly like hitting Reply-All on the newest message in Gmail — instead
-   * of accumulating every address ever seen. Latest inbound → To = its sender + its
-   * To-recipients, CC = its CC; latest outbound (we spoke last) → the same audience
-   * (To/CC/BCC) again. Our own project mailboxes are always dropped.
+   * Reply / Reply-All recipient suggestion.
+   * - Reply-All (default, FR9 v2 + 12.4): recipients MIRROR one message — the specific
+   *   message the user hit Reply-All on (`messageId`), or the newest real mail when
+   *   none is given — like Gmail. Inbound → To = its sender + To-recipients, CC = its CC;
+   *   outbound → the same audience (To/CC/BCC). Our own project mailboxes are dropped.
+   * - Reply (12.4): To = just that message's sender, CC/BCC empty.
+   * Internal notes and machine mail (auto-ack, out-of-office) never steer the audience.
    */
-  async getDefaults(user: SessionUser, ticketId: string): Promise<ReplyDefaults> {
+  async getDefaults(
+    user: SessionUser,
+    ticketId: string,
+    opts: { messageId?: string; mode?: 'reply' | 'replyAll' } = {},
+  ): Promise<ReplyDefaults> {
+    const mode = opts.mode ?? 'replyAll';
     const actor = await actorForUser(user);
+    const groups = actor.kind === 'user' ? actor.groups : [];
     return withActor(actor, async (tx) => {
       const [t] = await tx
         .select({
@@ -194,16 +214,22 @@ export class ReplyService {
           subject: tickets.subject,
           ticketCode: tickets.ticketCode,
           mailbox: tickets.mailbox,
+          assigneeId: tickets.assigneeId,
+          categoryId: tickets.categoryId,
           isSensitive: categories.isSensitive,
         })
         .from(tickets)
         .leftJoin(categories, eq(categories.id, tickets.categoryId))
         .where(eq(tickets.id, ticketId));
       if (!t) throw new NotFoundException('Ticket not found');
+      // 12.4/12.3: computing reply recipients IS a reply action — gate it exactly like
+      // sending. Only the assignee or a Member/TL-in-group may see the suggested audience;
+      // Admin/SSA non-assignee and out-of-group members get 403. Mirrors the
+      // @RequireCap('ticket.reply') now on the controller (defence-in-depth).
+      assertCanReplyTicket(user, groups, { assigneeId: t.assigneeId, categoryId: t.categoryId });
 
-      // "Latest mail" = the newest REAL correspondence — internal notes and machine
-      // mail (our auto-ack, their out-of-office) don't steer the audience: the ack
-      // goes to the requester alone and would silently drop the CC'd colleagues.
+      // The message that steers the audience: the one the user acted on (messageId),
+      // else the newest REAL correspondence (internal notes / machine mail excluded).
       const [last] = await tx
         .select({
           direction: ticketMessages.direction,
@@ -214,11 +240,18 @@ export class ReplyService {
         })
         .from(ticketMessages)
         .where(
-          and(
-            eq(ticketMessages.ticketId, ticketId),
-            eq(ticketMessages.isInternal, false),
-            eq(ticketMessages.isAutoReply, false),
-          ),
+          opts.messageId
+            ? and(
+                eq(ticketMessages.ticketId, ticketId),
+                eq(ticketMessages.id, opts.messageId),
+                // 12.10: an internal note is never a reply/quote target (defence-in-depth).
+                eq(ticketMessages.isInternal, false),
+              )
+            : and(
+                eq(ticketMessages.ticketId, ticketId),
+                eq(ticketMessages.isInternal, false),
+                eq(ticketMessages.isAutoReply, false),
+              ),
         )
         .orderBy(desc(ticketMessages.createdAt))
         .limit(1);
@@ -247,7 +280,12 @@ export class ReplyService {
       let to: string[] = [];
       let cc: string[] = [];
       let bcc: string[] = [];
-      if (last?.direction === 'inbound') {
+      if (mode === 'reply') {
+        // Reply = just the sender of that message (or, for our own outbound, its first
+        // recipient). No CC/BCC.
+        const only = last?.direction === 'inbound' ? last.fromAddr : (last?.toAddrs?.[0] ?? t.requester);
+        to = [only].filter(keep);
+      } else if (last?.direction === 'inbound') {
         to = [last.fromAddr, ...(last.toAddrs ?? [])].filter(keep);
         cc = (last.ccAddrs ?? []).filter(keep);
       } else if (last) {
@@ -274,7 +312,15 @@ export class ReplyService {
     ticketId: string,
     input: ReplyInput,
   ): Promise<
-    | { ticketMessageId: string; messageId: string; closed: boolean; status?: TicketStatus }
+    | {
+        ticketMessageId: string;
+        messageId: string;
+        closed: boolean;
+        status?: TicketStatus;
+        outboxId?: string;
+        undoable?: boolean;
+        undoWindowSeconds?: number;
+      }
     | { needsConfirm: true; newRecipients: string[] }
   > {
     const actor = await actorForUser(user);
@@ -382,39 +428,68 @@ export class ReplyService {
         });
       }
 
-      // Threading: hook onto the latest inbound message (FR7).
-      const [lastInbound] = await tx
-        .select({ messageId: ticketMessages.messageId, references: ticketMessages.references })
-        .from(ticketMessages)
-        .where(and(eq(ticketMessages.ticketId, ticketId), eq(ticketMessages.direction, 'inbound')))
-        .orderBy(desc(ticketMessages.createdAt))
-        .limit(1);
-      const inReplyTo = lastInbound?.messageId ?? null;
-      const references = [lastInbound?.references, lastInbound?.messageId]
-        .filter((x): x is string => !!x)
-        .join(' ') || null;
-
-      // Quote the message being replied to (Gmail-style, nests down the thread) so
-      // every recipient sees the context inside the mail itself — internal notes and
-      // machine mail (auto-ack / out-of-office) excluded: the agent replies to the
-      // human conversation, not to the robot.
-      const [prevMsg] = await tx
-        .select({
-          createdAt: ticketMessages.createdAt,
-          fromAddr: ticketMessages.fromAddr,
-          bodyHtmlSafe: ticketMessages.bodyHtmlSafe,
-          bodyText: ticketMessages.bodyText,
-        })
-        .from(ticketMessages)
-        .where(
-          and(
-            eq(ticketMessages.ticketId, ticketId),
-            eq(ticketMessages.isInternal, false),
-            eq(ticketMessages.isAutoReply, false),
-          ),
-        )
-        .orderBy(desc(ticketMessages.createdAt))
-        .limit(1);
+      // Threading + quote TARGET (Gmail-style, nests the context down the thread so every
+      // recipient sees it inside the mail): the specific message the user hit Reply on
+      // (12.10 — `ticketMessageId`), else the latest inbound for threading / latest human
+      // message for the quote. Replying to a chosen OLDER message must quote AND thread onto
+      // THAT message, not the newest one — otherwise the recipients (from that message, 12.4)
+      // and the quoted context disagree. Internal notes / machine mail are never a quote target.
+      let inReplyTo: string | null;
+      let references: string | null;
+      let prevMsg:
+        | { createdAt: Date; fromAddr: string; bodyHtmlSafe: string | null; bodyText: string | null }
+        | undefined;
+      if (input.ticketMessageId) {
+        const [picked] = await tx
+          .select({
+            messageId: ticketMessages.messageId,
+            references: ticketMessages.references,
+            createdAt: ticketMessages.createdAt,
+            fromAddr: ticketMessages.fromAddr,
+            bodyHtmlSafe: ticketMessages.bodyHtmlSafe,
+            bodyText: ticketMessages.bodyText,
+          })
+          .from(ticketMessages)
+          .where(
+            and(
+              eq(ticketMessages.ticketId, ticketId),
+              eq(ticketMessages.id, input.ticketMessageId),
+              eq(ticketMessages.isInternal, false),
+            ),
+          );
+        inReplyTo = picked?.messageId ?? null;
+        references =
+          [picked?.references, picked?.messageId].filter((x): x is string => !!x).join(' ') || null;
+        prevMsg = picked;
+      } else {
+        const [lastInbound] = await tx
+          .select({ messageId: ticketMessages.messageId, references: ticketMessages.references })
+          .from(ticketMessages)
+          .where(and(eq(ticketMessages.ticketId, ticketId), eq(ticketMessages.direction, 'inbound')))
+          .orderBy(desc(ticketMessages.createdAt))
+          .limit(1);
+        inReplyTo = lastInbound?.messageId ?? null;
+        references =
+          [lastInbound?.references, lastInbound?.messageId].filter((x): x is string => !!x).join(' ') ||
+          null;
+        [prevMsg] = await tx
+          .select({
+            createdAt: ticketMessages.createdAt,
+            fromAddr: ticketMessages.fromAddr,
+            bodyHtmlSafe: ticketMessages.bodyHtmlSafe,
+            bodyText: ticketMessages.bodyText,
+          })
+          .from(ticketMessages)
+          .where(
+            and(
+              eq(ticketMessages.ticketId, ticketId),
+              eq(ticketMessages.isInternal, false),
+              eq(ticketMessages.isAutoReply, false),
+            ),
+          )
+          .orderBy(desc(ticketMessages.createdAt))
+          .limit(1);
+      }
       const quote = prevMsg ? gmailQuote(prevMsg) : { html: '', text: '' };
 
       // bodyHtml is client-supplied (compose.controller replySchema) and lands in
@@ -425,6 +500,12 @@ export class ReplyService {
         input.bodyHtml == null ? htmlFromText(input.body) : sanitizeEmailHtml(input.bodyHtml);
       const bodyText = `${input.body}${codeFooterText(t.ticketCode)}${quote.text}`;
       const bodyHtml = `${typedHtml}${codeFooterHtml(t.ticketCode)}${quote.html}`;
+      // 12.9: a plain reply (no status change) can be held for the undo window; a reply
+      // that also closes/snoozes/resolves goes immediately (v1 keeps status changes final).
+      // Replying to a PENDING ticket wakes it (below) — a side effect undo does NOT revert —
+      // so those send immediately too, keeping the woken ticket + its outbound consistent.
+      const undoable =
+        !!input.undo && !input.closeAfter && !input.statusAfter && t.status !== 'pending';
       const res = await sendOutboundMail(tx, {
         projectId: t.projectId,
         ticketId,
@@ -438,6 +519,7 @@ export class ReplyService {
         inReplyTo,
         references,
         attachmentIds: input.attachmentIds,
+        holdSeconds: undoable ? UNDO_WINDOW_SECONDS : undefined,
       });
 
       await writeAudit(tx, {
@@ -564,6 +646,8 @@ export class ReplyService {
         closed: !!input.closeAfter,
         finalStatus,
         ticketCode: t.ticketCode,
+        outboxId: res.outboxId,
+        undoable,
       };
     });
 
@@ -578,6 +662,10 @@ export class ReplyService {
       messageId: out.messageId,
       closed: out.closed,
       status: out.finalStatus,
+      // 12.9: tell the client whether this send is held + which outbox row to recall.
+      outboxId: out.outboxId,
+      undoable: out.undoable,
+      undoWindowSeconds: out.undoable ? UNDO_WINDOW_SECONDS : undefined,
     };
   }
 
@@ -594,7 +682,13 @@ export class ReplyService {
     ticketId: string,
     input: ForwardInput,
   ): Promise<
-    | { ticketMessageId: string; messageId: string }
+    | {
+        ticketMessageId: string;
+        messageId: string;
+        outboxId?: string;
+        undoable?: boolean;
+        undoWindowSeconds?: number;
+      }
     | { needsConfirm: true; newRecipients: string[] }
   > {
     const actor = await actorForUser(user);
@@ -720,6 +814,8 @@ export class ReplyService {
       const bodyText = `${intro}${codeFooterText(t.ticketCode)}${fwd.text}${hist.text}`;
       const bodyHtml = `${introHtml}${codeFooterHtml(t.ticketCode)}${fwd.html}${hist.html}`;
 
+      // 12.9: a forward has no status change, so it is always undoable when requested.
+      const undoable = !!input.undo;
       const res = await sendOutboundMail(tx, {
         projectId: t.projectId,
         ticketId,
@@ -734,6 +830,7 @@ export class ReplyService {
         // Message-ID chain and lands back on this very ticket.
         inReplyTo: msg.messageId,
         references: [msg.references, msg.messageId].filter((x): x is string => !!x).join(' ') || null,
+        holdSeconds: undoable ? UNDO_WINDOW_SECONDS : undefined,
       });
 
       await writeAudit(tx, {
@@ -776,7 +873,93 @@ export class ReplyService {
         });
       }
 
-      return { ticketMessageId: res.ticketMessageId, messageId: res.messageId };
+      return {
+        ticketMessageId: res.ticketMessageId,
+        messageId: res.messageId,
+        outboxId: res.outboxId,
+        undoable,
+        undoWindowSeconds: undoable ? UNDO_WINDOW_SECONDS : undefined,
+      };
+    });
+  }
+
+  /**
+   * Undo Send (12.9): recall an outbound reply/forward while it is still HELD in the
+   * outbox (the 8s window). Cancellable only if the row is still `pending`, unclaimed,
+   * and its send time hasn't arrived — the worker's claim would have LOCKED it otherwise,
+   * so `FOR UPDATE` makes the two mutually exclusive (whoever grabs the row first wins).
+   * On success the held outbox row AND the just-written outbound message are removed and
+   * its attachments are unlinked (kept for re-use), so the ticket looks as if nothing was
+   * sent; the FE restores the composer from the content it still holds. Side effects that
+   * are harmless to leave (participant admission, auto-claim) are NOT reverted in v1.
+   */
+  async undoSend(user: SessionUser, ticketId: string, outboxId: string): Promise<{ ok: true }> {
+    const actor = await actorForUser(user);
+    const groups = actor.kind === 'user' ? actor.groups : [];
+    return withActor(actor, async (tx) => {
+      const [t] = await tx
+        .select({
+          projectId: tickets.projectId,
+          assigneeId: tickets.assigneeId,
+          categoryId: tickets.categoryId,
+        })
+        .from(tickets)
+        .where(eq(tickets.id, ticketId));
+      if (!t) throw new NotFoundException('Ticket not found'); // RLS-invisible → 404
+      assertCanReplyTicket(user, groups, t);
+
+      // Lock the held row; only recallable while pending + unclaimed + not yet due.
+      const [row] = await tx
+        .select({
+          id: outbox.id,
+          messageId: outbox.messageId,
+          status: outbox.status,
+          lockedAt: outbox.lockedAt,
+          attempts: outbox.attempts,
+          due: sql<boolean>`${outbox.nextAttemptAt} <= now()`,
+        })
+        .from(outbox)
+        .where(and(eq(outbox.id, outboxId), eq(outbox.ticketId, ticketId)))
+        .for('update');
+      if (!row) throw new NotFoundException('Outbox row not found');
+      // Cancellable ONLY while it's a still-HELD, NEVER-attempted send: pending, unclaimed,
+      // not yet due, AND attempts=0. A row in retry backoff (markFailure → pending + future
+      // next_attempt_at + attempts>=1) is NOT recallable — under at-least-once it may already
+      // have been delivered, so deleting it would "recall" a sent mail and drop its retry.
+      if (row.status !== 'pending' || row.lockedAt !== null || row.due || row.attempts !== 0) {
+        throw new ConflictException('ALREADY_SENT');
+      }
+
+      // Remove the outbound message written for this send + free its attachments.
+      if (row.messageId) {
+        const [msg] = await tx
+          .select({ id: ticketMessages.id })
+          .from(ticketMessages)
+          .where(
+            and(
+              eq(ticketMessages.ticketId, ticketId),
+              eq(ticketMessages.messageId, row.messageId),
+              // Only our own outbound carries this Message-ID; never touch an inbound.
+              eq(ticketMessages.direction, 'outbound'),
+            ),
+          );
+        if (msg) {
+          await tx.update(attachments).set({ messageId: null }).where(eq(attachments.messageId, msg.id));
+          await tx.delete(ticketMessages).where(eq(ticketMessages.id, msg.id));
+        }
+      }
+      await tx.delete(outbox).where(eq(outbox.id, outboxId));
+
+      await writeAudit(tx, {
+        projectId: t.projectId,
+        actorId: user.id,
+        actorLabel: user.email,
+        action: 'reply.undone',
+        objectType: 'ticket',
+        objectId: ticketId,
+        oldValue: { messageId: row.messageId, outboxId },
+      });
+      return { ok: true as const };
     });
   }
 }

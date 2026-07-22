@@ -10,7 +10,7 @@ import {
   unique,
   index,
 } from 'drizzle-orm/pg-core';
-import { projects, users } from './core';
+import { projects, users, categories } from './core';
 import { tickets } from './tickets';
 import { attachments } from './attachments';
 import { viewLogActionEnum } from './enums';
@@ -124,11 +124,20 @@ export const replyTemplates = pgTable(
       .references(() => projects.id),
     title: text('title').notNull(),
     body: text('body').notNull(),
+    // 12.2: NULL = common template (any category); else scoped to a category so the
+    // composer picker can show requester-relevant templates first.
+    categoryId: integer('category_id').references(() => categories.id),
+    // 12.2: soft-disable — hidden from the composer picker but kept (and re-enableable)
+    // in the admin manager, instead of hard-deleting.
+    enabled: boolean('enabled').notNull().default(true),
     createdBy: uuid('created_by').references(() => users.id),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('idx_reply_templates_project').on(t.projectId)],
+  (t) => [
+    index('idx_reply_templates_project').on(t.projectId),
+    index('idx_reply_templates_category').on(t.projectId, t.categoryId),
+  ],
 );
 
 /** "Contact HR" reopen-locked notice throttle: ≤1 notice / 24h / requester per

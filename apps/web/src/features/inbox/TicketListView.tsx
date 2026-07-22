@@ -297,17 +297,31 @@ export function TicketListView({
         </div>
       ),
     },
-    {
-      // CR-7: the v1 redesign folded the created time into the subject cell and lost
-      // the sortable header with it — a slim dedicated column brings manual
-      // newest/oldest-first back (handleTableChange → URL sort=created).
-      title: t('ticket.createdAt'),
-      dataIndex: 'createdAt',
-      width: 110,
-      sorter: true,
-      sortOrder: sortOrderFor('created'),
-      render: (v: string) => <Tooltip title={vnTime(v)}>{relTime(v, lang)}</Tooltip>,
-    },
+    // 12.6 (rev 2): the dedicated "Tạo lúc" column is dropped — the created time still
+    // shows inline under the subject, so no information is lost and the header row stays
+    // lean. Manual sort by created time is no longer offered (worklist order is the
+    // default; the closed archive sorts by "Ngày đóng").
+    // 12.6: the "Ngày đóng" column is only meaningful for closed tickets, and the
+    // default worklist hides closed ones (đơn 8). So it appears ONLY while the user
+    // is filtering the closed archive (status includes 'closed'). Open rows in that
+    // view (e.g. a mixed status filter) show "—". Sortable → URL sort=closed.
+    ...(filters.status?.includes('closed')
+      ? ([
+          {
+            title: t('ticket.closedAt'),
+            dataIndex: 'closedAt',
+            width: 110,
+            sorter: true,
+            sortOrder: sortOrderFor('closed'),
+            render: (v: string | null) =>
+              v ? (
+                <Tooltip title={vnTime(v)}>{relTime(v, lang)}</Tooltip>
+              ) : (
+                <Typography.Text type="secondary">—</Typography.Text>
+              ),
+          },
+        ] as ColumnsType<TicketListItem>)
+      : []),
     {
       title: t('ticket.status'),
       dataIndex: 'status',
@@ -339,8 +353,8 @@ export function TicketListView({
     const s = Array.isArray(sorter) ? sorter[0] : sorter;
     const key = (s?.columnKey ?? s?.field) as string | undefined;
     const col =
-      key === 'createdAt'
-        ? 'created'
+      key === 'closedAt'
+        ? 'closed'
         : key === 'status' || key === 'category' || key === 'assignee'
           ? (key as TicketSort)
           : undefined;

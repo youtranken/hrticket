@@ -84,11 +84,18 @@ export const ticketMessages = pgTable(
     inReplyTo: text('in_reply_to'),
     references: text('references'),
     isAutoReply: boolean('is_auto_reply').notNull().default(false),
+    // `created_at` carries the SEND time (inbound = parsed Date header, outbound = now)
+    // and drives the displayed timestamp. `received_at` (12.1/FR105) is when OUR system
+    // actually ingested the message → the thread is ORDERED by it so a CC reply that
+    // arrives after another message always sinks below it, even if its Date header is
+    // older. NULL for pre-12.1 rows → order falls back to created_at (unchanged).
+    receivedAt: timestamp('received_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index('idx_messages_ticket').on(t.ticketId),
     index('idx_messages_message_id').on(t.messageId),
+    index('idx_messages_ticket_received').on(t.ticketId, t.receivedAt),
   ],
 );
 

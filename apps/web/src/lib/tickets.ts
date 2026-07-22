@@ -31,10 +31,12 @@ export interface TicketListItem {
   isSpamThread?: boolean;
   /** First staff read (ISO) or null = unread. "Mới" shows only while unread AND unassigned. */
   firstReadAt?: string | null;
+  /** Ticket close time (ISO) or null = not closed — the "Ngày đóng" list column (12.6). */
+  closedAt?: string | null;
 }
 
 export type TicketView = 'all' | 'pool' | 'mine' | 'pending';
-export type TicketSort = 'worklist' | 'created' | 'status' | 'snooze' | 'category' | 'assignee';
+export type TicketSort = 'worklist' | 'created' | 'closed' | 'status' | 'snooze' | 'category' | 'assignee';
 export type SortDir = 'asc' | 'desc';
 
 /** Filter bar state (Story 10.1, FR79). Mirrors the BE Zod `ticketListQuerySchema`;
@@ -254,6 +256,8 @@ export interface RequesterHistory {
   total: number;
   active: number;
   junk: number;
+  /** 12.5: tickets this sender opened BEFORE the current one. */
+  prior: number;
   items: {
     id: string;
     ticketCode: string;
@@ -301,10 +305,16 @@ export interface ReplyDefaults {
   isSensitive: boolean;
 }
 
-export function useReplyDefaults(ticketId: string, enabled: boolean) {
+export function useReplyDefaults(
+  ticketId: string,
+  enabled: boolean,
+  target?: { messageId: string; mode: 'reply' | 'replyAll' } | null,
+) {
+  const qs = target ? `?messageId=${encodeURIComponent(target.messageId)}&mode=${target.mode}` : '';
   return useQuery<ReplyDefaults>({
-    queryKey: ['reply-defaults', ticketId],
-    queryFn: () => api(`/tickets/${ticketId}/reply-defaults`),
+    // 12.4: recipients depend on which message + mode the user picked.
+    queryKey: ['reply-defaults', ticketId, target?.messageId ?? null, target?.mode ?? 'replyAll'],
+    queryFn: () => api(`/tickets/${ticketId}/reply-defaults${qs}`),
     enabled,
   });
 }
@@ -320,9 +330,22 @@ export interface ReplyPayload {
   /** Send-with-status (đơn 6): snooze (needs snoozeUntil) or resolve in one action. */
   statusAfter?: 'pending' | 'resolved';
   snoozeUntil?: string;
+  /** Undo Send (12.9): request the 8s hold. Ignored by the server when the reply also
+   *  changes status (closeAfter/statusAfter) — those go immediately. */
+  undo?: boolean;
+  /** 12.10: the message being replied to (per-message Reply) → quote + threading target. */
+  ticketMessageId?: string;
 }
 export type ReplyResponse =
-  | { ticketMessageId: string; messageId: string; closed: boolean; status?: string }
+  | {
+      ticketMessageId: string;
+      messageId: string;
+      closed: boolean;
+      status?: string;
+      outboxId?: string;
+      undoable?: boolean;
+      undoWindowSeconds?: number;
+    }
   | { needsConfirm: true; newRecipients: string[] };
 
 export function useReply(ticketId: string) {
@@ -349,10 +372,32 @@ export interface ForwardPayload {
   body?: string;
   ticketMessageId: string;
   confirmNewRecipients?: boolean;
+  /** Undo Send (12.9): request the 8s hold. */
+  undo?: boolean;
 }
 export type ForwardResponse =
-  | { ticketMessageId: string; messageId: string }
+  | {
+      ticketMessageId: string;
+      messageId: string;
+      outboxId?: string;
+      undoable?: boolean;
+      undoWindowSeconds?: number;
+    }
   | { needsConfirm: true; newRecipients: string[] };
+
+/** Undo Send (12.9): recall a held reply/forward within the 8s window. */
+export function useUndoSend(ticketId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ ok: true }, Error, string>({
+    mutationFn: (outboxId) =>
+      api(`/tickets/${ticketId}/undo-send`, { method: 'POST', body: JSON.stringify({ outboxId }) }),
+    onSuccess: () => {
+      // The held message was removed server-side → refresh the thread so it disappears.
+      qc.invalidateQueries({ queryKey: ['ticket', ticketId] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+    },
+  });
+}
 
 export function useForward(ticketId: string) {
   const qc = useQueryClient();

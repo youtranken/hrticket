@@ -4,14 +4,17 @@ import { withActor, systemActor } from '../../infra/db/with-actor';
 import { tickets } from '../../infra/db/schema';
 import { verifySigned } from '../../infra/crypto/signing';
 
-/** Coarse public buckets — the requester only ever sees these three, never the internal
- *  open/assigned/in_progress/pending/resolved/closed states or any thread content. */
-export type PublicStatusBucket = 'received' | 'in_progress' | 'done';
+/** Coarse public buckets — the requester only ever sees these four, never the internal
+ *  open/assigned/in_progress/pending/resolved/closed states or any thread content.
+ *  Story 12.8: `pending` gets its own "awaiting" bucket (split from processing) so a
+ *  requester can tell the ticket is on hold rather than actively being worked. */
+export type PublicStatusBucket = 'received' | 'processing' | 'awaiting' | 'closed';
 
-function bucketOf(status: string): PublicStatusBucket {
-  if (status === 'resolved' || status === 'closed') return 'done';
-  if (status === 'in_progress' || status === 'pending') return 'in_progress';
-  return 'received'; // open, assigned
+export function bucketOf(status: string): PublicStatusBucket {
+  if (status === 'resolved' || status === 'closed') return 'closed';
+  if (status === 'pending') return 'awaiting';
+  if (status === 'in_progress') return 'processing';
+  return 'received'; // open, assigned (and any unexpected value)
 }
 
 export interface PublicStatusView {

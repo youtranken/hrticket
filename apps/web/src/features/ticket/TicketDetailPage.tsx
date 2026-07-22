@@ -117,17 +117,23 @@ export function TicketDetailPage() {
   // Forward mode: the bubble's link selects a message, the ComposeBox opens its
   // Forward tab. The compose sits below the thread — bring the input into view.
   const [forwardMsg, setForwardMsg] = useState<TicketMessage | null>(null);
+  // 12.4: which message the user hit Reply / Reply All on → seeds the composer.
+  const [replyTarget, setReplyTarget] = useState<{ messageId: string; mode: 'reply' | 'replyAll' } | null>(null);
+  // 12.5: sender history is available to anyone who can view the ticket (incl. a
+  // member of the group who hasn't claimed it) — not gated behind canEdit.
+  const [senderHistoryOpen, setSenderHistoryOpen] = useState(false);
   const composeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!forwardMsg) return;
-    // Wait a tick so ComposeBox has switched to the (taller) Forward tab, then scroll the
-    // input area itself into view — not just the end of the thread above it.
+    // Same affordance for Forward AND per-message Reply / Reply All (12.4): after the
+    // click, wait a tick so ComposeBox has switched tab, then bring the compose input into
+    // view — the composer sits below the thread, so a click near the top would be off-screen.
+    if (!forwardMsg && !replyTarget) return;
     const id = window.setTimeout(
       () => composeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
       120,
     );
     return () => window.clearTimeout(id);
-  }, [forwardMsg]);
+  }, [forwardMsg, replyTarget]);
 
   // Skeleton mirrors the real layout (header card + a couple of message bubbles) so
   // the page doesn't jump when data lands — a lone off-center Spin read as broken.
@@ -158,6 +164,17 @@ export function TicketDetailPage() {
   // Cross-post no longer locks a side — both projects work their own ticket, each
   // mailing from its own mailbox, and the thread below merges both conversations.
   const canEdit = canAct && ticket.status !== 'closed';
+  // 12.3/12.4: who may reply/forward here — mirrors the server canReplyTicket gate
+  // (assignee of any role OR any Member/TL in the ticket's group), needs the capability,
+  // and never on a closed ticket. Drives per-message Reply/Reply All/Forward affordances.
+  const canReplyHere =
+    ticket.status !== 'closed' &&
+    !!me &&
+    hasCap(me, 'ticket.reply') &&
+    (ticket.assignee?.id === me.user.id ||
+      ((me.role === 'member' || me.role === 'team_lead') &&
+        ticket.categoryId !== null &&
+        (me.groups ?? []).includes(ticket.categoryId)));
   // Junk / spam-thread → the ticket is "set aside": its manual tags are hidden and the
   // title is dimmed/struck so it's recognisable at a glance (the Rác/Spam badge stays).
   const flagged = !!ticket.isJunk || !!ticket.isSpamThread;
@@ -242,6 +259,7 @@ export function TicketDetailPage() {
                 requesterEmail={ticket.requesterEmail}
                 isSpamThread={!!ticket.isSpamThread}
                 isJunk={!!ticket.isJunk}
+                onOpenHistory={() => setSenderHistoryOpen(true)}
               />
             )}
             {me && me.role !== 'member' && (
@@ -249,7 +267,12 @@ export function TicketDetailPage() {
             )}
           </Space>
           <Descriptions size="small" column={2} style={{ marginTop: 8 }}>
-            <Descriptions.Item label={t('ticket.requester')}>{ticket.requesterEmail}</Descriptions.Item>
+            <Descriptions.Item label={t('ticket.requester')}>
+              {/* 12.5: click the sender to see how many tickets they've opened. */}
+              <a onClick={() => setSenderHistoryOpen(true)} title={t('ticket.senderHistory')}>
+                {ticket.requesterEmail}
+              </a>
+            </Descriptions.Item>
             <Descriptions.Item label={t('ticket.category')}>
               {ticket.category ? ticket.category[lang] : '—'}
             </Descriptions.Item>
@@ -347,17 +370,19 @@ export function TicketDetailPage() {
           attByMsg={attByMsg}
           ownProjectKey={ticket.projectKey}
           onForward={
-            // Mirror the server reply gate (review #7): assignee (any role, đơn 5)
-            // or TL of the ticket's group, holding the ticket.reply capability —
-            // nobody else gets a dead Forward link.
-            ticket.status !== 'closed' &&
-            me &&
-            hasCap(me, 'ticket.reply') &&
-            (ticket.assignee?.id === me.user.id ||
-              (me.role === 'team_lead' &&
-                ticket.categoryId !== null &&
-                (me.groups ?? []).includes(ticket.categoryId)))
-              ? (msg) => setForwardMsg(msg) // scroll handled by the effect below, once the Forward tab has expanded
+            canReplyHere
+              ? (msg) => {
+                  setReplyTarget(null);
+                  setForwardMsg(msg);
+                }
+              : undefined
+          }
+          onReply={
+            canReplyHere
+              ? (msg, mode) => {
+                  setForwardMsg(null);
+                  setReplyTarget({ messageId: msg.id, mode });
+                }
               : undefined
           }
         />
@@ -376,12 +401,20 @@ export function TicketDetailPage() {
             status={ticket.status}
             forward={forwardMsg}
             onForwardDone={() => setForwardMsg(null)}
+            replyTarget={replyTarget}
+            onReplyTargetDone={() => setReplyTarget(null)}
           />
         </div>
       )}
 
       {/* Back-to-top that doubles as a 0→100% scroll-progress meter (ring + %). */}
       <ScrollProgress />
+
+      {/* 12.5: shared sender-history modal — opened from the ⋮ menu OR the clickable
+          requester email, so a group member who hasn't claimed the ticket still sees it. */}
+      {senderHistoryOpen && (
+        <SenderHistoryModal ticketId={ticket.id} onClose={() => setSenderHistoryOpen(false)} />
+      )}
     </Space>
   );
 }
@@ -398,11 +431,13 @@ function SpamActionsMenu({
   requesterEmail,
   isSpamThread,
   isJunk,
+  onOpenHistory,
 }: {
   ticketId: string;
   requesterEmail: string;
   isSpamThread: boolean;
   isJunk: boolean;
+  onOpenHistory: () => void;
 }) {
   const { t } = useTranslation();
   const { message, modal } = AntApp.useApp();
@@ -444,8 +479,6 @@ function SpamActionsMenu({
     );
   };
 
-  const [historyOpen, setHistoryOpen] = useState(false);
-
   return (
     <>
       <Dropdown
@@ -453,12 +486,13 @@ function SpamActionsMenu({
         menu={{
           items: [
             {
-              // Đơn 16: how many tickets has this sender opened? (spam triage +
-              // "did this person already ask?" in one glance)
+              // Đơn 16 / 12.5: how many tickets has this sender opened? (spam triage +
+              // "did this person already ask?" in one glance). Opens the shared,
+              // page-level modal so the clickable requester email uses the same one.
               key: 'history',
               icon: <HistoryOutlined />,
               label: t('ticket.senderHistory'),
-              onClick: () => setHistoryOpen(true),
+              onClick: onOpenHistory,
             },
             {
               key: 'junk',
@@ -478,7 +512,6 @@ function SpamActionsMenu({
       >
         <Button size="small" icon={<MoreOutlined />} aria-label={t('spam.mark.menuLabel')} />
       </Dropdown>
-      {historyOpen && <SenderHistoryModal ticketId={ticketId} onClose={() => setHistoryOpen(false)} />}
     </>
   );
 }
@@ -502,6 +535,7 @@ function SenderHistoryModal({ ticketId, onClose }: { ticketId: string; onClose: 
           <Text strong>{d.email}</Text>
           <Space wrap size="small">
             <Tag color="blue">{t('ticket.senderHistoryTotal', { n: d.total })}</Tag>
+            <Tag color="geekblue">{t('ticket.senderHistoryPrior', { n: d.prior })}</Tag>
             <Tag color="green">{t('ticket.senderHistoryActive', { n: d.active })}</Tag>
             {d.junk > 0 && <Tag color="orange">{t('ticket.senderHistoryJunk', { n: d.junk })}</Tag>}
           </Space>

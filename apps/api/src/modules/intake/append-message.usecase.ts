@@ -34,6 +34,7 @@ export interface AppendResult {
  */
 export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promise<AppendResult> {
   const { ticketId, parsed } = input;
+  const ingestNow = new Date(); // ordering key + fallback/clamp for the display time
 
   const [message] = await tx
     .insert(ticketMessages)
@@ -49,7 +50,13 @@ export async function appendMessageToTicket(tx: DbTx, input: AppendInput): Promi
       inReplyTo: parsed.inReplyTo,
       references: parsed.references.join(' ') || null,
       isAutoReply: input.isAutoReply ?? false,
-      createdAt: parsed.date ?? new Date(),
+      // Display send-time = Date header, clamped to ingest when spoofed/skewed future (> +1d).
+      createdAt:
+        parsed.date && parsed.date.getTime() <= ingestNow.getTime() + 86_400_000
+          ? parsed.date
+          : ingestNow,
+      // 12.1: ingest time = ordering key (late mail sinks below), see create-ticket.
+      receivedAt: ingestNow,
     })
     .returning({ id: ticketMessages.id });
 
