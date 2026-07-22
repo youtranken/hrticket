@@ -16,8 +16,9 @@ import {
   App as AntApp,
 } from 'antd';
 import { useAttachmentConfig, useSaveAttachmentConfig } from '../../lib/attachmentConfig';
+import { PageHeader } from '../../components/PageHeader';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 function humanGb(bytes: number): string {
   const gb = bytes / 1024 / 1024 / 1024;
@@ -73,7 +74,7 @@ export function AttachmentConfigPage() {
 
   return (
     <div className="settings-page">
-      <Title level={4}>{t('files.cfg.title')}</Title>
+      <PageHeader title={t('files.cfg.title')} />
 
       <div className="settings-grid" style={{ marginBottom: 16 }}>
         {disk && (

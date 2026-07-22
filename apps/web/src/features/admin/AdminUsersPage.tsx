@@ -177,9 +177,15 @@ export function AdminUsersPage() {
   return (
     <>
       <PeopleTabBar />
-      <Card title={t('menu.users')}>
-        <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }}>
-        <Space>
+      <Card
+        title={t('menu.users')}
+        extra={
+          <Button type="primary" onClick={() => setCreating(true)}>
+            {t('users.create')}
+          </Button>
+        }
+      >
+        <Space style={{ marginBottom: 12 }}>
           <Input.Search
             allowClear
             placeholder={t('users.search')}
@@ -190,10 +196,6 @@ export function AdminUsersPage() {
             {t('users.showInactive')}
           </Checkbox>
         </Space>
-        <Button type="primary" onClick={() => setCreating(true)}>
-          {t('users.create')}
-        </Button>
-      </Space>
       <Table<AdminUser>
         rowKey="id"
         loading={isLoading}

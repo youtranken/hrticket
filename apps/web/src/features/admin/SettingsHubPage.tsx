@@ -13,9 +13,10 @@ import {
   MessageOutlined,
 } from '@ant-design/icons';
 import { useMe } from '../../lib/auth';
+import { PageHeader } from '../../components/PageHeader';
 import { palette } from '../../theme';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 interface ConfigCard {
   key: string;
@@ -72,8 +73,7 @@ export function SettingsHubPage() {
 
   return (
     <div>
-      <Title level={4}>{t('settings.hub.title')}</Title>
-      <Paragraph type="secondary">{t('settings.hub.subtitle')}</Paragraph>
+      <PageHeader title={t('settings.hub.title')} subtitle={t('settings.hub.subtitle')} />
 
       {SECTIONS.map((section) => {
         const cards = section.cards.filter((c) => !c.ssaOnly || isSsa);
