@@ -99,7 +99,25 @@ function CategoriesTab() {
         dataSource={cats}
         pagination={false}
         columns={[
-          { title: t('admin.nameVi'), dataIndex: 'nameVi' },
+          {
+            title: t('admin.nameVi'),
+            dataIndex: 'nameVi',
+            render: (v: string, c: AdminCategory) => (
+              <Space size={6}>
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 3,
+                    background: c.color ?? '#d9d9d9',
+                    display: 'inline-block',
+                    flexShrink: 0,
+                  }}
+                />
+                {v}
+              </Space>
+            ),
+          },
           { title: t('admin.nameEn'), dataIndex: 'nameEn' },
           {
             title: t('admin.keywords'),
@@ -221,6 +239,7 @@ function CategoryDrawer({
   const cat = isNew ? null : value;
   const [nameVi, setNameVi] = useState(cat?.nameVi ?? '');
   const [nameEn, setNameEn] = useState(cat?.nameEn ?? '');
+  const [color, setColor] = useState(cat?.color ?? '');
   const [sensitive, setSensitive] = useState(cat?.isSensitive ?? false);
   const [keywords, setKeywords] = useState<string[]>(cat?.keywords ?? []);
   const [senderPatterns, setSenderPatterns] = useState<string[]>(cat?.senderPatterns ?? []);
@@ -232,9 +251,9 @@ function CategoryDrawer({
     setSaving(true);
     try {
       if (isNew) {
-        await createCategory({ nameVi, nameEn, isSensitive: sensitive, keywords, senderPatterns });
+        await createCategory({ nameVi, nameEn, color: color || undefined, isSensitive: sensitive, keywords, senderPatterns });
       } else {
-        await updateCategory(cat!.id, { nameVi, nameEn, isSensitive: sensitive, keywords, senderPatterns });
+        await updateCategory(cat!.id, { nameVi, nameEn, color: color || undefined, isSensitive: sensitive, keywords, senderPatterns });
       }
       message.success(t('admin.saved'));
       onSaved();
@@ -265,6 +284,23 @@ function CategoryDrawer({
         <div>
           <Text>{t('admin.nameEn')}</Text>
           <Input value={nameEn} onChange={(e) => setNameEn(e.target.value)} />
+        </div>
+        <div>
+          <Text style={{ display: 'block', marginBottom: 4 }}>{t('admin.color')}</Text>
+          <ColorPicker
+            value={color || undefined}
+            onChange={(_, hex) => setColor(hex)}
+            onClear={() => setColor('')}
+            allowClear
+            showText
+            format="hex"
+            presets={[
+              {
+                label: t('admin.color'),
+                colors: ['#1F3A5F', '#1B7A52', '#574AA0', '#0E6E74', '#985B1C', '#A63347', '#2B5AA8', '#495468'],
+              },
+            ]}
+          />
         </div>
         <Space>
           <Switch checked={sensitive} onChange={setSensitive} />

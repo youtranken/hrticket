@@ -17,7 +17,7 @@ export interface TicketListItem {
   subject: string;
   requesterEmail: string;
   status: string;
-  category: { vi: string; en: string } | null;
+  category: { vi: string; en: string; color: string | null } | null;
   assignee: TicketAssignee | null;
   tags: { name: string; color: string | null; kind?: string }[];
   createdAt: string;
@@ -151,7 +151,7 @@ export interface SearchResultItem {
   subject: string;
   requesterEmail: string;
   status: string;
-  category: { vi: string; en: string } | null;
+  category: { vi: string; en: string; color: string | null } | null;
   assignee: { id: string; name: string } | null;
   createdAt: string;
   matchType: SearchMatchType;
@@ -219,7 +219,7 @@ export interface TicketDetail {
     subject: string;
     requesterEmail: string;
     status: string;
-    category: { vi: string; en: string } | null;
+    category: { vi: string; en: string; color: string | null } | null;
     categoryId: number | null;
     categorySensitive?: boolean;
     /** True for the system "Khác"/Other bucket — gates claim-from-Khác UX (đơn 5). */

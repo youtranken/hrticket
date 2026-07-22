@@ -64,7 +64,7 @@ export interface TicketListItem {
   subject: string;
   requesterEmail: string;
   status: string;
-  category: { vi: string; en: string } | null;
+  category: { vi: string; en: string; color: string | null } | null;
   assignee: TicketAssignee | null;
   tags: { name: string; color: string | null; kind: string }[];
   createdAt: Date;
@@ -197,6 +197,7 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categoryColor: categories.color,
           categorySensitive: categories.isSensitive,
           assigneeId: assignee.id,
           assigneeName: assignee.name,
@@ -250,7 +251,7 @@ export class TicketsReadService {
         subject: r.subject,
         requesterEmail: r.requesterEmail,
         status: r.status,
-        category: r.categoryVi ? { vi: r.categoryVi, en: r.categoryEn! } : null,
+        category: r.categoryVi ? { vi: r.categoryVi, en: r.categoryEn!, color: r.categoryColor ?? null } : null,
         assignee: r.assigneeId
           ? {
               id: r.assigneeId,
@@ -335,6 +336,7 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categoryColor: categories.color,
           assigneeName: assignee.name,
           createdAt: tickets.createdAt,
           closedAt: tickets.closedAt,
@@ -551,6 +553,7 @@ export class TicketsReadService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categoryColor: categories.color,
           categoryId: tickets.categoryId,
           categorySensitive: categories.isSensitive,
           categoryIsSystem: categories.isSystem,
@@ -724,7 +727,7 @@ export class TicketsReadService {
           subject: t.subject,
           requesterEmail: t.requesterEmail,
           status: t.status,
-          category: t.categoryVi ? { vi: t.categoryVi, en: t.categoryEn! } : null,
+          category: t.categoryVi ? { vi: t.categoryVi, en: t.categoryEn!, color: t.categoryColor ?? null } : null,
           categoryId: t.categoryId,
           categorySensitive: t.categorySensitive,
           categoryIsSystem: t.categoryIsSystem ?? false,

@@ -26,9 +26,11 @@ const keywords = z.array(z.string()).optional();
 // validation ("@" present, per-project uniqueness) lives in the service so it can answer
 // 422/409; here we only shape it as an optional string array.
 const senderPatterns = z.array(z.string()).optional();
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color must be a #RRGGBB hex');
 const createCategory = z.object({
   nameVi: z.string().min(1),
   nameEn: z.string().min(1),
+  color: hexColor.optional(),
   isSensitive: z.boolean().optional(),
   keywords,
   senderPatterns,
@@ -36,6 +38,7 @@ const createCategory = z.object({
 const updateCategory = z.object({
   nameVi: z.string().min(1).optional(),
   nameEn: z.string().min(1).optional(),
+  color: hexColor.optional(),
   isSensitive: z.boolean().optional(),
   disabled: z.boolean().optional(),
   keywords,

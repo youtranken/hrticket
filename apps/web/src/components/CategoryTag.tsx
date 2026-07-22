@@ -1,15 +1,14 @@
 import { Tag, Typography } from 'antd';
 
 /**
- * Category (= company / danh mục) chip. Categories carry no colour in the data model
- * (only tags do), so a plain name rendered next to coloured status/tag chips looked
- * unstyled. This gives every category a STABLE colour derived from its name — same
- * company → same chip every time — from a muted, brand-safe palette that stays
- * "quiet enterprise" (soft tint + readable ink, not neon). No backend change.
+ * Category (= company / danh mục) chip. An admin can now pick a colour per category;
+ * when set, the chip uses that hue as a soft tint (ink + light background, staying
+ * "quiet enterprise"). When no colour is chosen, it falls back to a STABLE colour
+ * derived from the name (same company → same chip) from a muted, brand-safe palette.
  *
- * Colour is keyed on the Vietnamese name so it stays identical across VI/EN display.
+ * Fallback colour is keyed on the Vietnamese name so it stays identical across VI/EN.
  */
-type CategoryRef = { vi: string; en: string } | null | undefined;
+type CategoryRef = { vi: string; en: string; color?: string | null } | null | undefined;
 
 // Muted tint/ink pairs — each ink passes WCAG AA on its own soft tint.
 const CHIPS: ReadonlyArray<{ bg: string; fg: string }> = [
@@ -39,14 +38,24 @@ export function CategoryTag({
   style?: React.CSSProperties;
 }) {
   if (!category) return <Typography.Text type="secondary">—</Typography.Text>;
-  const c = CHIPS[hash(category.vi || category.en) % CHIPS.length]!;
+  // Admin-chosen colour → soft tint of that hue; else a stable palette pick from the name.
+  const chip = category.color
+    ? {
+        fg: category.color,
+        bg: `color-mix(in srgb, ${category.color} 13%, #fff)`,
+        border: `color-mix(in srgb, ${category.color} 32%, #fff)`,
+      }
+    : (() => {
+        const c = CHIPS[hash(category.vi || category.en) % CHIPS.length]!;
+        return { fg: c.fg, bg: c.bg, border: `${c.fg}2E` };
+      })();
   return (
     <Tag
       style={{
         margin: 0,
-        color: c.fg,
-        background: c.bg,
-        border: `1px solid ${c.fg}2E`, // ~18% ink border — soft edge
+        color: chip.fg,
+        background: chip.bg,
+        border: `1px solid ${chip.border}`,
         fontWeight: 500,
         ...style,
       }}

@@ -50,6 +50,7 @@ export interface AdminCategory {
   id: number;
   nameVi: string;
   nameEn: string;
+  color: string | null;
   isSensitive: boolean;
   isSystem: boolean;
   disabled: boolean;
@@ -82,6 +83,7 @@ export function useAdminCategories() {
 export function createCategory(input: {
   nameVi: string;
   nameEn: string;
+  color?: string;
   isSensitive?: boolean;
   keywords?: string[];
   senderPatterns?: string[];
@@ -93,6 +95,7 @@ export function updateCategory(
   patch: {
     nameVi?: string;
     nameEn?: string;
+    color?: string;
     isSensitive?: boolean;
     disabled?: boolean;
     keywords?: string[];

@@ -64,6 +64,7 @@ export const categories = pgTable(
       .references(() => projects.id),
     nameVi: text('name_vi').notNull(),
     nameEn: text('name_en').notNull(),
+    color: text('color'), // optional chip colour (hex); null → deterministic fallback in the UI
     isSensitive: boolean('is_sensitive').notNull().default(false),
     isSystem: boolean('is_system').notNull().default(false), // "Khác" is system
     disabled: boolean('disabled').notNull().default(false),

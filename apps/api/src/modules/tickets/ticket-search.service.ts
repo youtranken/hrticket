@@ -15,7 +15,7 @@ export interface SearchResultItem {
   subject: string;
   requesterEmail: string;
   status: string;
-  category: { vi: string; en: string } | null;
+  category: { vi: string; en: string; color: string | null } | null;
   assignee: { id: string; name: string } | null;
   createdAt: Date;
   /** Why this ticket matched (code hits float to the very top). */
@@ -112,6 +112,7 @@ export class TicketSearchService {
           status: tickets.status,
           categoryVi: categories.nameVi,
           categoryEn: categories.nameEn,
+          categoryColor: categories.color,
           assigneeId: assignee.id,
           assigneeName: assignee.name,
           createdAt: tickets.createdAt,
@@ -141,7 +142,7 @@ export class TicketSearchService {
         subject: r.subject,
         requesterEmail: r.requesterEmail,
         status: r.status,
-        category: r.categoryVi ? { vi: r.categoryVi, en: r.categoryEn! } : null,
+        category: r.categoryVi ? { vi: r.categoryVi, en: r.categoryEn!, color: r.categoryColor ?? null } : null,
         assignee: r.assigneeId ? { id: r.assigneeId, name: r.assigneeName! } : null,
         createdAt: r.createdAt,
         matchType: r.matchType,

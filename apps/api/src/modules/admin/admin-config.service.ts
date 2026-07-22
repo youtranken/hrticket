@@ -29,6 +29,7 @@ export interface CategoryAdminView {
   id: number;
   nameVi: string;
   nameEn: string;
+  color: string | null;
   isSensitive: boolean;
   isSystem: boolean;
   disabled: boolean;
@@ -105,6 +106,7 @@ export class AdminConfigService {
           id: c.id,
           nameVi: c.nameVi,
           nameEn: c.nameEn,
+          color: c.color,
           isSensitive: c.isSensitive,
           isSystem: c.isSystem,
           disabled: c.disabled,
@@ -128,7 +130,7 @@ export class AdminConfigService {
   async createCategory(
     actor: SessionUser,
     projectId: number,
-    input: { nameVi: string; nameEn: string; isSensitive?: boolean; keywords?: string[]; senderPatterns?: string[] },
+    input: { nameVi: string; nameEn: string; color?: string; isSensitive?: boolean; keywords?: string[]; senderPatterns?: string[] },
   ): Promise<{ id: number }> {
     return withActor(systemActor, async (tx) => {
       const [row] = await tx
@@ -137,6 +139,7 @@ export class AdminConfigService {
           projectId,
           nameVi: input.nameVi,
           nameEn: input.nameEn,
+          color: input.color ?? null,
           isSensitive: input.isSensitive ?? false,
         })
         .onConflictDoNothing({ target: [categories.projectId, categories.nameEn] })
@@ -162,6 +165,7 @@ export class AdminConfigService {
     patch: {
       nameVi?: string;
       nameEn?: string;
+      color?: string;
       isSensitive?: boolean;
       disabled?: boolean;
       keywords?: string[];
@@ -175,6 +179,7 @@ export class AdminConfigService {
       const set: Record<string, unknown> = {};
       if (patch.nameVi !== undefined) set.nameVi = patch.nameVi;
       if (patch.nameEn !== undefined) set.nameEn = patch.nameEn;
+      if (patch.color !== undefined) set.color = patch.color;
       if (patch.isSensitive !== undefined) set.isSensitive = patch.isSensitive;
       if (patch.disabled !== undefined) set.disabled = patch.disabled;
       if (Object.keys(set).length) {
