@@ -8,7 +8,6 @@ import {
   Input,
   InputNumber,
   Collapse,
-  Empty,
   Select,
   Space,
   Tag,
@@ -16,6 +15,8 @@ import {
   Typography,
   App as AntApp,
 } from 'antd';
+import { EmptyState } from '../../components/EmptyState';
+import { InboxZeroArt } from '../../components/illustrations/empty';
 import {
   useBlocklist,
   useAddBlock,
@@ -328,7 +329,7 @@ function HeldMailTab() {
       <ThresholdConfig />
       <Text type="secondary">{t('spam.held.hint')}</Text>
       {groups.length === 0 ? (
-        <Empty description={t('spam.held.empty')} />
+        <EmptyState art={<InboxZeroArt />} description={t('spam.held.empty')} />
       ) : (
         <Collapse
           items={groups.map((g) => ({

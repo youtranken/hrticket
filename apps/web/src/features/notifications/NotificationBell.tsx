@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { App, Badge, Button, Dropdown, Empty, List, Typography } from 'antd';
+import { App, Badge, Button, Dropdown, List, Tooltip, Typography } from 'antd';
 import {
   BellOutlined,
   InboxOutlined,
@@ -19,7 +19,9 @@ import {
   useMarkAllNotificationsRead,
   type NotificationItem,
 } from '../../lib/notifications';
-import { fmtDateTime } from '../../lib/datetime';
+import { fmtDateTime, fmtRelative } from '../../lib/datetime';
+import { EmptyState } from '../../components/EmptyState';
+import { NoNotificationsArt } from '../../components/illustrations/empty';
 
 const { Text } = Typography;
 
@@ -131,7 +133,9 @@ export function NotificationBell() {
         )}
       </div>
       {items.length === 0 ? (
-        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('notif.empty')} style={{ padding: 16 }} />
+        <div style={{ padding: '20px 16px' }}>
+          <EmptyState art={<NoNotificationsArt />} description={t('notif.empty')} imageHeight={84} />
+        </div>
       ) : (
         <List
           size="small"
@@ -158,9 +162,11 @@ export function NotificationBell() {
                   avatar={<span style={{ fontSize: 16, color: g.color }}>{g.node}</span>}
                   title={<Text style={{ fontSize: 13 }}>{label(n)}</Text>}
                   description={
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      {vnTime(n.createdAt)}
-                    </Text>
+                    <Tooltip title={vnTime(n.createdAt)}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {fmtRelative(n.createdAt)}
+                      </Text>
+                    </Tooltip>
                   }
                 />
               </List.Item>

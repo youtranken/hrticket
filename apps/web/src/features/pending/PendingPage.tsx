@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Alert, Table, Tag, Empty, Space, Button, Dropdown } from 'antd';
+import { Alert, Table, Tag, Space, Button, Dropdown } from 'antd';
 import { SortAscendingOutlined, DownOutlined, ReloadOutlined } from '@ant-design/icons';
+import { EmptyState } from '../../components/EmptyState';
+import { InboxZeroArt } from '../../components/illustrations/empty';
 import type { ColumnsType } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { useMe } from '../../lib/auth';
@@ -204,7 +206,7 @@ export function PendingPage() {
         columns={columns}
         dataSource={data?.items ?? []}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: <Empty description={t('reports.pending.empty')} /> }}
+        locale={{ emptyText: <EmptyState art={<InboxZeroArt />} description={t('reports.pending.empty')} /> }}
         onChange={onTableChange}
         onRow={(r) => ({
           onClick: () => navigate(`/tickets/${r.id}`),

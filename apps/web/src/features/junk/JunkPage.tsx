@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { Alert, Card, Table, Button, Empty, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
+import { Alert, Card, Table, Button, Tag, Space, Tooltip, Typography, App as AntApp } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { TicketsTabBar } from '../inbox/TicketsTabBar';
+import { EmptyState } from '../../components/EmptyState';
+import { InboxZeroArt } from '../../components/illustrations/empty';
 import { useJunkTickets, useReleaseJunk, type JunkTicket } from '../../lib/junk';
 import { useAddBlock } from '../../lib/blocklist';
 import { useMe } from '../../lib/auth';
@@ -82,7 +84,7 @@ export function JunkPage() {
         loading={isLoading}
         dataSource={rows}
         scroll={{ x: 900 }}
-        locale={{ emptyText: <Empty description={t('junk.empty')} /> }}
+        locale={{ emptyText: <EmptyState art={<InboxZeroArt />} description={t('junk.empty')} /> }}
         pagination={{
           pageSize: 20,
           showSizeChanger: true,

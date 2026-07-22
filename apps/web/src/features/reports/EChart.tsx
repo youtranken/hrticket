@@ -23,7 +23,9 @@ echarts.use([
 
 /**
  * Thin ECharts wrapper (Story 10.3): mounts a chart into a div, updates on option
- * change, resizes with the window, and forwards bar/line clicks for drill-through.
+ * change, resizes with its CONTAINER (ResizeObserver — so the chart reflows when the
+ * sidebar collapses or a panel toggles, not only on window resize), and forwards
+ * bar/line clicks for drill-through.
  */
 export function EChart({
   option,
@@ -43,8 +45,14 @@ export function EChart({
     chartRef.current = chart;
     const onResize = () => chart.resize();
     window.addEventListener('resize', onResize);
+    // Container-level resize (sider collapse, panel toggle, flex reflow) — window
+    // 'resize' alone misses these. Guarded for older engines without ResizeObserver.
+    const ro =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => chart.resize()) : null;
+    ro?.observe(ref.current);
     return () => {
       window.removeEventListener('resize', onResize);
+      ro?.disconnect();
       chart.dispose();
       chartRef.current = null;
     };

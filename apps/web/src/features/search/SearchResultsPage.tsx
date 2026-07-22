@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Alert, Button, Table, Tag, Typography, Empty, Space } from 'antd';
+import { Alert, Button, Table, Tag, Typography, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import { EmptyState } from '../../components/EmptyState';
+import { NoResultsArt } from '../../components/illustrations/empty';
 import type { ColumnsType } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { useMe } from '../../lib/auth';
@@ -154,7 +156,7 @@ export function SearchResultsPage() {
         columns={columns}
         dataSource={data?.items ?? []}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: <Empty description={t('reports.search.empty')} /> }}
+        locale={{ emptyText: <EmptyState art={<NoResultsArt />} description={t('reports.search.empty')} /> }}
         onChange={onTableChange}
         onRow={(r) => ({ onClick: () => navigate(`/tickets/${r.id}`), style: { cursor: 'pointer' } })}
         pagination={{

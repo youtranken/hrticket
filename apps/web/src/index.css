@@ -305,6 +305,22 @@ pre,
   box-shadow: inset 4px 0 0 var(--accent-unread);
 }
 
+/* New-ticket flash (Phase 2): a row that just arrived via poll / "pull new" gets a
+   quick gold wash that fades back to its normal background. CSS animations outrank the
+   inline row background during playback, and with NO fill-mode the overdue/unread inline
+   tints are restored the instant it ends. Parked by the reduced-motion guard. */
+@keyframes rowFlash {
+  from {
+    background-color: rgba(232, 177, 28, 0.3);
+  }
+  to {
+    background-color: rgba(232, 177, 28, 0);
+  }
+}
+.row-flash > td.ant-table-cell {
+  animation: rowFlash 1.6s var(--ease-out);
+}
+
 /* Email quote chains — Gmail-style left bars (│ │ │ when nested). Inbound mail loses
    its inline border style to the server sanitizer's typography whitelist, so the bars
    are (re)applied here uniformly for every client's quoting markup. */
@@ -395,6 +411,25 @@ pre,
 }
 .ant-card-hoverable:hover {
   transform: translateY(-2px);
+}
+
+/* Branded empty/error illustrations (Phase 2): fade+rise on mount, then breathe with a
+   slow vertical float so a "trống" screen feels alive, not broken. Float is infinite →
+   the reduced-motion guard (iteration-count:1) parks it. */
+@keyframes emptyFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.empty-art {
+  display: inline-flex;
+  animation:
+    fadeInUp var(--motion-slow) var(--ease-out) both,
+    emptyFloat 5s ease-in-out 0.4s infinite;
 }
 
 /* Accessibility: honour the OS "reduce motion" setting — kill all animation/transition.

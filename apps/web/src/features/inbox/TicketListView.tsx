@@ -1,8 +1,8 @@
-import { useState, type Key } from 'react';
+import { useEffect, useRef, useState, type Key } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { Table, Tag, Typography, Empty, Space, Button, Tooltip, Modal, Select, Avatar, Popover, Progress, Spin, Badge, Alert, App as AntApp } from 'antd';
+import { Table, Tag, Typography, Space, Button, Tooltip, Modal, Select, Avatar, Popover, Progress, Spin, Badge, Alert, App as AntApp } from 'antd';
 import {
   TagsOutlined,
   CheckOutlined,
@@ -47,7 +47,9 @@ import { exportTickets } from '../../lib/export';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
 import { CategoryTag } from '../../components/CategoryTag';
-import { fmtDateTime } from '../../lib/datetime';
+import { EmptyState } from '../../components/EmptyState';
+import { InboxZeroArt } from '../../components/illustrations/empty';
+import { fmtDateTime, fmtRelative } from '../../lib/datetime';
 
 function vnTime(iso: string): string {
   return fmtDateTime(iso);
@@ -68,19 +70,6 @@ function initialOf(s: string): string {
  *  stamps first_read_at) or it gets assigned. */
 function isNew(t: TicketListItem): boolean {
   return !t.firstReadAt && !t.assignee;
-}
-
-/** "2 giờ trước" / "2 hours ago" — scannable list time; exact time goes in a tooltip. */
-function relTime(iso: string, lang: 'vi' | 'en'): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
-  const min = Math.round(diffMs / 60000);
-  if (Math.abs(min) < 60) return rtf.format(-min, 'minute');
-  const hr = Math.round(min / 60);
-  if (Math.abs(hr) < 24) return rtf.format(-hr, 'hour');
-  const day = Math.round(hr / 24);
-  if (Math.abs(day) < 30) return rtf.format(-day, 'day');
-  return rtf.format(-Math.round(day / 30), 'month');
 }
 
 /** Inbox / "Pool nhóm" / "Ticket của tôi" share one table; `view` swaps the filter
@@ -190,6 +179,27 @@ export function TicketListView({
     qc.invalidateQueries({ queryKey: ['tickets-poll'] });
   };
 
+  // New-ticket flash: when the SAME page/filter view gains rows it didn't have a moment
+  // ago (a poll refetch or "pull new" brought arrivals), briefly highlight those rows so
+  // the eye is drawn to what's new. Changing page/filter resets the baseline silently —
+  // a fresh page of results is not "new tickets". (Phase 2 optimistic feedback.)
+  const [flashIds, setFlashIds] = useState<Set<string>>(new Set());
+  const flashBaseline = useRef<{ sig: string; ids: Set<string> } | null>(null);
+  const viewSig = JSON.stringify({ page, pageSize, filters });
+  useEffect(() => {
+    const items = data?.items;
+    if (!items) return;
+    const ids = new Set(items.map((r) => r.id));
+    const prev = flashBaseline.current;
+    flashBaseline.current = { sig: viewSig, ids };
+    if (!prev || prev.sig !== viewSig) return; // first load / context change → establish baseline only
+    const fresh = [...ids].filter((id) => !prev.ids.has(id));
+    if (fresh.length === 0) return;
+    setFlashIds(new Set(fresh));
+    const timer = setTimeout(() => setFlashIds(new Set()), 1600);
+    return () => clearTimeout(timer);
+  }, [data?.items, viewSig]);
+
   const applyFilters = (next: TicketFilters) => {
     setPage(1);
     setSearchParams(paramsFromFilters(next), { replace: false });
@@ -248,7 +258,7 @@ export function TicketListView({
               </div>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {r.requesterEmail} ·{' '}
-                <Tooltip title={vnTime(r.createdAt)}>{relTime(r.createdAt, lang)}</Tooltip>
+                <Tooltip title={vnTime(r.createdAt)}>{fmtRelative(r.createdAt, lang)}</Tooltip>
               </Typography.Text>
             </div>
           </div>
@@ -316,7 +326,7 @@ export function TicketListView({
             sortOrder: sortOrderFor('closed'),
             render: (v: string | null) =>
               v ? (
-                <Tooltip title={vnTime(v)}>{relTime(v, lang)}</Tooltip>
+                <Tooltip title={vnTime(v)}>{fmtRelative(v, lang)}</Tooltip>
               ) : (
                 <Typography.Text type="secondary">—</Typography.Text>
               ),
@@ -528,13 +538,14 @@ export function TicketListView({
         tableLayout="fixed"
         scroll={{ x: 880 }}
         onChange={handleTableChange}
-        locale={{ emptyText: <Empty description={t('ticket.empty')} /> }}
+        locale={{ emptyText: <EmptyState art={<InboxZeroArt />} description={t('ticket.empty')} /> }}
         // Zebra striping so adjacent rows are easy to tell apart at a glance.
         rowClassName={(r, index) =>
           [
             index % 2 === 1 ? 'row-zebra' : '',
             r.isJunk || r.isSpamThread ? 'row-muted' : '',
             !r.isJunk && !r.isSpamThread && !r.assignee && r.status === 'open' ? 'row-unread' : '',
+            flashIds.has(r.id) ? 'row-flash' : '',
           ]
             .filter(Boolean)
             .join(' ')

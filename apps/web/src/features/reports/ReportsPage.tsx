@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Card, Col, Row, Segmented, Select, Table, Typography, Space, Empty, Button, Tag } from 'antd';
+import { Card, Col, Row, Segmented, Select, Table, Typography, Space, Button, Tag } from 'antd';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -27,6 +27,8 @@ import { useMe } from '../../lib/auth';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
 import { CountUp } from '../../components/CountUp';
+import { EmptyState } from '../../components/EmptyState';
+import { NoDataArt } from '../../components/illustrations/empty';
 
 type PeriodKind = 'year' | 'quarter' | 'month' | 'custom';
 
@@ -446,8 +448,8 @@ export function ReportsPage() {
         <Col xs={12} lg={6} className="stagger-item" style={{ ['--i' as never]: 3 }}>
           <KpiCard
             icon={<FieldTimeOutlined />}
-            tint="#EFEBFA"
-            color="#6E5BAA"
+            tint="#EAF0F8"
+            color={palette.primary}
             label={t('reports.v2.avgDays')}
             value={
               s?.resolution.avgDays == null ? (
@@ -489,7 +491,7 @@ export function ReportsPage() {
         loading={time.isLoading}
       >
         {buckets.length === 0 ? (
-          <Empty description={t('reports.dashboard.noData')} />
+          <EmptyState art={<NoDataArt />} description={t('reports.dashboard.noData')} />
         ) : (
           <>
             <EChart
@@ -549,7 +551,7 @@ export function ReportsPage() {
         <Col xs={24} lg={10}>
           <Card title={`${t('reports.v2.statusTitle')} ${year}`} loading={summary.isLoading} style={{ height: '100%' }}>
             {!s || s.total === 0 ? (
-              <Empty description={t('reports.dashboard.noData')} />
+              <EmptyState art={<NoDataArt />} description={t('reports.dashboard.noData')} />
             ) : (
               <>
                 <div style={{ display: 'flex', height: 24, borderRadius: 7, overflow: 'hidden', margin: '6px 0 14px' }}>
@@ -590,7 +592,7 @@ export function ReportsPage() {
             style={{ height: '100%' }}
           >
             {cats.length === 0 ? (
-              <Empty description={t('reports.dashboard.noData')} />
+              <EmptyState art={<NoDataArt />} description={t('reports.dashboard.noData')} />
             ) : (
               <>
                 <div style={{ display: 'flex', gap: 16, fontSize: 12.5, color: palette.textSecondary, marginBottom: 12 }}>
@@ -655,7 +657,7 @@ export function ReportsPage() {
           style={{ marginBottom: 16 }}
         >
           {staffRows.length === 0 ? (
-            <Empty description={t('reports.dashboard.noData')} />
+            <EmptyState art={<NoDataArt />} description={t('reports.dashboard.noData')} />
           ) : (
             <>
               <Table<StaffRow>

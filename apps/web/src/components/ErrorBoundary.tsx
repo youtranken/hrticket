@@ -1,12 +1,13 @@
 import { Component, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Result } from 'antd';
+import { ServerErrorArt } from './illustrations/status';
 
 function ErrorFallback() {
   const { t } = useTranslation();
   return (
     <Result
-      status="error"
+      icon={<ServerErrorArt size={200} />}
       title={t('errorBoundary.title')}
       subTitle={t('errorBoundary.desc')}
       extra={
