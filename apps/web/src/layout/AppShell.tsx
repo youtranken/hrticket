@@ -343,7 +343,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ]}
             />
           )}
-          {children}
+          {/* Route transition: re-key on pathname so the content fades/rises in on every
+              navigation (CSS `.route-view`; disabled under prefers-reduced-motion). */}
+          <div key={location.pathname} className="route-view">
+            {children}
+          </div>
         </Content>
       </Layout>
       <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />

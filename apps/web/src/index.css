@@ -20,6 +20,14 @@
   --error-soft: #fff1f0;
   --info-soft: #eef4ff;
   --note-soft: #fffbe6;
+
+  /* ── Motion tokens — MIRROR of theme/motion.ts. One rhythm for the whole app. ── */
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --motion-slow: 320ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --stagger: 40ms;
 }
 
 html,
@@ -309,5 +317,66 @@ pre,
   .ant-table-row .tag-add-btn--open,
   .ant-table-row .tag-add-btn:focus-visible {
     opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOTION LAYER (Phase 1 #2) — transform/opacity only, one shared rhythm.
+   Every rule here is neutralised by the prefers-reduced-motion guard at the end.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* Page transition: content fades + rises on every route change. AppShell keys the
+   wrapper on location.pathname so this re-runs per navigation. */
+@keyframes routeEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.route-view {
+  animation: routeEnter var(--motion-base) var(--ease-out) both;
+}
+
+/* Generic mount reveal for cards/tiles. Set --i (0,1,2…) inline to stagger a row. */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.stagger-item {
+  animation: fadeInUp var(--motion-base) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--stagger));
+}
+
+/* Subtle lift on interactive cards (settings hub tiles, file cards) — depth, no jitter. */
+.ant-card-hoverable {
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+  will-change: transform;
+}
+.ant-card-hoverable:hover {
+  transform: translateY(-2px);
+}
+
+/* Accessibility: honour the OS "reduce motion" setting — kill all animation/transition.
+   (ui-ux-pro-max §1 reduced-motion, §7 animation-optional.) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

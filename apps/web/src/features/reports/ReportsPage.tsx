@@ -26,6 +26,7 @@ import {
 import { useMe } from '../../lib/auth';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
+import { CountUp } from '../../components/CountUp';
 
 type PeriodKind = 'year' | 'quarter' | 'month' | 'custom';
 
@@ -398,38 +399,38 @@ export function ReportsPage() {
 
       {/* ── KPI cards ────────────────────────────────────────────────── */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={12} lg={6}>
+        <Col xs={12} lg={6} className="stagger-item" style={{ ['--i' as never]: 0 }}>
           <KpiCard
             icon={<CheckCircleOutlined />}
             tint="#E4F6EE"
             color="#1F9D6B"
             label={t('reports.v2.handled')}
-            value={num(s?.handled.total)}
+            value={<CountUp value={s?.handled.total} format={num} />}
             sub={s ? t('reports.v2.handledSub', { r: s.handled.resolved, c: s.handled.closed }) : ''}
             delta={handledDelta}
             spark={buckets.map((b) => b.handled)}
             sparkColor={C.handled}
           />
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={12} lg={6} className="stagger-item" style={{ ['--i' as never]: 1 }}>
           <KpiCard
             icon={<ClockCircleOutlined />}
             tint="#E7F0FB"
             color="#3E63DD"
             label={t('reports.v2.active')}
-            value={num(s?.active.total)}
+            value={<CountUp value={s?.active.total} format={num} />}
             sub={s ? t('reports.v2.activeSub', { r: s.active.reopened, p: s.active.pending }) : ''}
             spark={buckets.map((b) => b.open)}
             sparkColor={C.created}
           />
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={12} lg={6} className="stagger-item" style={{ ['--i' as never]: 2 }}>
           <KpiCard
             icon={<WarningOutlined />}
             tint="#FBEAEA"
             color="#D64545"
             label={t('reports.metric.overdue')}
-            value={num(s?.overdue.total)}
+            value={<CountUp value={s?.overdue.total} format={num} />}
             valueColor={s && s.overdue.total > 0 ? C.overdue : undefined}
             sub={
               s
@@ -442,7 +443,7 @@ export function ReportsPage() {
             sparkColor={C.overdue}
           />
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={12} lg={6} className="stagger-item" style={{ ['--i' as never]: 3 }}>
           <KpiCard
             icon={<FieldTimeOutlined />}
             tint="#EFEBFA"

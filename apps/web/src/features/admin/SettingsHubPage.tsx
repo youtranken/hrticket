@@ -84,8 +84,9 @@ export function SettingsHubPage() {
               {t(section.titleKey)}
             </Text>
             <Row gutter={[16, 16]}>
-              {cards.map((c) => (
-                <Col key={c.key} xs={24} sm={12} lg={8}>
+              {cards.map((c, i) => (
+                <Col key={c.key} xs={24} sm={12} lg={8} className="stagger-item" style={{ ['--i' as never]: i }}>
+
                   <Card hoverable aria-label={`config-card-${c.key}`} onClick={() => navigate(c.path)} style={{ height: '100%' }}>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                       <span style={{ fontSize: 22, color: palette.primary, lineHeight: 1 }}>{c.icon}</span>
