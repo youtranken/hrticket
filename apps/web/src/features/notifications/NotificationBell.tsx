@@ -28,12 +28,12 @@ const { Text } = Typography;
 function glyph(type: string): { node: React.ReactNode; color: string } {
   if (type.startsWith('ticket_assigned')) return { node: <InboxOutlined />, color: palette.primary };
   if (type.startsWith('ticket_reassigned') || type === 'ticket_resumed') return { node: <RedoOutlined />, color: palette.primary };
-  if (type === 'ticket_reopened' || type === 'ticket_reopened_pool') return { node: <RollbackOutlined />, color: '#D97706' };
-  if (type === 'snooze_due') return { node: <ClockCircleOutlined />, color: '#D97706' };
-  if (type === 'disk_low') return { node: <HddOutlined />, color: '#D14343' };
-  if (type === 'mail_bomb' || type === 'mailbox_down') return { node: <WarningOutlined />, color: '#D14343' };
+  if (type === 'ticket_reopened' || type === 'ticket_reopened_pool') return { node: <RollbackOutlined />, color: palette.warning };
+  if (type === 'snooze_due') return { node: <ClockCircleOutlined />, color: palette.warning };
+  if (type === 'disk_low') return { node: <HddOutlined />, color: palette.error };
+  if (type === 'mail_bomb' || type === 'mailbox_down') return { node: <WarningOutlined />, color: palette.error };
   if (type === 'worker_alert' || type === 'worker_down' || type.endsWith('_failed'))
-    return { node: <ExclamationCircleOutlined />, color: '#D14343' };
+    return { node: <ExclamationCircleOutlined />, color: palette.error };
   return { node: <BellOutlined />, color: '#8c8c8c' };
 }
 
@@ -99,7 +99,7 @@ export function NotificationBell() {
     if (n.type === 'mailbox_down') {
       modal.confirm({
         title: t('notif.detailTitle'),
-        icon: <ExclamationCircleOutlined style={{ color: '#D14343' }} />,
+        icon: <ExclamationCircleOutlined style={{ color: palette.error }} />,
         content,
         okText: t('notif.gotoEmailConfig'),
         cancelText: t('notif.close'),

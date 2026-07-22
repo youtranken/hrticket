@@ -60,7 +60,7 @@ export function FileCard({ attachment }: Props) {
       styles={{ body: { padding: '10px 12px' } }}
     >
       <Space align="start">
-        <span style={{ fontSize: 20, lineHeight: 1, color: blocked ? '#D14343' : palette.primary }}>
+        <span style={{ fontSize: 20, lineHeight: 1, color: blocked ? palette.error : palette.primary }}>
           {blocked ? <WarningOutlined /> : kindGlyph(attachment.mimeType)}
         </span>
         <Space direction="vertical" size={0} style={{ minWidth: 0 }}>

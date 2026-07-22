@@ -91,7 +91,7 @@ function GroupName({ g }: { g: AdminGroup }) {
 const PANE: CSSProperties = {
   flex: '1 1 240px',
   minWidth: 230,
-  border: '1px solid #EAEDF3',
+  border: `1px solid ${palette.border}`,
   borderRadius: 10,
   padding: 12,
   display: 'flex',
@@ -336,7 +336,7 @@ function ByGroupTab() {
                         <span style={{ flex: 1, minWidth: 0 }}>{u?.name ?? id}</span>
                         <CloseOutlined
                           onClick={() => removeFromGroup(id)}
-                          style={{ color: '#D14343', cursor: 'pointer' }}
+                          style={{ color: palette.error, cursor: 'pointer' }}
                         />
                       </div>
                     );
@@ -383,7 +383,7 @@ function ByUserTab() {
         label: (
           <span>
             {g.nameVi}
-            {g.isSensitive && <SafetyCertificateOutlined style={{ color: '#D14343', marginLeft: 4 }} />}
+            {g.isSensitive && <SafetyCertificateOutlined style={{ color: palette.error, marginLeft: 4 }} />}
           </span>
         ),
         value: g.categoryId,
@@ -434,7 +434,7 @@ function ByUserTab() {
           </Text>
           <div
             style={{
-              border: '1px solid #EAEDF3',
+              border: `1px solid ${palette.border}`,
               borderRadius: 8,
               padding: '14px 16px',
               maxHeight: 360,

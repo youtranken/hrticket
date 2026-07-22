@@ -107,9 +107,9 @@ export function MailThread({
   return (
     <div
       style={{
-        border: '1px solid #EAEDF3',
+        border: `1px solid ${palette.border}`,
         borderRadius: 12,
-        background: '#fff',
+        background: palette.surface,
         overflow: 'hidden',
       }}
     >
@@ -120,8 +120,8 @@ export function MailThread({
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '6px 12px',
-            background: '#F7F8FB',
-            borderBottom: '1px solid #EAEDF3',
+            background: palette.fillSubtle,
+            borderBottom: `1px solid ${palette.border}`,
           }}
         >
           <Text type="secondary" style={{ fontSize: 12 }}>
@@ -189,8 +189,8 @@ function MailRow({
 
   // Left accent so direction still reads at a glance without the old left/right layout:
   // internal note = amber, inbound (customer) = green, outbound (agent) = navy.
-  const accent = m.isInternal ? '#E8B11C' : inbound ? '#1F9D6B' : palette.primary;
-  const avatarBg = m.isInternal ? '#E8B11C' : inbound ? '#1F9D6B' : palette.primary;
+  const accent = m.isInternal ? palette.brandGold : inbound ? palette.success : palette.primary;
+  const avatarBg = m.isInternal ? palette.brandGold : inbound ? palette.success : palette.primary;
 
   const border = first ? undefined : '1px solid #EFF1F5';
 
@@ -208,7 +208,7 @@ function MailRow({
           padding: '10px 14px',
           borderTop: border,
           cursor: 'pointer',
-          background: hover ? '#F7F8FB' : undefined,
+          background: hover ? palette.fillSubtle : undefined,
         }}
       >
         <Avatar size={30} style={{ background: avatarBg, flexShrink: 0, fontSize: 12 }}>
@@ -330,7 +330,7 @@ function MailRow({
       </div>
 
       {!m.isInternal && (m.toAddrs?.length || m.ccAddrs?.length) ? (
-        <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px dashed #EAEDF3' }}>
+        <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${palette.border}` }}>
           {m.toAddrs?.length ? <AddrRow label={t('ticket.field.toLabel')} addrs={m.toAddrs} /> : null}
           {m.ccAddrs?.length ? <AddrRow label={t('ticket.field.ccLabel')} addrs={m.ccAddrs} /> : null}
           {!inbound && m.bccAddrs?.length ? (

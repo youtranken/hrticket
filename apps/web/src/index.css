@@ -1,5 +1,25 @@
 :root {
   color-scheme: light;
+
+  /* ── Colour tokens — MIRROR of `palette` in theme.ts (keep the two in sync).
+     Pure-CSS rules below reference these; .tsx inline styles import `palette.*`.
+     One-off decoration (login gradient stops, scrollbar greys) stays literal. ── */
+  --brand-primary: #1f3a5f;
+  --brand-gold: #e8b11c;
+  --brand-gold-soft: #fbf3dc;
+  --color-success: #1f9d6b;
+  --color-warning: #d97706;
+  --color-error: #d14343;
+  --color-info: #3e63dd;
+  --color-text-secondary: #64748b;
+  --color-text-tertiary: #8a94a6;
+  --color-border: #eaedf3;
+  --fill-subtle: #f7f8fb;
+  --row-hover: #f4f6fb;
+  --accent-unread: #2f6bff;
+  --error-soft: #fff1f0;
+  --info-soft: #eef4ff;
+  --note-soft: #fffbe6;
 }
 
 html,
@@ -193,7 +213,7 @@ pre,
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border: 1px solid #eaedf3;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: #fff;
   margin: 0;
@@ -208,7 +228,7 @@ pre,
   cursor: grab;
 }
 .group-row--drag:hover {
-  border-color: #1f3a5f;
+  border-color: var(--brand-primary);
   box-shadow: 0 3px 10px rgba(31, 58, 95, 0.14);
 }
 .group-row--drag:active {
@@ -219,7 +239,7 @@ pre,
   transition: color 0.12s;
 }
 .group-row--drag:hover .drag-handle {
-  color: #1f3a5f;
+  color: var(--brand-primary);
 }
 
 /* Zebra striping for the ticket worklist — odd rows get a faint tint so the eye can
@@ -245,7 +265,7 @@ pre,
   font-weight: 700;
 }
 .row-unread > td.ant-table-cell:first-child {
-  box-shadow: inset 4px 0 0 #2f6bff;
+  box-shadow: inset 4px 0 0 var(--accent-unread);
 }
 
 /* Email quote chains — Gmail-style left bars (│ │ │ when nested). Inbound mail loses

@@ -97,7 +97,7 @@ function DeltaChip({ text, tone }: { text: string; tone: 'up' | 'down' | 'flat' 
       ? { color: C.handled, background: '#E7F5EE' }
       : tone === 'down'
         ? { color: C.overdue, background: '#FBEAEA' }
-        : { color: '#64748B', background: '#EEF1F6' };
+        : { color: palette.textSecondary, background: '#EEF1F6' };
   return (
     <span style={{ ...style, fontSize: 12, fontWeight: 600, borderRadius: 999, padding: '2px 8px' }}>{text}</span>
   );
@@ -147,11 +147,11 @@ function KpiCard({
         {delta && <DeltaChip text={delta.text} tone={delta.tone} />}
       </div>
       <div style={{ marginTop: 10 }}>
-        <div style={{ fontSize: 12.5, color: '#64748B' }}>{label}</div>
+        <div style={{ fontSize: 12.5, color: palette.textSecondary }}>{label}</div>
         <div style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.15, color: valueColor, fontVariantNumeric: 'tabular-nums' }}>
           {value}
         </div>
-        <div style={{ fontSize: 12, color: '#64748B', minHeight: 18 }}>{sub}</div>
+        <div style={{ fontSize: 12, color: palette.textSecondary, minHeight: 18 }}>{sub}</div>
       </div>
       {spark && sparkColor ? <Spark values={spark} color={sparkColor} /> : <div style={{ height: 26 }} />}
     </Card>
@@ -454,7 +454,7 @@ export function ReportsPage() {
               ) : (
                 <>
                   {s.resolution.avgDays.toFixed(1).replace('.', lang === 'vi' ? ',' : '.')}{' '}
-                  <span style={{ fontSize: 15, fontWeight: 600, color: '#64748B' }}>{t('reports.v2.days')}</span>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: palette.textSecondary }}>{t('reports.v2.days')}</span>
                 </>
               )
             }
@@ -568,7 +568,7 @@ export function ReportsPage() {
                       <i style={{ width: 10, height: 10, borderRadius: 3, background: color, flex: 'none' }} />
                       {t(`status.${k}`)}
                       <b style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>{n}</b>
-                      <span style={{ width: 48, textAlign: 'right', color: '#64748B', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                      <span style={{ width: 48, textAlign: 'right', color: palette.textSecondary, fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
                         {pct(n)}
                       </span>
                     </a>
@@ -592,7 +592,7 @@ export function ReportsPage() {
               <Empty description={t('reports.dashboard.noData')} />
             ) : (
               <>
-                <div style={{ display: 'flex', gap: 16, fontSize: 12.5, color: '#64748B', marginBottom: 12 }}>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12.5, color: palette.textSecondary, marginBottom: 12 }}>
                   <span><i style={legendDot(C.handled)} />{t('reports.metric.handled')}</span>
                   <span><i style={legendDot(C.created)} />{t('reports.v2.active')}</span>
                   <span><i style={legendDot(C.overdue)} />{t('reports.metric.overdue')}</span>
@@ -681,36 +681,36 @@ export function ReportsPage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={8}>
           <Card>
-            <div style={{ fontSize: 12.5, color: '#64748B' }}>{t('reports.v2.reopenTitle')}</div>
+            <div style={{ fontSize: 12.5, color: palette.textSecondary }}>{t('reports.v2.reopenTitle')}</div>
             <div style={{ fontSize: 21, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
               {s?.quality.reopenedAll ?? '…'}{' '}
               {s && s.total > 0 && (
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#64748B' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: palette.textSecondary }}>
                   ({reopenPct.toFixed(1).replace('.', lang === 'vi' ? ',' : '.')}%)
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: reopenPct > 5 ? C.overdue : '#64748B', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: reopenPct > 5 ? C.overdue : palette.textSecondary, marginTop: 2 }}>
               {reopenPct > 5 ? t('reports.v2.reopenWarn') : t('reports.v2.reopenOk')}
             </div>
           </Card>
         </Col>
         <Col xs={24} lg={8}>
           <Card>
-            <div style={{ fontSize: 12.5, color: '#64748B' }}>{t('reports.v2.junkTitle')}</div>
+            <div style={{ fontSize: 12.5, color: palette.textSecondary }}>{t('reports.v2.junkTitle')}</div>
             <div style={{ fontSize: 21, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
               {s?.quality.junk ?? '…'}
             </div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{t('reports.v2.junkNote')}</div>
+            <div style={{ fontSize: 12, color: palette.textSecondary, marginTop: 2 }}>{t('reports.v2.junkNote')}</div>
           </Card>
         </Col>
         <Col xs={24} lg={8}>
           <Card>
-            <div style={{ fontSize: 12.5, color: '#64748B' }}>{t('reports.v2.lateTitle')}</div>
+            <div style={{ fontSize: 12.5, color: palette.textSecondary }}>{t('reports.v2.lateTitle')}</div>
             <div style={{ fontSize: 21, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
               {s?.quality.snoozeDue ?? '…'}
             </div>
-            <div style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{t('reports.v2.lateNote')}</div>
+            <div style={{ fontSize: 12, color: palette.textSecondary, marginTop: 2 }}>{t('reports.v2.lateNote')}</div>
           </Card>
         </Col>
       </Row>

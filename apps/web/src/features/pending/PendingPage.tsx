@@ -19,6 +19,7 @@ import { AwayBadge } from '../../components/AwayBadge';
 import { TableSkeleton } from '../../components/TableSkeleton';
 import i18n from '../../i18n';
 import { fmtDateTime } from '../../lib/datetime';
+import { palette } from '../../theme';
 
 function vnTime(iso: string): string {
   return fmtDateTime(iso);
@@ -209,7 +210,7 @@ export function PendingPage() {
           // Due-today rows go bold-yellow so they jump out (FR80).
           style: {
             cursor: 'pointer',
-            background: r.snoozeUntil && r.snoozeUntil <= today ? '#fffbe6' : undefined,
+            background: r.snoozeUntil && r.snoozeUntil <= today ? palette.noteSoft : undefined,
             fontWeight: r.snoozeUntil && r.snoozeUntil <= today ? 600 : undefined,
           },
         })}

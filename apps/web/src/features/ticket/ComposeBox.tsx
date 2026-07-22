@@ -38,6 +38,7 @@ import { useReplyTemplates, fillTemplate } from '../../lib/replyTemplates';
 import { useUploadPolicy } from '../../lib/files';
 import { hasCap, useMe } from '../../lib/auth';
 import { fmtDateTime, fmtTime } from '../../lib/datetime';
+import { palette } from '../../theme';
 
 const { Text } = Typography;
 
@@ -628,7 +629,7 @@ export function ComposeBox({
         onChange={(e) => setNoteBody(e.target.value)}
         placeholder={t('compose.notePlaceholder')}
         autoSize={{ minRows: 4, maxRows: 12 }}
-        style={{ background: '#fffbe6' }}
+        style={{ background: palette.noteSoft }}
       />
       <Space>
         <Button loading={note.isPending} disabled={!noteBody} onClick={submitNote}>

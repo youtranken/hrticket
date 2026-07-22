@@ -233,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             alignItems: 'center',
             gap: isMobile ? 8 : 14,
             paddingInline: isMobile ? 12 : undefined,
-            borderBottom: '1px solid #EAEDF3',
+            borderBottom: `1px solid ${palette.border}`,
           }}
         >
           {isMobile && (

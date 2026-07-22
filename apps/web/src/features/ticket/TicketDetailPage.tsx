@@ -73,7 +73,7 @@ function vnDate(d: string): string {
 function StateBanner({ tone, icon, children }: { tone: 'gold' | 'slate'; icon: ReactNode; children: ReactNode }) {
   const s =
     tone === 'gold'
-      ? { bg: '#FBF3DC', rule: '#E8B11C', text: palette.primary }
+      ? { bg: palette.brandGoldSoft, rule: palette.brandGold, text: palette.primary }
       : { bg: '#EEF2F8', rule: '#8295B4', text: '#3C5578' };
   return (
     <div
@@ -294,8 +294,8 @@ export function TicketDetailPage() {
               gap: 8,
               alignItems: 'center',
               padding: '10px 12px',
-              background: '#F7F8FB',
-              border: '1px solid #EAEDF3',
+              background: palette.fillSubtle,
+              border: `1px solid ${palette.border}`,
               borderRadius: 10,
             }}
           >

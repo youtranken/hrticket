@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { CheckCircleFilled, CloseCircleOutlined } from '@ant-design/icons';
+import { palette } from '../../theme';
 
 /**
  * Realtime password criteria checklist (#36). Only the ≥8 rule is ENFORCED (mirror
@@ -15,7 +16,7 @@ export function PasswordCriteria({ value }: { value: string }) {
   return (
     <div style={{ display: 'grid', gap: 2, marginTop: 4 }}>
       {rows.map(([ok, label]) => (
-        <span key={label} style={{ fontSize: 12, color: ok ? '#389E0D' : '#8A94A6' }}>
+        <span key={label} style={{ fontSize: 12, color: ok ? '#389E0D' : palette.textTertiary }}>
           {ok ? <CheckCircleFilled /> : <CloseCircleOutlined />} {label}
         </span>
       ))}

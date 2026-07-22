@@ -550,9 +550,9 @@ export function TicketListView({
           style: {
             cursor: 'pointer',
             background: r.isOverdue
-              ? '#fff1f0'
+              ? palette.errorSoft
               : !r.isJunk && !r.isSpamThread && !r.assignee && r.status === 'open'
-                ? '#eef4ff'
+                ? palette.infoSoft
                 : undefined,
           },
         })}
@@ -654,7 +654,7 @@ function TagCell({ ticket, onChanged }: { ticket: TicketListItem; onChanged: () 
                 <Tag color={tg.color ?? 'default'} style={{ margin: 0 }}>
                   {tg.name}
                 </Tag>
-                {busy === tg.id ? <Spin size="small" /> : tg.applied ? <CheckOutlined style={{ color: '#1F9D6B' }} /> : null}
+                {busy === tg.id ? <Spin size="small" /> : tg.applied ? <CheckOutlined style={{ color: palette.success }} /> : null}
               </div>
             ))
           )}

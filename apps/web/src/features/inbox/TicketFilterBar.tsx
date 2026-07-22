@@ -3,6 +3,7 @@ import { Select, Input, Button, Space, Tag, Typography } from 'antd';
 import { useMe } from '../../lib/auth';
 import { useFilterOptions, type TicketFilters } from '../../lib/tickets';
 import i18n from '../../i18n';
+import { palette } from '../../theme';
 
 const { Text } = Typography;
 const STATUSES = ['open', 'assigned', 'in_progress', 'pending', 'resolved', 'closed'] as const;
@@ -55,7 +56,7 @@ export function TicketFilterPanel({
         // side rail, not a floating box).
         minHeight: 'calc(100vh - 210px)',
         background: '#fff',
-        border: '1px solid #EAEDF3',
+        border: `1px solid ${palette.border}`,
         borderRadius: 12,
         padding: 16,
         display: 'flex',
