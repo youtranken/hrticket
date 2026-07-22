@@ -29,9 +29,9 @@
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --stagger: 40ms;
 
-  /* Headings use Be Vietnam Pro (Vietnamese-native, distinctive, self-hosted via
-     @fontsource — offline-safe). Body stays on the system stack for dense readability. */
-  --font-heading: 'Be Vietnam Pro', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
+  /* Headings use Inter (clean, neutral, news/dashboard feel; full Vietnamese coverage,
+     self-hosted via @fontsource — offline-safe). Body stays on the system stack for density. */
+  --font-heading: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
 }
 
 /* Apply the heading face to real headings + AntD surface titles. AntD injects its

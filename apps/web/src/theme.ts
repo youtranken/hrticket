@@ -6,7 +6,7 @@ import type { ThemeConfig } from 'antd';
  * <ConfigProvider theme={appTheme}>. One place to tune the whole app's identity.
  *
  * Fonts (self-hosted via @fontsource — offline-safe, loaded in main.tsx):
- *   - Be Vietnam Pro  → HEADINGS only (Vietnamese-native, distinctive) — applied in
+ *   - Inter           → HEADINGS only (clean, neutral, news/dashboard) — applied in
  *                        index.css via --font-heading, not through the AntD token below.
  *   - System stack (Segoe UI…) → body / UI text: dense, renders identically VN & EN,
  *                        no web-font download.

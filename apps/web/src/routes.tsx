@@ -3,10 +3,8 @@ import { Spin } from 'antd';
 import { useMe, type Me } from './lib/auth';
 import { LoginPage } from './features/auth/LoginPage';
 import { OtpPage } from './features/auth/OtpPage';
-import { ForgotPage } from './features/auth/ForgotPage';
 import { ResetPage } from './features/auth/ResetPage';
 import { ChangePasswordPage } from './features/auth/ChangePasswordPage';
-import { ProfilePage } from './features/profile/ProfilePage';
 import { AdminUsersPage } from './features/admin/AdminUsersPage';
 import { CategoriesPage } from './features/admin/CategoriesPage';
 import { GroupsPage } from './features/admin/GroupsPage';
@@ -157,7 +155,6 @@ function ProtectedApp() {
             </RequireRole>
           }
         />
-        <Route path="profile" element={<ProfilePage />} />
         {/* Unknown URL = 404. Real 403s come from RequireRole above. */}
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
@@ -170,7 +167,6 @@ export function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/otp" element={<OtpPage />} />
-      <Route path="/forgot" element={<ForgotPage />} />
       <Route path="/reset" element={<ResetPage />} />
       {/* Public, no-auth ticket status tracking from the auto-ack email link (#7). */}
       <Route path="/track/:token" element={<PublicStatusPage />} />

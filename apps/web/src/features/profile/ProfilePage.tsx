@@ -1,15 +1,14 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Card, Descriptions, Switch, Modal, Input, Typography, App as AntApp, Divider } from 'antd';
+import { Alert, Descriptions, Switch, Modal, Input, App as AntApp, Divider } from 'antd';
 import { useMe, toggleOtp } from '../../lib/auth';
 import { ChangePasswordPage } from '../auth/ChangePasswordPage';
-
-const { Title } = Typography;
 
 /**
  * Profile content (Story 1.5/S3): info + security (OTP + password). Language is NOT
  * here — it lives in the header avatar menu, so duplicating it would be confusing.
- * Rendered both as a full page (/profile) and inside the header popup (ProfileModal).
+ * Rendered inside the header popup (ProfileModal); the standalone /profile route was
+ * removed (dead — the popup is the only entry point).
  */
 export function ProfileContent() {
   const { t } = useTranslation();
@@ -83,18 +82,5 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
     <Modal open={open} onCancel={onClose} footer={null} title={t('menu.profile')} width={560}>
       <ProfileContent />
     </Modal>
-  );
-}
-
-/** Standalone /profile route (kept for deep links). */
-export function ProfilePage() {
-  const { t } = useTranslation();
-  return (
-    <div style={{ maxWidth: 920, margin: '0 auto' }}>
-      <Card>
-        <Title level={4}>{t('menu.profile')}</Title>
-        <ProfileContent />
-      </Card>
-    </div>
   );
 }
