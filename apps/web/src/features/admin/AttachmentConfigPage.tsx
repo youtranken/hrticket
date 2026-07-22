@@ -72,105 +72,107 @@ export function AttachmentConfigPage() {
   const disk = cfg?.disk;
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%', maxWidth: 920, margin: '0 auto' }}>
+    <div className="settings-page">
       <Title level={4}>{t('files.cfg.title')}</Title>
 
-      {disk && (
-        <Card title={t('files.cfg.diskTitle')}>
-          <Progress
-            percent={disk.usedPct}
-            status={disk.freePct < diskAlertPct ? 'exception' : 'normal'}
-          />
-          <Text type="secondary">
-            {t('files.cfg.diskUsage', {
-              used: humanGb(disk.usedBytes),
-              total: humanGb(disk.totalBytes),
-              free: disk.freePct,
-            })}
-          </Text>
-          {disk.freePct < diskAlertPct && (
-            <Alert style={{ marginTop: 12 }} type="warning" showIcon message={t('files.cfg.diskLow')} />
-          )}
-        </Card>
-      )}
+      <div className="settings-grid" style={{ marginBottom: 16 }}>
+        {disk && (
+          <Card className="settings-span" title={t('files.cfg.diskTitle')}>
+            <Progress
+              percent={disk.usedPct}
+              status={disk.freePct < diskAlertPct ? 'exception' : 'normal'}
+            />
+            <Text type="secondary">
+              {t('files.cfg.diskUsage', {
+                used: humanGb(disk.usedBytes),
+                total: humanGb(disk.totalBytes),
+                free: disk.freePct,
+              })}
+            </Text>
+            {disk.freePct < diskAlertPct && (
+              <Alert style={{ marginTop: 12 }} type="warning" showIcon message={t('files.cfg.diskLow')} />
+            )}
+          </Card>
+        )}
 
-      <Card title={t('files.cfg.formatsTitle')}>
-        <Space wrap style={{ marginBottom: 12 }}>
-          {extensions.map((e) =>
-            knownWarning.has(e) ? (
-              <Tooltip key={e} title={t('files.cfg.noSignature')}>
-                <Tag color="warning" icon={<WarningOutlined />} closable onClose={() => removeExt(e)}>
+        <Card className="settings-span" title={t('files.cfg.formatsTitle')}>
+          <Space wrap style={{ marginBottom: 12 }}>
+            {extensions.map((e) =>
+              knownWarning.has(e) ? (
+                <Tooltip key={e} title={t('files.cfg.noSignature')}>
+                  <Tag color="warning" icon={<WarningOutlined />} closable onClose={() => removeExt(e)}>
+                    {e}
+                  </Tag>
+                </Tooltip>
+              ) : (
+                <Tag key={e} color="blue" closable onClose={() => removeExt(e)}>
                   {e}
                 </Tag>
-              </Tooltip>
-            ) : (
-              <Tag key={e} color="blue" closable onClose={() => removeExt(e)}>
-                {e}
-              </Tag>
-            ),
-          )}
-        </Space>
-        <Space>
-          <Input
-            placeholder={t('files.cfg.addFormat')}
-            value={newExt}
-            onChange={(ev) => setNewExt(ev.target.value)}
-            onPressEnter={addExt}
-            style={{ width: 160 }}
-          />
-          <Button onClick={addExt}>{t('common.add')}</Button>
-        </Space>
-      </Card>
-
-      <Card title={t('files.cfg.capTitle')}>
-        <Space>
-          <Text>{t('files.cfg.capMb')}</Text>
-          <InputNumber min={1} max={10000} value={capMb} onChange={(v) => setCapMb(v ?? 50)} addonAfter="MB" />
-        </Space>
-      </Card>
-
-      <Card title={t('files.cfg.autotagTitle')}>
-        <Space direction="vertical">
-          <Space>
-            <Switch
-              checked={autotag.attachment}
-              onChange={(v) => setAutotag({ ...autotag, attachment: v })}
-            />
-            <Text>{t('files.cfg.autotagAttachment')}</Text>
+              ),
+            )}
           </Space>
           <Space>
-            <Switch
-              checked={autotag.crosspost}
-              onChange={(v) => setAutotag({ ...autotag, crosspost: v })}
+            <Input
+              placeholder={t('files.cfg.addFormat')}
+              value={newExt}
+              onChange={(ev) => setNewExt(ev.target.value)}
+              onPressEnter={addExt}
+              style={{ width: 160 }}
             />
-            <Text>{t('files.cfg.autotagCrosspost')}</Text>
+            <Button onClick={addExt}>{t('common.add')}</Button>
           </Space>
-          <Space>
-            <Switch
-              checked={autotag.autoreply}
-              onChange={(v) => setAutotag({ ...autotag, autoreply: v })}
-            />
-            <Text>{t('files.cfg.autotagAutoreply')}</Text>
-          </Space>
-        </Space>
-      </Card>
+        </Card>
 
-      <Card title={t('files.cfg.diskThresholdTitle')}>
-        <Space>
-          <Text>{t('files.cfg.diskThreshold')}</Text>
-          <InputNumber
-            min={1}
-            max={99}
-            value={diskAlertPct}
-            onChange={(v) => setDiskAlertPct(v ?? 15)}
-            addonAfter="%"
-          />
-        </Space>
-      </Card>
+        <Card title={t('files.cfg.capTitle')}>
+          <Space>
+            <Text>{t('files.cfg.capMb')}</Text>
+            <InputNumber min={1} max={10000} value={capMb} onChange={(v) => setCapMb(v ?? 50)} addonAfter="MB" />
+          </Space>
+        </Card>
+
+        <Card title={t('files.cfg.diskThresholdTitle')}>
+          <Space>
+            <Text>{t('files.cfg.diskThreshold')}</Text>
+            <InputNumber
+              min={1}
+              max={99}
+              value={diskAlertPct}
+              onChange={(v) => setDiskAlertPct(v ?? 15)}
+              addonAfter="%"
+            />
+          </Space>
+        </Card>
+
+        <Card className="settings-span" title={t('files.cfg.autotagTitle')}>
+          <Space direction="vertical">
+            <Space>
+              <Switch
+                checked={autotag.attachment}
+                onChange={(v) => setAutotag({ ...autotag, attachment: v })}
+              />
+              <Text>{t('files.cfg.autotagAttachment')}</Text>
+            </Space>
+            <Space>
+              <Switch
+                checked={autotag.crosspost}
+                onChange={(v) => setAutotag({ ...autotag, crosspost: v })}
+              />
+              <Text>{t('files.cfg.autotagCrosspost')}</Text>
+            </Space>
+            <Space>
+              <Switch
+                checked={autotag.autoreply}
+                onChange={(v) => setAutotag({ ...autotag, autoreply: v })}
+              />
+              <Text>{t('files.cfg.autotagAutoreply')}</Text>
+            </Space>
+          </Space>
+        </Card>
+      </div>
 
       <Button type="primary" onClick={onSave} loading={save.isPending}>
         {t('common.save')}
       </Button>
-    </Space>
+    </div>
   );
 }

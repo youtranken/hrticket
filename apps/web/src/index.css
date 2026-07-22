@@ -279,6 +279,39 @@ pre,
   color: var(--brand-primary);
 }
 
+/* Admin config pages used to sit in a narrow 920px column centred with margin:auto,
+   which on a wide screen floats in the middle with big empty gutters ("dồn ra giữa").
+   These pages now fill the width: cards flow into a responsive grid (1 column on
+   phones/tablets, 2 on desktops), consistent with the full-bleed inbox/reports. A card
+   that needs the whole row (a wide form, a progress bar) gets .settings-span. */
+.settings-page {
+  width: 100%;
+}
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 1100px) {
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.settings-grid > .settings-span {
+  grid-column: 1 / -1;
+}
+
+/* Selected master-list row (groups) — a soft navy tint + navy edge bar that stays
+   readable. The bare AntD `ant-table-row-selected` token resolved to a murky grey with
+   near-black text on this non-selectable table ("row bị đen lại"); this replaces it. */
+.group-picked > td.ant-table-cell {
+  background: #eef3fb !important;
+}
+.group-picked > td.ant-table-cell:first-child {
+  box-shadow: inset 3px 0 0 var(--brand-primary);
+}
+
 /* Zebra striping for the ticket worklist — odd rows get a faint tint so the eye can
    track across columns. Overdue rows keep their soft-red inline background (it wins). */
 .row-zebra > td.ant-table-cell {

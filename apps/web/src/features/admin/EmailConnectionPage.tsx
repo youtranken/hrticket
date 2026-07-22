@@ -120,14 +120,17 @@ export function EmailConnectionPage() {
   );
 
   return (
-    <div style={{ maxWidth: 920, margin: '0 auto' }}>
+    <div className="settings-page">
       <PageHeader title={t('conn.title')} subtitle={t('conn.subtitle')} />
 
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {cfg?.source === 'env' && <Alert type="info" showIcon message={t('conn.fromEnv')} />}
 
+        <Row gutter={[16, 16]}>
+          <Col xs={24} xl={12}>
         <Card
           size="small"
+          style={{ height: '100%' }}
           title={
             <Space>
               <CloudDownloadOutlined style={{ color: palette.primary }} />
@@ -170,9 +173,11 @@ export function EmailConnectionPage() {
             </Col>
           </Row>
         </Card>
-
+          </Col>
+          <Col xs={24} xl={12}>
         <Card
           size="small"
+          style={{ height: '100%' }}
           title={
             <Space>
               <CloudUploadOutlined style={{ color: palette.primary }} />
@@ -215,6 +220,8 @@ export function EmailConnectionPage() {
             </Col>
           </Row>
         </Card>
+          </Col>
+        </Row>
 
         <Card
           size="small"

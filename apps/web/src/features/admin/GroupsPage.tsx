@@ -21,7 +21,6 @@ import {
   Checkbox,
   Button,
   Space,
-  Alert,
   Typography,
   App as AntApp,
 } from 'antd';
@@ -35,6 +34,8 @@ import {
 } from '../../lib/groups';
 import { useAdminUsers, useAdminCategories, putAutoAssign } from '../../lib/admin';
 import { palette } from '../../theme';
+import { EmptyState } from '../../components/EmptyState';
+import { NoDataArt } from '../../components/illustrations/empty';
 
 const { Text } = Typography;
 
@@ -235,7 +236,7 @@ function ByGroupTab() {
         loading={isLoading}
         dataSource={groups}
         pagination={false}
-        rowClassName={(g) => (g.categoryId === selected ? 'ant-table-row-selected' : '')}
+        rowClassName={(g) => (g.categoryId === selected ? 'group-picked' : '')}
         onRow={(g) => ({ onClick: () => selectGroup(g.categoryId), style: { cursor: 'pointer' } })}
         columns={[
           { title: t('groups.group'), render: (_: unknown, g: AdminGroup) => <GroupName g={g} /> },
@@ -254,7 +255,18 @@ function ByGroupTab() {
       />
       <div style={{ flex: '2 1 520px', minWidth: 360 }}>
         {selected === null ? (
-          <Alert type="info" showIcon message={t('groups.pickGroupHint')} />
+          <div
+            style={{
+              minHeight: 340,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: `1px dashed ${palette.border}`,
+              borderRadius: 12,
+            }}
+          >
+            <EmptyState art={<NoDataArt />} description={t('groups.pickGroupHint')} />
+          </div>
         ) : (
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -406,7 +418,7 @@ function ByUserTab() {
   };
 
   return (
-    <Space direction="vertical" style={{ width: '100%', maxWidth: 560 }} size="middle">
+    <Space direction="vertical" style={{ width: '100%', maxWidth: 720 }} size="middle">
       <div>
         <Text>{t('groups.pickUser')}</Text>
         <Select

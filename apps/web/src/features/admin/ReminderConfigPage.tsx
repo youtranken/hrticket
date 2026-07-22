@@ -55,10 +55,10 @@ export function ReminderConfigPage() {
   }, [cfg, form]);
 
   return (
-    <div style={{ maxWidth: 920, margin: '0 auto' }}>
+    <div className="settings-page">
       <PageHeader title={t('reminders.title')} subtitle={t('reminders.subtitle')} />
 
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <div className="settings-grid">
         <Card
           size="small"
           title={
@@ -141,7 +141,7 @@ export function ReminderConfigPage() {
         </Card>
 
         <TemplateEditor />
-      </Space>
+      </div>
     </div>
   );
 }
