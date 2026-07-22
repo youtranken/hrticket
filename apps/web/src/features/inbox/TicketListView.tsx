@@ -46,6 +46,7 @@ import { ExportButton } from '../reports/ExportButton';
 import { exportTickets } from '../../lib/export';
 import i18n from '../../i18n';
 import { palette } from '../../theme';
+import { CategoryTag } from '../../components/CategoryTag';
 import { fmtDateTime } from '../../lib/datetime';
 
 function vnTime(iso: string): string {
@@ -261,11 +262,11 @@ export function TicketListView({
       sorter: true,
       sortOrder: sortOrderFor('category'),
       render: (_, r) => (
-        <span>
-          {r.category ? r.category[lang] : '—'}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <CategoryTag category={r.category} lang={lang} />
           {r.categorySensitive && (
             <Tooltip title={t('ticket.sensitive')}>
-              <Tag color="red" icon={<SafetyCertificateOutlined />} style={{ marginLeft: 4 }} />
+              <Tag color="red" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }} />
             </Tooltip>
           )}
         </span>

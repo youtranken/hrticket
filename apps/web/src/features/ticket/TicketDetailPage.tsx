@@ -39,6 +39,7 @@ import {
 } from '../../lib/tickets';
 import { useMarkJunk, useToggleSpamThread } from '../../lib/junk';
 import { StatusTag } from '../../components/StatusTag';
+import { CategoryTag } from '../../components/CategoryTag';
 import { ScrollProgress } from '../../components/ScrollProgress';
 import { MailThread, type MessageAttachment } from './MailThread';
 import { ComposeBox } from './ComposeBox';
@@ -274,7 +275,7 @@ export function TicketDetailPage() {
               </a>
             </Descriptions.Item>
             <Descriptions.Item label={t('ticket.category')}>
-              {ticket.category ? ticket.category[lang] : '—'}
+              <CategoryTag category={ticket.category} lang={lang} />
             </Descriptions.Item>
             <Descriptions.Item label={t('ticket.time')}>{vnTime(ticket.createdAt)}</Descriptions.Item>
             <Descriptions.Item label={t('ticket.tags')}>

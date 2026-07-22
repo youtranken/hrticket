@@ -14,6 +14,7 @@ import {
   type SortDir,
 } from '../../lib/tickets';
 import { StatusTag } from '../../components/StatusTag';
+import { CategoryTag } from '../../components/CategoryTag';
 import { TableSkeleton } from '../../components/TableSkeleton';
 import { renderHeadline } from './headline';
 import i18n from '../../i18n';
@@ -76,7 +77,7 @@ export function SearchResultsPage() {
       title: t('ticket.category'),
       dataIndex: 'category',
       width: 120,
-      render: (_, r) => (r.category ? r.category[lang] : '—'),
+      render: (_, r) => <CategoryTag category={r.category} lang={lang} />,
     },
     {
       title: t('ticket.assignee'),

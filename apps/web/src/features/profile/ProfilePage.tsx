@@ -90,7 +90,7 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
 export function ProfilePage() {
   const { t } = useTranslation();
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 920, margin: '0 auto' }}>
       <Card>
         <Title level={4}>{t('menu.profile')}</Title>
         <ProfileContent />

@@ -55,7 +55,7 @@ export function ReminderConfigPage() {
   }, [cfg, form]);
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div style={{ maxWidth: 920, margin: '0 auto' }}>
       <PageHeader title={t('reminders.title')} subtitle={t('reminders.subtitle')} />
 
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>

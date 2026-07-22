@@ -20,6 +20,7 @@ import { TableSkeleton } from '../../components/TableSkeleton';
 import i18n from '../../i18n';
 import { fmtDateTime } from '../../lib/datetime';
 import { palette } from '../../theme';
+import { CategoryTag } from '../../components/CategoryTag';
 
 function vnTime(iso: string): string {
   return fmtDateTime(iso);
@@ -67,7 +68,7 @@ export function PendingPage() {
       title: t('ticket.category'),
       dataIndex: 'category',
       width: 130,
-      render: (_, r) => (r.category ? r.category[lang] : '—'),
+      render: (_, r) => <CategoryTag category={r.category} lang={lang} />,
     },
     {
       title: t('ticket.assignee'),

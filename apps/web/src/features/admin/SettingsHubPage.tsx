@@ -71,7 +71,7 @@ export function SettingsHubPage() {
   const isSsa = me?.role === 'ssa';
 
   return (
-    <div style={{ maxWidth: 1040 }}>
+    <div>
       <Title level={4}>{t('settings.hub.title')}</Title>
       <Paragraph type="secondary">{t('settings.hub.subtitle')}</Paragraph>
 
