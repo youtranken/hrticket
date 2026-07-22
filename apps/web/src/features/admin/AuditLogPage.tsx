@@ -1,52 +1,42 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Card, Table, Tabs, Tag, Input, Select, Space, Typography, Button, Tooltip } from 'antd';
+import { Card, Table, Tabs, Tag, Input, Select, Space, Button } from 'antd';
 import { useAudit, useAuditActions, useViewLog, type AuditRow, type ViewLogRow } from '../../lib/audit';
 import { fmtDateTime } from '../../lib/datetime';
 import { exportAudit } from '../../lib/export';
 import { ExportButton } from '../reports/ExportButton';
 import { TableSkeleton } from '../../components/TableSkeleton';
 
-const { Text } = Typography;
-
 function fmt(iso: string): string {
   return fmtDateTime(iso);
 }
 
-/** Readable object cell: a ticket shows its #code (linked) + subject + short uid; a user
- *  shows name (email); everything else keeps the raw type:id. */
+// A UUID we never want to show raw — surface a friendly type name instead.
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i;
+
+/** Readable "what was acted on" cell — a ticket links to its #code + subject; anything
+ *  else shows the server-supplied label, else a translated type name. Raw UUIDs are
+ *  never surfaced (they meant nothing to the reader). */
 function ObjectCell({ row }: { row: AuditRow }) {
+  const { t } = useTranslation();
   if (row.objectType === 'ticket' && row.objectId) {
-    const shortId = row.objectId.slice(0, 8);
+    const subject = row.objectLabel?.replace(`${row.ticketCode} · `, '');
     return (
-      <Space direction="vertical" size={0}>
-        <span>
-          <Link to={`/tickets/${row.objectId}`} onClick={(e) => e.stopPropagation()}>
-            <Text strong>{row.ticketCode ?? '#?'}</Text>
-          </Link>
-          {row.objectLabel && (
-            <Text style={{ marginLeft: 6 }}>· {row.objectLabel.replace(`${row.ticketCode} · `, '')}</Text>
-          )}
-        </span>
-        <Tooltip title={row.objectId}>
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            {shortId}…
-          </Text>
-        </Tooltip>
-      </Space>
+      <span>
+        <Link to={`/tickets/${row.objectId}`} onClick={(e) => e.stopPropagation()}>
+          <strong>{row.ticketCode ?? '#?'}</strong>
+        </Link>
+        {subject ? <span style={{ marginLeft: 6 }}>· {subject}</span> : null}
+      </span>
     );
   }
-  if (row.objectType === 'user') {
-    return <span>{row.objectLabel ?? `user:${row.objectId ?? ''}`}</span>;
-  }
+  if (row.objectLabel) return <span>{row.objectLabel}</span>;
   if (!row.objectType) return <>—</>;
-  return (
-    <span>
-      {row.objectType}
-      {row.objectId ? `:${row.objectId}` : ''}
-    </span>
-  );
+  const label = t(`auditObject.${row.objectType}`, { defaultValue: row.objectType });
+  // Show the id only when it is human-readable (e.g. "admin:ticket.reply"), never a UUID.
+  const showId = row.objectId && !UUID_RE.test(row.objectId);
+  return <span>{showId ? `${label}: ${row.objectId}` : label}</span>;
 }
 
 /** Story 9.5 — Audit log + sensitive view-log reader (Admin/TL/SSA; Member → 403). */
@@ -140,24 +130,9 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
           onChange: setPage,
           hideOnSinglePage: true,
         }}
-        expandable={{
-          rowExpandable: (r) => r.oldValue != null || r.newValue != null,
-          expandedRowRender: (r) => (
-            <Space size="large" align="start">
-              <div>
-                <Text type="secondary">{t('audit.old')}</Text>
-                <pre style={{ margin: 0 }}>{JSON.stringify(r.oldValue, null, 2)}</pre>
-              </div>
-              <div>
-                <Text type="secondary">{t('audit.new')}</Text>
-                <pre style={{ margin: 0 }}>{JSON.stringify(r.newValue, null, 2)}</pre>
-              </div>
-            </Space>
-          ),
-        }}
         columns={[
-          { title: t('audit.time'), width: 170, render: (_: unknown, r: AuditRow) => fmt(r.createdAt) },
-          { title: t('audit.actor'), width: 200, render: (_: unknown, r: AuditRow) => r.actorLabel ?? '—' },
+          { title: t('audit.time'), width: 180, render: (_: unknown, r: AuditRow) => fmt(r.createdAt) },
+          { title: t('audit.actor'), width: 220, render: (_: unknown, r: AuditRow) => r.actorLabel ?? '—' },
           {
             title: t('audit.action'),
             width: 220,
@@ -165,7 +140,6 @@ function AuditTab({ ticketId }: { ticketId?: string }) {
           },
           {
             title: t('audit.object'),
-            width: 320,
             render: (_: unknown, r: AuditRow) => <ObjectCell row={r} />,
           },
         ]}

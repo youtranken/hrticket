@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Card, Table, Button, Modal, Form, Input, Select, Switch, Tag, Space, Typography, App as AntApp } from 'antd';
+import { Card, Table, Button, Drawer, Form, Input, Select, Switch, Tag, Space, Typography, App as AntApp } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   useReplyTemplates,
@@ -171,15 +171,21 @@ export function ReplyTemplatesPage() {
         ]}
       />
 
-      <Modal
+      <Drawer
         open={open}
         title={editing ? t('tpl.editTitle') : t('tpl.add')}
-        okText={t('common.save')}
-        onOk={() => form.submit()}
-        onCancel={() => setOpen(false)}
-        confirmLoading={add.isPending || update.isPending}
+        onClose={() => setOpen(false)}
         destroyOnClose
         width={620}
+        extra={
+          <Button
+            type="primary"
+            loading={add.isPending || update.isPending}
+            onClick={() => form.submit()}
+          >
+            {t('common.save')}
+          </Button>
+        }
       >
         <Form form={form} layout="vertical" onFinish={submit} preserve={false}>
           <Form.Item label={t('tpl.colTitle')} name="title" rules={[{ required: true, message: t('tpl.titleRequired') }]}>
@@ -202,7 +208,7 @@ export function ReplyTemplatesPage() {
             <Input.TextArea rows={8} maxLength={20000} />
           </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
     </Card>
   );
 }

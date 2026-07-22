@@ -58,7 +58,7 @@ export function ReminderConfigPage() {
     <div className="settings-page">
       <PageHeader title={t('reminders.title')} subtitle={t('reminders.subtitle')} />
 
-      <div className="settings-grid">
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Card
           size="small"
           title={
@@ -71,6 +71,7 @@ export function ReminderConfigPage() {
           <Form
             form={form}
             layout="vertical"
+            style={{ maxWidth: 980 }}
             onFinish={(v) =>
               save.mutate(v, {
                 onSuccess: () => message.success(t('reminders.saved')),
@@ -79,7 +80,7 @@ export function ReminderConfigPage() {
             }
           >
             <Row gutter={16}>
-              <Col xs={24} sm={8}>
+              <Col flex="1 1 170px">
                 <Form.Item
                   name="overdueDays"
                   label={t('reminders.overdueDays')}
@@ -88,7 +89,7 @@ export function ReminderConfigPage() {
                   <InputNumber min={1} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
                 </Form.Item>
               </Col>
-              <Col xs={24} sm={8}>
+              <Col flex="1 1 170px">
                 <Form.Item
                   name="poolUnclaimedDays"
                   label={t('reminders.poolUnclaimedDays')}
@@ -97,7 +98,7 @@ export function ReminderConfigPage() {
                   <InputNumber min={0} max={60} style={{ width: '100%' }} addonAfter={t('reminders.daysUnit')} />
                 </Form.Item>
               </Col>
-              <Col xs={24} sm={8}>
+              <Col flex="1 1 170px">
                 <Form.Item
                   name="digestMaxN"
                   label={t('reminders.digestMaxN')}
@@ -106,9 +107,7 @@ export function ReminderConfigPage() {
                   <InputNumber min={1} max={100} style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col xs={24} sm={8}>
+              <Col flex="1 1 130px">
                 <Form.Item
                   name="digestHour"
                   label={t('reminders.digestHour')}
@@ -117,7 +116,7 @@ export function ReminderConfigPage() {
                   <InputNumber min={0} max={23} style={{ width: '100%' }} addonAfter="h" />
                 </Form.Item>
               </Col>
-              <Col xs={24} sm={8}>
+              <Col flex="1 1 130px">
                 <Form.Item
                   name="digestMinute"
                   label={t('reminders.digestMinute')}
@@ -141,7 +140,7 @@ export function ReminderConfigPage() {
         </Card>
 
         <TemplateEditor />
-      </div>
+      </Space>
     </div>
   );
 }

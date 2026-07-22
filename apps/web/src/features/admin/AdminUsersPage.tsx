@@ -14,7 +14,6 @@ import {
   Switch,
   Checkbox,
   Dropdown,
-  Modal,
   Typography,
   App as AntApp,
 } from 'antd';
@@ -390,12 +389,21 @@ function EditUserModal({
   };
 
   return (
-    <Modal
+    <Drawer
       open
+      width={420}
       title={t('users.edit')}
-      onCancel={onClose}
-      onOk={save}
-      okButtonProps={{ loading: saving, disabled: !EMAIL_RE.test(email.trim()) || !name.trim() }}
+      onClose={onClose}
+      extra={
+        <Button
+          type="primary"
+          loading={saving}
+          onClick={save}
+          disabled={!EMAIL_RE.test(email.trim()) || !name.trim()}
+        >
+          {t('common.save')}
+        </Button>
+      }
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <div>
@@ -407,7 +415,7 @@ function EditUserModal({
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
       </Space>
-    </Modal>
+    </Drawer>
   );
 }
 
@@ -444,12 +452,16 @@ function MoveProjectModal({
   };
 
   return (
-    <Modal
+    <Drawer
       open
+      width={420}
       title={t('users.moveProject')}
-      onCancel={onClose}
-      onOk={move}
-      okButtonProps={{ loading: saving, disabled: !target }}
+      onClose={onClose}
+      extra={
+        <Button type="primary" loading={saving} onClick={move} disabled={!target}>
+          {t('common.save')}
+        </Button>
+      }
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <Text>
@@ -467,7 +479,7 @@ function MoveProjectModal({
         </div>
         <Text type="secondary">{t('users.moveWarn')}</Text>
       </Space>
-    </Modal>
+    </Drawer>
   );
 }
 
