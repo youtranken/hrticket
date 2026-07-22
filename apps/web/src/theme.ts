@@ -5,8 +5,11 @@ import type { ThemeConfig } from 'antd';
  * data-forward look for an internal HR/C&B ticketing tool. Applied globally via
  * <ConfigProvider theme={appTheme}>. One place to tune the whole app's identity.
  *
- * Fonts (load once — see index.html / fontsource):
- *   - Be Vietnam Pro  → UI + headings (Vietnamese-native, professional, distinctive)
+ * Fonts (self-hosted via @fontsource — offline-safe, loaded in main.tsx):
+ *   - Be Vietnam Pro  → HEADINGS only (Vietnamese-native, distinctive) — applied in
+ *                        index.css via --font-heading, not through the AntD token below.
+ *   - System stack (Segoe UI…) → body / UI text: dense, renders identically VN & EN,
+ *                        no web-font download.
  *   - JetBrains Mono  → ticket codes, IDs, monospaced data
  */
 

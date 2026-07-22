@@ -16,6 +16,8 @@ import {
   UserOutlined,
   LogoutOutlined,
   MenuOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { useMe, logout, setServerLanguage } from '../lib/auth';
 import { useIsMobile } from '../lib/useMediaQuery';
@@ -76,11 +78,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { message, modal } = AntApp.useApp();
   const { data: me } = useMe();
 
-  // The DESKTOP sidebar is a permanent icons-only rail (no expand/collapse toggle):
-  // it keeps the worklist full-width and AntD surfaces each label as a hover tooltip.
-  // This is intentional (owner's call) — only PHONE-width viewports differ: the rail
-  // gives way to a hamburger-opened Drawer with the full grouped, labelled menu.
-  const collapsed = true;
+  // DESKTOP sidebar: a compact icons-only rail BY DEFAULT (owner's preference — keeps the
+  // worklist full-width; labels show as hover tooltips). New in Phase 1: a header toggle
+  // lets anyone EXPAND it to the grouped, labelled menu on demand, and the choice is
+  // remembered. Phone-width viewports still use the hamburger-opened Drawer regardless.
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('nav.collapsed') !== '0');
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      localStorage.setItem('nav.collapsed', c ? '0' : '1');
+      return !c;
+    });
   const isMobile = useIsMobile();
   const [navOpen, setNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -170,7 +177,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsedWidth={64}
           width={232}
           collapsed={collapsed}
-          // Permanent rail — no trigger, no toggle (hover a row to see its label tooltip).
+          // Toggle lives in the header (MenuFold/Unfold); AntD's own trigger is disabled.
+          // Collapsed = icons-only rail with label tooltips; expanded = grouped labels.
           trigger={null}
         >
           <div style={{ padding: collapsed ? '14px 8px 6px' : '14px 14px 6px' }}>
@@ -236,12 +244,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             borderBottom: `1px solid ${palette.border}`,
           }}
         >
-          {isMobile && (
+          {isMobile ? (
             <Button
               type="text"
               icon={<MenuOutlined />}
               aria-label={t('menu.open')}
               onClick={() => setNavOpen(true)}
+            />
+          ) : (
+            <Button
+              type="text"
+              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              aria-label={t('menu.toggle')}
+              onClick={toggleCollapsed}
             />
           )}
           {/* Global ticket search (Story 10.2) — left; utilities sit right. */}
