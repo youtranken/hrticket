@@ -72,7 +72,7 @@ export function AttachmentConfigPage() {
   const disk = cfg?.disk;
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%', maxWidth: 760 }}>
+    <Space direction="vertical" size="large" style={{ width: '100%', maxWidth: 920, margin: '0 auto' }}>
       <Title level={4}>{t('files.cfg.title')}</Title>
 
       {disk && (
