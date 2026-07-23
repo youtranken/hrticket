@@ -64,7 +64,7 @@ test('9.4 role capabilities: SSA toggles a cell, locked cell is 🔒, admin is b
   const adminPage = await adminCtx.newPage();
   await login(adminPage, 'admin@dev.local');
   await adminPage.goto('/admin/roles');
-  await expect(adminPage.locator('.ant-result-403')).toBeVisible({ timeout: 15000 });
+  await expect(adminPage.locator('.result-403')).toBeVisible({ timeout: 15000 });
   await adminCtx.close();
 
   expect(fatal, fatal.join('\n')).toEqual([]);

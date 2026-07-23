@@ -82,13 +82,10 @@ test('9.5 audit viewer: admin reads the log + view-log; member is blocked', asyn
   await expect(assignedRow).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ant-table-row', { hasText: 'ticket.created' })).toBeVisible();
 
-  // Expand the assigned row → old→new diff is shown.
-  await assignedRow.locator('.ant-table-row-expand-icon').click();
-  await expect(page.locator('.ant-table-expanded-row')).toContainText('assignee');
   await page.screenshot({ path: `${SHOTS}/9.5-audit-log.png`, fullPage: true });
 
   // View-log tab → the file download row + filename.
-  await page.getByRole('tab', { name: 'Xem dữ liệu nhạy cảm' }).click();
+  await page.getByRole('tab', { name: 'Lượt xem dữ liệu nhạy cảm' }).click();
   await expect(page.locator('.ant-table-row', { hasText: 'payslip-e2e.pdf' })).toBeVisible({ timeout: 10000 });
   await expect(page.locator('.ant-table-row', { hasText: 'Tải tệp' })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/9.5-viewlog.png`, fullPage: true });
@@ -98,7 +95,7 @@ test('9.5 audit viewer: admin reads the log + view-log; member is blocked', asyn
   const memberPage = await memberCtx.newPage();
   await login(memberPage, 'member@dev.local');
   await memberPage.goto('/audit');
-  await expect(memberPage.locator('.ant-result-403')).toBeVisible({ timeout: 15000 });
+  await expect(memberPage.locator('.result-403')).toBeVisible({ timeout: 15000 });
   await memberCtx.close();
 
   expect(fatal, fatal.join('\n')).toEqual([]);

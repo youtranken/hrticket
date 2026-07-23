@@ -40,7 +40,7 @@ test('9.1 group membership: admin grants a member into a group via the dual-pane
 
   await page.goto('/admin/groups');
   // AntD Card title is a div, not an ARIA heading — assert via the card head + tabs.
-  await expect(page.locator('.ant-card-head-title')).toHaveText('Nhóm & Quyền', { timeout: 15000 });
+  await expect(page.locator('.ant-card-head-title')).toHaveText('Nhóm & Truy cập', { timeout: 15000 });
   // Both directions are present.
   await expect(page.getByRole('tab', { name: 'Theo nhóm' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Theo người dùng' })).toBeVisible();

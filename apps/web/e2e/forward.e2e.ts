@@ -118,8 +118,8 @@ test('forward: Fwd: subject + forwarded block + new recipient active + reply thr
   // (1) The inbound bubble offers "Forward" → the Forward tab opens, recipients empty.
   await page.getByText(originalText).waitFor({ timeout: 15_000 });
   // The bubble link is an <a> without href (no ARIA link role) → match by text.
-  await page.getByText('Forward', { exact: true }).first().click();
-  const forwardTab = page.getByRole('tabpanel').filter({ hasText: /Đang forward|Forwarding/ });
+  await page.getByText('Chuyển tiếp', { exact: true }).first().click();
+  const forwardTab = page.getByRole('tabpanel').filter({ hasText: /Đang chuyển tiếp|Forwarding/ });
   await expect(forwardTab.getByText(requester, { exact: false }).first()).toBeVisible();
 
   // Fill the To (tags select) + intro, then send. The partner is a NEW address →
@@ -132,7 +132,7 @@ test('forward: Fwd: subject + forwarded block + new recipient active + reply thr
   await forwardTab.getByPlaceholder(/Lời nhắn|Optional note/).fill(intro);
   await forwardTab.getByRole('button', { name: /Gửi forward|Send forward/ }).click();
   await page.locator('.ant-modal:visible .ant-btn-primary').click();
-  await expect(page.getByText(/Đã forward|Forwarded/).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/Đã chuyển tiếp|Forwarded/).first()).toBeVisible({ timeout: 10_000 });
 
   // (2) The outbound mail: Fwd: subject, intro + code footer + forwarded block.
   let out: MailpitMessage | undefined;

@@ -47,7 +47,7 @@ test('12.4: Reply All on an older message seeds THAT message’s recipients, not
 
   // Click "Reply All" on the FIRST (older) message bubble; wait for its reply-defaults.
   const seeded = page.waitForResponse((r) => r.url().includes('/reply-defaults') && r.url().includes('mode=replyAll') && r.status() === 200);
-  await page.getByRole('button', { name: 'Reply All' }).first().click();
+  await page.getByRole('button', { name: 'Trả lời tất cả' }).first().click();
   await seeded;
 
   // The reply pane's Cc now carries M1's audience (a + b), NOT M2's (c).

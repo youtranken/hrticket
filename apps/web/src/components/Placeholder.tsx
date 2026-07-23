@@ -19,6 +19,10 @@ export function ForbiddenPage() {
   const { t } = useTranslation();
   return (
     <Result
+      // A branded illustration replaces AntD's built-in 403 image; AntD drops the
+      // `ant-result-403` class when `icon` is used, so keep a stable hook for
+      // role-guard checks + e2e (RequireRole/audit/rolecaps).
+      className="result-403"
       icon={<ForbiddenArt size={200} />}
       title={t('forbidden.title')}
       subTitle={t('forbidden.desc')}
@@ -33,6 +37,7 @@ export function NotFoundPage() {
   const navigate = useNavigate();
   return (
     <Result
+      className="result-404"
       icon={<NotFoundArt size={200} />}
       title={t('notFound.title')}
       subTitle={t('notFound.desc')}

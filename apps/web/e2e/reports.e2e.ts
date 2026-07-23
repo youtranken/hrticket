@@ -70,7 +70,7 @@ test('đơn 13 / v2: member reaches /reports as a SELF report — no staff card,
   // v2 KPI header renders (the 4 cards) and the self numbers are non-empty:
   // the by-category stacked bars list Payroll (the seeded ticket's pool).
   await expect(page.getByText('Tổng ticket đã xử lý')).toBeVisible({ timeout: 15000 });
-  const catCard = page.locator('.ant-card', { hasText: 'Theo nhóm' });
+  const catCard = page.locator('.ant-card', { hasText: 'Theo danh mục' });
   await expect(catCard.getByText('Lương', { exact: true })).toBeVisible({ timeout: 15000 });
 
   // Member never gets the cross-staff scoreboard nor the user filter.
@@ -107,7 +107,7 @@ test('đơn 13 / v2: admin gets year picker, week/month/year buckets + a per-use
   // ticket keeps the sliced by-category bars non-empty.
   await page.locator('.ant-select', { hasText: 'Tất cả nhân viên' }).click();
   await page.locator('.ant-select-item-option', { hasText: 'Dev Member' }).first().click();
-  const catCard = page.locator('.ant-card', { hasText: 'Theo nhóm' });
+  const catCard = page.locator('.ant-card', { hasText: 'Theo danh mục' });
   await expect(catCard.getByText('Lương', { exact: true })).toBeVisible({ timeout: 15000 });
 
   await page.screenshot({ path: `${SHOTS}/13-report-admin-filter.png`, fullPage: true });
