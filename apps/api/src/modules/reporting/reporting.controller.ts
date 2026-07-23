@@ -1,5 +1,6 @@
 import { Controller, Get, Headers, Query, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
+import { ReportRateLimitGuard } from './report-rate-limit.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionUser } from '../auth/session.service';
 import { ProjectContextService } from '../auth/project-context.service';
@@ -14,7 +15,8 @@ import { reportQuerySchema } from './dto/report.query';
  * (compare = two calls from the FE).
  */
 @Controller('api/reports')
-@UseGuards(SessionGuard)
+// SessionGuard first (sets sessionUser), then the per-user throttle (M3).
+@UseGuards(SessionGuard, ReportRateLimitGuard)
 export class ReportingController {
   constructor(
     private readonly svc: ReportingService,

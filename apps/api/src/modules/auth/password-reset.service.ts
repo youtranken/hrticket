@@ -7,6 +7,10 @@ import { Mailer } from '../../infra/mail/mailer';
 import { SessionService } from './session.service';
 
 const RESET_TTL_MS = 30 * 60 * 1000;
+// Anti-abuse: at most one reset mail per email per this window. Bounds inbox flooding,
+// SMTP-relay quota burn and unbounded token growth from a scripted `forgot` loop (M2).
+// Keyed on the account (not IP) — behind nginx every request shares one proxy IP.
+const RESET_COOLDOWN_MS = 2 * 60 * 1000;
 
 @Injectable()
 export class PasswordResetService {
@@ -25,6 +29,24 @@ export class PasswordResetService {
       return row ?? null;
     });
     if (!user) return; // silently no-op
+
+    // Cooldown: if this account already has an unused token issued within the window,
+    // skip issuing another / sending another mail. Still returns normally so the endpoint
+    // answers identically whether or not it acted (no enumeration, no timing oracle).
+    const recent = await withActor(systemActor, (tx) =>
+      tx
+        .select({ id: passwordResetTokens.id })
+        .from(passwordResetTokens)
+        .where(
+          and(
+            eq(passwordResetTokens.userId, user.id),
+            isNull(passwordResetTokens.usedAt),
+            gt(passwordResetTokens.createdAt, new Date(Date.now() - RESET_COOLDOWN_MS)),
+          ),
+        )
+        .limit(1),
+    );
+    if (recent.length) return; // recently sent → silent no-op
 
     const token = generateToken(32);
     await withActor(systemActor, async (tx) => {
