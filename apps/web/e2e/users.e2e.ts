@@ -64,6 +64,8 @@ test('9.2 user admin: create → promote → disable', async ({ page }) => {
   await row.locator('.ant-switch').click();
   await page.locator('.ant-modal-confirm-btns').getByRole('button', { name: 'Vô hiệu hóa' }).click();
   await expect(page.locator('.ant-message')).toContainText('Đã vô hiệu hóa', { timeout: 10000 });
+  // The list defaults to Active-only, so a just-disabled user drops out — reveal it.
+  await page.getByText(/Hiện cả người đã ngưng|Show inactive/).click();
   await expect(row.locator('.ant-switch')).not.toHaveClass(/ant-switch-checked/);
 
   expect(fatal, fatal.join('\n')).toEqual([]);
