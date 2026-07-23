@@ -147,13 +147,16 @@ describe('IT-STATE / IT-CLOSE: lifecycle transitions + reply&close', () => {
     expect(tk!.status).toBe('open'); // untouched
   });
 
-  it('IT-CLOSE-002: reply permission matrix — assignee ok, member-not-assignee 403, Admin cannot reply but oversees the close via lifecycle', async () => {
+  it('IT-CLOSE-002: reply permission matrix — assignee/member-in-group ok, Admin cannot reply but oversees the close via lifecycle', async () => {
     if (!ready) return;
     const t = await makeTicket('in_progress', A.id);
-    // A member who is not the assignee cannot reply (must claim first).
+    // Story 12.3 (2026-07-22): a Member in the ticket's category group may reply even
+    // when they are NOT the assignee (no claim required). Permission passes — the reply
+    // only stops at the new-recipient guard (needsConfirm), so the ticket state is left
+    // untouched for the Admin assertions below.
     await expect(
       replySvc.reply(B, t, { to: ['r@x.com'], body: 'x', closeAfter: true }),
-    ).rejects.toMatchObject({ status: 403 });
+    ).resolves.toMatchObject({ needsConfirm: true });
 
     // Admin is administrative — they do NOT process tickets by replying (sending email),
     // even to close. Reply & Close is rejected for Admin/SSA.
