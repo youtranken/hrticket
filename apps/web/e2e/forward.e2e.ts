@@ -130,7 +130,7 @@ test('forward: Fwd: subject + forwarded block + new recipient active + reply thr
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
   await forwardTab.getByPlaceholder(/Lời nhắn|Optional note/).fill(intro);
-  await forwardTab.getByRole('button', { name: /Gửi forward|Send forward/ }).click();
+  await forwardTab.getByRole('button', { name: /Gửi chuyển tiếp|Send forward/ }).click();
   await page.locator('.ant-modal:visible .ant-btn-primary').click();
   await expect(page.getByText(/Đã chuyển tiếp|Forwarded/).first()).toBeVisible({ timeout: 10_000 });
 
