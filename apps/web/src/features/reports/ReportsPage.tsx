@@ -577,9 +577,6 @@ export function ReportsPage() {
                     </a>
                   ))}
                 </div>
-                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 10 }}>
-                  {t('reports.v2.rowClickHint')}
-                </Typography.Text>
               </>
             )}
           </Card>
@@ -672,9 +669,6 @@ export function ReportsPage() {
                 })}
                 scroll={{ x: 720 }}
               />
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
-                {t('reports.v2.rowClickHint')}
-              </Typography.Text>
             </>
           )}
         </Card>

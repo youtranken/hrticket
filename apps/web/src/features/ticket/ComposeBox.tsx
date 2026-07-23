@@ -623,7 +623,6 @@ export function ComposeBox({
 
   const notePane = (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
-      <Alert type="warning" showIcon message={t('compose.noteHint')} />
       <Input.TextArea
         value={noteBody}
         onChange={(e) => setNoteBody(e.target.value)}

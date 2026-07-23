@@ -127,14 +127,7 @@ export function RolesPage() {
           {
             title: t('caps.capability'),
             key: 'capability',
-            render: (_: unknown, row: CapabilityRow) => (
-              <Space direction="vertical" size={0}>
-                <Text strong>{t(`cap.${row.capability}`)}</Text>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {t(`cap.${row.capability}.desc`)}
-                </Text>
-              </Space>
-            ),
+            render: (_: unknown, row: CapabilityRow) => <Text strong>{t(`cap.${row.capability}`)}</Text>,
           },
           ...roleColumns,
         ]}
