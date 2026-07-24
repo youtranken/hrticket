@@ -289,10 +289,11 @@ function CategoryDrawer({
           <Text style={{ display: 'block', marginBottom: 4 }}>{t('admin.color')}</Text>
           <ColorPicker
             value={color || undefined}
-            onChange={(_, hex) => setColor(hex)}
+            onChange={(c) => setColor(c.toHexString().slice(0, 7))}
             onClear={() => setColor('')}
             allowClear
             showText
+            disabledAlpha
             format="hex"
             presets={[
               {
@@ -483,8 +484,9 @@ function TagDrawer({ value, onClose, onSaved }: { value: AdminTag | 'new'; onClo
           <Text style={{ display: 'block', marginBottom: 4 }}>{t('admin.color')}</Text>
           <ColorPicker
             value={color || '#f5222d'}
-            onChange={(_, hex) => setColor(hex)}
+            onChange={(c) => setColor(c.toHexString().slice(0, 7))}
             showText
+            disabledAlpha
             format="hex"
             presets={[
               {
