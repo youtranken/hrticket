@@ -16,6 +16,8 @@ export interface PollOutcome {
   mailbox: string;
   fetched: number;
   inserted: number;
+  /** True when the project has no mailbox configured, so the poll was skipped. */
+  skipped?: boolean;
 }
 
 /** Stable dedup key for the rare mail with no Message-ID (effectively-once still holds). */
@@ -38,6 +40,15 @@ export class PollerService {
     // DB-over-env (Story 11.1): read the live connection each cycle so an SSA edit
     // applies next poll without a restart.
     const cfg = await resolveImapConfig(project.key);
+
+    // No mailbox configured for this project (blank user/host) → nothing to poll.
+    // Skip silently so an UNCONFIGURED project never trips the hourly "mailbox down"
+    // alert. A genuinely configured mailbox that is merely unreachable still has a
+    // user set, so it keeps alerting — that signal is intentional. (The env fallback
+    // yields host='localhost' + user='' when nothing is set, hence gating on `user`.)
+    if (!cfg.imap.user || !cfg.imap.host) {
+      return { mailbox: cfg.mailbox, fetched: 0, inserted: 0, skipped: true };
+    }
 
     const cursor = await withActor(systemActor, async (tx) => {
       const [existing] = await tx
