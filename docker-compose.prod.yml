@@ -166,9 +166,11 @@ services:
   # Scheduled backup, running INSIDE Docker — no host cron / Ubuntu scheduler needed.
   # Reuses the pinned postgres:18.4 image (pg_dump version matches the server exactly),
   # so nothing extra to install or trust. On start it backs up once, then daily at
-  # BACKUP_HOUR: a CUSTOM-format DB dump (-Fc, restorable with pg_restore — see §5) plus
-  # a tar of the SAME attachments dir the app uses, into ./backups, pruning files older
-  # than BACKUP_KEEP_DAYS. Logic in scripts/backup-loop.sh; guide in HUONG-DAN-VAN-HANH.md §4.
+  # BACKUP_HOUR it writes ONE self-contained archive → ./backups/hris-full-<date>.tar.gz
+  # bundling the CUSTOM-format DB dump (-Fc, pg_restore — see §5), cluster roles
+  # (pg_dumpall --roles-only), and the SAME attachments dir the app uses; older archives
+  # pruned past BACKUP_KEEP_DAYS. `.env`/secrets are NOT bundled — keep them off-site
+  # separately. Logic in scripts/backup-loop.sh; guide in HUONG-DAN-VAN-HANH.md §4.
   backup:
     image: postgres:18.4
     entrypoint: ['/bin/bash', '/backup-loop.sh']

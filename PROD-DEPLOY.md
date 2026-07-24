@@ -208,14 +208,23 @@ no-op nếu schema đã mới nhất.
 
 ## 8. Backup & phục hồi
 
-- [ ] **2 thứ phải backup**: volume `pgdata` (DB) + thư mục `attachments` (file).
+> 📖 **Hướng dẫn chi tiết + lệnh chuẩn ở `HUONG-DAN-VAN-HANH.md` mục 4 (backup) và mục 5 (restore).**
+> Phần này chỉ là checklist.
+
+- [ ] **Backup tự động qua Docker** — service `backup` trong `docker-compose.prod.yml` chạy
+      hằng ngày, tạo **1 file duy nhất** `backups/hris-full-<ngày>.tar.gz` gồm DB dump
+      custom-format `-Fc` + roles + attachments. KHÔNG cần cron Ubuntu. (Bật sẵn khi `up -d`.)
   ```bash
-  # DB (logical)
-  docker compose exec -T postgres pg_dump -U hris hris | gzip > backup_$(date +%F).sql.gz
-  # Attachments
-  tar czf attachments_$(date +%F).tar.gz -C E:/PMH/hr attachments
+  # Backup ngay lập tức (restart service = dump liền):
+  docker compose -f docker-compose.prod.yml restart backup
+  ls -lh backups/    # hris-full-*.tar.gz  (1 file/lần)
   ```
-- [ ] Lên lịch backup định kỳ (cron) + cất off-site.
+- [ ] ⚠️ **Định dạng DB phải là `-Fc`** (service đã đúng). Dump plain `pg_dump | gzip > .sql`
+      **KHÔNG** restore được bằng `pg_restore` — đừng tự chế lệnh plain.
+- [ ] **Restore** = `stop api worker` → `./scripts/restore-latest.sh` (tự lấy file mới nhất:
+      roles → recreate DB → `pg_restore` → bung attachments) → `up -d api worker`.
+      Chi tiết + phương án xoá `pgdata` ở `HUONG-DAN-VAN-HANH.md` mục 5 (kèm cảnh báo `EMAIL_SECRET_KEY`).
+- [ ] Cất **off-site**: copy `backups/hris-full-*.tar.gz` **và `.env`** (cất RIÊNG) ra máy/ổ khác.
 - [ ] **Diễn tập phục hồi** ít nhất 1 lần (restore vào máy khác, đăng nhập, mở 1 ticket có file).
 - [ ] `audit_log` phân mảnh theo năm — **không cần bảo trì thủ công**: `rls-and-extras`
   tự tạo partition tới `now()+5 năm` mỗi lần `migrate`, cộng partition `DEFAULT` hứng

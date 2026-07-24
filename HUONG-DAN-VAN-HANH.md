@@ -158,37 +158,61 @@ docker compose -f docker-compose.prod.yml logs migrate | tail -20   # xem có á
 
 ---
 
-## 4. Backup DB (làm định kỳ)
+## 4. Backup DB (TỰ ĐỘNG — chạy trong Docker)
 
+Backup đã **tự chạy trong stack** qua service `backup` (không cần cron Ubuntu). Nó dùng
+lại image `postgres:18.4`, nên bật `docker compose up -d` là có luôn. Mỗi lần khởi động
+nó backup ngay 1 lần, rồi **mỗi ngày lúc 02:00 giờ VN**, ghi **1 FILE DUY NHẤT**:
+
+`backups/hris-full-<ngày>.tar.gz` — gói đủ để phục hồi:
+- `db.dump` — DB **custom format** (`-Fc`), TOÀN BỘ (schema + data + RLS, gồm bảng `users`)
+- `roles.sql` — role cấp Postgres (`pg_dumpall --roles-only`) → có sẵn role `app`, KHỎI tạo tay lúc restore
+- `attachments/` — toàn bộ file đính kèm
+- `MANIFEST.txt` — mô tả nội dung
+- Tự xoá file cũ hơn `BACKUP_KEEP_DAYS` (mặc định 14 ngày)
+
+> ⚠️ **`.env` KHÔNG nằm trong gói** (chủ ý). Không có `EMAIL_SECRET_KEY` thì App Password
+> mailbox lưu (mã hoá) trong DB **không giải mã được** sau restore → phải nhập lại ở
+> `/admin/email-connection`. **Cất `.env` off-site RIÊNG**, cùng nơi an toàn.
+
+> ⚠️ **Đúng định dạng:** DB dump PHẢI là `-Fc` (custom) để `pg_restore` đọc được (mục 5).
+> Đừng đổi sang `pg_dump | gzip > .sql` (plain) — không restore bằng `pg_restore` được.
+
+**Xem backup đang chạy / danh sách file:**
 ```bash
-mkdir -p /home/hr/backups
-
-# DB (custom format, nén sẵn, restore chọn lọc được)
-docker exec app-postgres-1 pg_dump -U hris -Fc hris > /home/hr/backups/hris-$(date +%F-%H%M).dump
-
-# HOẶC backup mọi thứ (DB + attachments) chỉ bằng 1 lệnh — nhờ đã dồn về ./data:
-tar czf /home/hr/backups/data-$(date +%F).tar.gz -C /home/hr/hrticket data
+docker compose -f docker-compose.prod.yml logs backup | tail -20   # lịch sử + lần chạy kế tiếp
+ls -lh /home/hr/hrticket/backups/                                   # các file hris-full-*.tar.gz
 ```
 
-Kiểm dump vừa tạo đọc được:
+**Backup ngay lập tức (không đợi 02:00):** restart service — nó backup liền khi start:
 ```bash
-docker exec -i app-postgres-1 pg_restore -l /dev/stdin < /home/hr/backups/hris-*.dump | tail -5
+docker compose -f docker-compose.prod.yml restart backup
+```
+
+**Đổi giờ chạy / số ngày giữ:** thêm vào `.env` rồi `up -d`:
+```bash
+BACKUP_HOUR=2          # 0–23, giờ VN (mặc định 2 = 2h sáng)
+BACKUP_KEEP_DAYS=14    # giữ 14 ngày (mặc định)
+```
+
+**Kiểm 1 gói đọc được (xem manifest + liệt kê nội dung DB):**
+```bash
+BK=/home/hr/hrticket/backups/hris-full-YYYY-MM-DD-HHMM.tar.gz
+tar tzf "$BK"                                             # thấy db.dump / roles.sql / attachments/
+tar xzf "$BK" -O db.dump | docker exec -i app-postgres-1 pg_restore -l | tail -5
 ```
 
 **Cutover sạch (chuyển hẳn sang máy khác, không để lệch dữ liệu):**
 ```bash
 docker compose -f docker-compose.prod.yml stop worker   # ngừng nhận mail mới
-# rồi mới pg_dump — và ĐỪNG bật lại worker máy cũ nữa
+docker compose -f docker-compose.prod.yml restart backup # tạo gói mốc cắt
+# — và ĐỪNG bật lại worker máy cũ nữa
 ```
 Lý do: nếu mail vào SAU lúc dump, `imap_cursor` trong dump còn ở uid cũ → máy mới poll lại
 tạo trùng ticket. Dừng worker trước khi dump = có một mốc cắt sạch.
 
-**Tự động hoá (cron, 2h sáng mỗi ngày, giữ 14 ngày):**
-```bash
-crontab -e
-# thêm dòng:
-0 2 * * * docker exec app-postgres-1 pg_dump -U hris -Fc hris > /home/hr/backups/hris-$(date +\%F).dump && find /home/hr/backups -name 'hris-*.dump' -mtime +14 -delete
-```
+> 💾 **Cất off-site:** `backups/` nằm cùng máy prod. Định kỳ copy `hris-full-*.tar.gz` ra ổ
+> khác / máy khác (`scp`, USB…) — **kèm bản `.env`** cất riêng — đừng chỉ để 1 chỗ.
 
 ---
 
@@ -208,14 +232,30 @@ sudo rm -rf /home/hr/hrticket/data/pgdata
 docker compose -f docker-compose.prod.yml --env-file .env up -d postgres
 until [ "$(docker inspect -f '{{.State.Health.Status}}' app-postgres-1 2>/dev/null)" = "healthy" ]; do sleep 2; done
 
-# 3) Role app + restore (như mục 2.5)
-docker exec app-postgres-1 psql -U hris -d hris -c "CREATE ROLE app NOLOGIN;"
-docker cp /home/hr/backups/hris-YYYY-MM-DD.dump app-postgres-1:/tmp/dump
+# 3) Giải nén gói 1-file ra thư mục tạm
+BK=/home/hr/hrticket/backups/hris-full-YYYY-MM-DD-HHMM.tar.gz
+mkdir -p /tmp/restore && tar xzf "$BK" -C /tmp/restore   # → db.dump, roles.sql, attachments/
+
+# 4) Roles (có sẵn role `app`) + restore DB. Lỗi "role đã tồn tại" (vd hris) là VÔ HẠI — bỏ qua.
+docker cp /tmp/restore/roles.sql app-postgres-1:/tmp/roles.sql
+docker exec app-postgres-1 psql -U hris -d postgres -f /tmp/roles.sql || true
+docker cp /tmp/restore/db.dump app-postgres-1:/tmp/dump
 docker exec app-postgres-1 pg_restore --no-owner --no-privileges -U hris -d hris /tmp/dump
 
-# 4) Bật lại cả stack
+# 5) Attachments — xoá thư mục cũ rồi bung từ gói vào.
+sudo rm -rf /home/hr/hrticket/data/attachments && mkdir -p /home/hr/hrticket/data/attachments
+sudo cp -a /tmp/restore/attachments/. /home/hr/hrticket/data/attachments/
+
+# 6) Bật lại cả stack (dùng .env đã cất off-site — KHÔNG nằm trong gói)
 docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+rm -rf /tmp/restore
 ```
+
+> ℹ️ `roles.sql` nối vào DB `postgres` (không phải `hris`) vì nó tạo role cấp cluster. Nếu
+> gói cũ không có `roles.sql` (bản trước), thay bước 4 bằng `CREATE ROLE app NOLOGIN;` thủ công.
+
+> ℹ️ File `.dump` (DB) và `.tar.gz` (attachments) do service `backup` tạo cùng mốc thời gian
+> (mục 4) — chọn cặp CÙNG NGÀY để DB và file khớp nhau.
 
 > 🔑 **CẢNH BÁO EMAIL_SECRET_KEY:** dump chứa App Password mailbox đã mã hoá bằng
 > `EMAIL_SECRET_KEY` của máy TẠO dump. Nếu `.env` máy này có `EMAIL_SECRET_KEY` KHÁC,
